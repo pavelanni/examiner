@@ -157,10 +157,14 @@ deploy/
   examiner-data.volume Quadlet named volume
   examiner.env.example Environment file template
   Caddyfile            Caddy reverse proxy config
+docs/
+  architecture.md      System design, data flow, database schema
+  development/
+    roadmap.md         Demo → PoC → MVP → production roadmap
 ```
 
-For architecture details, data flow diagrams, and database schema,
-see `docs/architecture.md`.
+For architecture details see `docs/architecture.md`.
+For the development roadmap see `docs/development/roadmap.md`.
 
 ## Adding a new language
 
