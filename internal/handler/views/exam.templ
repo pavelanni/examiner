@@ -1,0 +1,41 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ submitForm(action string, confirmMsg string, buttonText string) {
+	<form
+		method="POST"
+		action={ templ.SafeURL(action) }
+		data-confirm={ confirmMsg }
+		onsubmit="return confirm(this.dataset.confirm)"
+	>
+		<button type="submit" class="contrast">{ buttonText }</button>
+	</form>
+}
+
+templ ExamPage(view model.SessionView) {
+	@Layout(td(ctx, "ExamTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
+		})
+		<h1>{ t(ctx, "Exam") }</h1>
+		if view.Session.Status == model.StatusInProgress {
+			<p>{ t(ctx, "ExamInstructions") }</p>
+		} else {
+			<p>{ t(ctx, "ExamSubmitted") }</p>
+		}
+		for i, tv := range view.Threads {
+			<div class="thread" id={ fmt.Sprintf("thread-%d", tv.Thread.ID) }>
+				@ThreadContent(tv.Thread, tv.Question, tv.Messages, view.Session.ID, i, view.Session)
+			</div>
+		}
+		if view.Session.Status == model.StatusInProgress {
+			@submitForm(fmt.Sprintf("/exam/%d/submit", view.Session.ID), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"))
+		}
+	}
+}

@@ -1,0 +1,135 @@
+package model
+
+import "time"
+
+type Role string
+
+const (
+	RoleStudent Role = "student"
+	RoleTeacher Role = "teacher"
+	RoleSystem  Role = "system"
+	RoleLLM     Role = "assistant"
+)
+
+type SessionStatus string
+
+const (
+	StatusInProgress SessionStatus = "in_progress"
+	StatusSubmitted  SessionStatus = "submitted"
+	StatusGrading    SessionStatus = "grading"
+	StatusGraded     SessionStatus = "graded"
+	StatusReviewed   SessionStatus = "reviewed"
+)
+
+type ThreadStatus string
+
+const (
+	ThreadOpen      ThreadStatus = "open"
+	ThreadAnswered  ThreadStatus = "answered"
+	ThreadCompleted ThreadStatus = "completed"
+)
+
+type Difficulty string
+
+const (
+	DifficultyEasy   Difficulty = "easy"
+	DifficultyMedium Difficulty = "medium"
+	DifficultyHard   Difficulty = "hard"
+)
+
+type Question struct {
+	ID          int64      `json:"id"`
+	CourseID    int64      `json:"course_id"`
+	Text        string     `json:"text"`
+	Difficulty  Difficulty `json:"difficulty"`
+	Topic       string     `json:"topic"`
+	Rubric      string     `json:"rubric"`
+	ModelAnswer string     `json:"model_answer"`
+	MaxPoints   int        `json:"max_points"`
+}
+
+type ExamBlueprint struct {
+	ID           int64  `json:"id"`
+	CourseID     int64  `json:"course_id"`
+	Name         string `json:"name"`
+	TimeLimit    int    `json:"time_limit"`
+	MaxFollowups int    `json:"max_followups"`
+}
+
+type ExamSession struct {
+	ID          int64         `json:"id"`
+	BlueprintID int64         `json:"blueprint_id"`
+	StudentID   int64         `json:"student_id"`
+	Status      SessionStatus `json:"status"`
+	StartedAt   time.Time     `json:"started_at"`
+	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
+}
+
+type QuestionThread struct {
+	ID         int64        `json:"id"`
+	SessionID  int64        `json:"session_id"`
+	QuestionID int64        `json:"question_id"`
+	Status     ThreadStatus `json:"status"`
+}
+
+type Message struct {
+	ID         int64     `json:"id"`
+	ThreadID   int64     `json:"thread_id"`
+	Role       Role      `json:"role"`
+	Content    string    `json:"content"`
+	CreatedAt  time.Time `json:"created_at"`
+	TokenCount int       `json:"token_count"`
+}
+
+type QuestionScore struct {
+	ID             int64   `json:"id"`
+	ThreadID       int64   `json:"thread_id"`
+	LLMScore       float64 `json:"llm_score"`
+	LLMFeedback    string  `json:"llm_feedback"`
+	TeacherScore   *float64 `json:"teacher_score,omitempty"`
+	TeacherComment string  `json:"teacher_comment,omitempty"`
+}
+
+type Grade struct {
+	ID         int64    `json:"id"`
+	SessionID  int64    `json:"session_id"`
+	LLMGrade   float64  `json:"llm_grade"`
+	FinalGrade *float64 `json:"final_grade,omitempty"`
+	ReviewedBy *int64   `json:"reviewed_by,omitempty"`
+	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
+}
+
+// ExamConfig holds runtime exam parameters set via CLI flags.
+type ExamConfig struct {
+	NumQuestions int    // 0 means all available
+	Difficulty   string // empty means all difficulties
+	Topic        string // empty means all topics
+	MaxFollowups int
+	Shuffle      bool
+}
+
+// QuestionImport is used for loading questions from JSON.
+type QuestionImport struct {
+	Text        string     `json:"text"`
+	Difficulty  Difficulty `json:"difficulty"`
+	Topic       string     `json:"topic"`
+	Rubric      string     `json:"rubric"`
+	ModelAnswer string     `json:"model_answer"`
+	MaxPoints   int        `json:"max_points"`
+}
+
+// ThreadView combines thread data with question and messages for display.
+type ThreadView struct {
+	Thread   QuestionThread
+	Question Question
+	Messages []Message
+	Score    *QuestionScore
+}
+
+// SessionView combines session data with threads for display.
+type SessionView struct {
+	Session  ExamSession
+	Blueprint ExamBlueprint
+	Threads  []ThreadView
+	Grade    *Grade
+}

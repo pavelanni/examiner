@@ -1,0 +1,47 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ ReviewListPage(sessions []model.ExamSession) {
+	@Layout(t(ctx, "ReviewDashboard")) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "TeacherReview")},
+		})
+		<h1>{ t(ctx, "ReviewDashboard") }</h1>
+		if len(sessions) > 0 {
+			<table>
+				<thead>
+					<tr>
+						<th>{ t(ctx, "ColID") }</th>
+						<th>{ t(ctx, "ColStatus") }</th>
+						<th>{ t(ctx, "ColSubmitted") }</th>
+						<th>{ t(ctx, "ColAction") }</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range sessions {
+						<tr>
+							<td>{ fmt.Sprint(s.ID) }</td>
+							<td>{ string(s.Status) }</td>
+							<td>
+								if s.SubmittedAt != nil {
+									{ s.SubmittedAt.Format("2006-01-02 15:04") }
+								} else {
+									-
+								}
+							</td>
+							<td><a href={ templ.SafeURL(fmt.Sprintf("/review/%d", s.ID)) }>{ t(ctx, "Review") }</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		} else {
+			<p>{ t(ctx, "NoExamsToReview") }</p>
+		}
+	}
+}

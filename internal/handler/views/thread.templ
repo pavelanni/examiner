@@ -1,0 +1,71 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ ThreadContent(thread model.QuestionThread, question model.Question, messages []model.Message, sessionID int64, index int, session model.ExamSession) {
+	<h3>
+		{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(index + 1)}) }
+		<span class={ "status-badge", "status-" + string(thread.Status) }>{ string(thread.Status) }</span>
+	</h3>
+	<p>
+		<strong>{ question.Topic }</strong>
+		({ string(question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(question.MaxPoints)}) })
+	</p>
+	<p>{ question.Text }</p>
+	if len(messages) > 0 {
+		<div class="messages">
+			for _, m := range messages {
+				<div class={ "message", messageClass(m.Role) }>
+					<div class="message-role">
+						if m.Role == model.RoleStudent {
+							{ t(ctx, "You") }
+						} else {
+							{ t(ctx, "Evaluator") }
+						}
+					</div>
+					<div>{ m.Content }</div>
+				</div>
+			}
+		</div>
+	}
+	if session.Status == model.StatusInProgress {
+		if thread.Status != model.ThreadCompleted {
+			<form
+				hx-post={ fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID) }
+				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
+				hx-swap="innerHTML"
+			>
+				<textarea
+					name="answer"
+					rows="4"
+					if len(messages) > 0 {
+						placeholder={ t(ctx, "TypeFollowup") }
+					} else {
+						placeholder={ t(ctx, "TypeAnswer") }
+					}
+					required
+				></textarea>
+				<button type="submit">
+					if len(messages) > 0 {
+						{ t(ctx, "Reply") }
+					} else {
+						{ t(ctx, "Answer") }
+					}
+				</button>
+				<span class="htmx-indicator" aria-busy="true">{ t(ctx, "Evaluating") }</span>
+			</form>
+		}
+	}
+}
+
+func messageClass(role model.Role) string {
+	if role == model.RoleStudent {
+		return "message-student"
+	}
+	return "message-assistant"
+}

@@ -1,0 +1,75 @@
+package views
+
+import (
+	"context"
+
+	"github.com/pavelanni/examiner/internal/i18n"
+)
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+			<style>
+				.thread { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+				.message { padding: 0.5rem 1rem; margin: 0.5rem 0; border-radius: 6px; }
+				.message-student { background: var(--pico-primary-background); }
+				.message-assistant { background: var(--pico-secondary-background); }
+				.message-role { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.25rem; }
+				.status-badge { font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+				.status-open { background: #ffeeba; color: #856404; }
+				.status-answered { background: #b8daff; color: #004085; }
+				.status-completed { background: #c3e6cb; color: #155724; }
+				.score-box { background: var(--pico-card-background-color); padding: 1rem; border-radius: 6px; margin-top: 0.5rem; }
+				.htmx-indicator { display: none; }
+				.htmx-request .htmx-indicator { display: inline-block; }
+				.htmx-request button[type="submit"] { opacity: 0.5; pointer-events: none; }
+			</style>
+		</head>
+		<body>
+			<main class="container">
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+// nav renders the top navigation bar.
+templ Nav(items []NavItem) {
+	<nav>
+		<ul>
+			for _, item := range items {
+				<li>
+					if item.URL != "" {
+						<a href={ templ.SafeURL(item.URL) }>{ item.Label }</a>
+					} else {
+						{ item.Label }
+					}
+				</li>
+			}
+		</ul>
+	</nav>
+}
+
+type NavItem struct {
+	Label string
+	URL   string
+}
+
+// Convenience: get i18n.T via shorter alias usable in templ files.
+func t(ctx context.Context, id string) string {
+	return i18n.T(ctx, id)
+}
+
+func td(ctx context.Context, id string, data map[string]any) string {
+	return i18n.Td(ctx, id, data)
+}
+
+func tp(ctx context.Context, id string, count int) string {
+	return i18n.Tp(ctx, id, count)
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Examiner - LLM-based student assessment
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=localhost/examiner:latest
+PublishPort=127.0.0.1:8080:8080
+Volume=examiner-data.volume:/data/db:Z
+Volume=%h/examiner/questions.json:/data/questions.json:ro,Z
+
+# Configuration via environment.
+EnvironmentFile=%h/examiner/examiner.env
+
+# Override defaults for container paths.
+Environment=EXAMINER_DB=/data/db/examiner.db
+Environment=EXAMINER_QUESTIONS=/data/questions.json
+Environment=EXAMINER_ADDR=0.0.0.0:8080
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,42 @@
+[
+  {
+    "text": "Explain what a Kubernetes Role and ClusterRole are. What is the difference between them?",
+    "difficulty": "easy",
+    "topic": "Kubernetes RBAC",
+    "rubric": "Should mention: Role is namespace-scoped, ClusterRole is cluster-scoped. Both define a set of permissions (verbs on resources). ClusterRole can also grant access to non-namespaced resources and non-resource URLs.",
+    "model_answer": "A Role defines a set of permissions within a specific namespace. It specifies which API resources can be accessed and what operations (verbs like get, list, create, delete) are allowed. A ClusterRole is similar but is cluster-scoped — it applies across all namespaces. ClusterRole can also define permissions for cluster-scoped resources (like nodes, persistent volumes) and non-resource URLs (like /healthz). The key difference is scope: Role is limited to one namespace, ClusterRole applies cluster-wide.",
+    "max_points": 10
+  },
+  {
+    "text": "What are RoleBindings and ClusterRoleBindings? How do they relate to Roles and ClusterRoles?",
+    "difficulty": "easy",
+    "topic": "Kubernetes RBAC",
+    "rubric": "Should mention: RoleBinding grants permissions defined in a Role/ClusterRole to users/groups/service accounts within a namespace. ClusterRoleBinding grants cluster-wide. A RoleBinding can reference a ClusterRole but limits it to the binding's namespace.",
+    "model_answer": "A RoleBinding associates a Role or ClusterRole with a set of subjects (users, groups, or service accounts) within a specific namespace. A ClusterRoleBinding does the same but at the cluster level. Importantly, a RoleBinding can reference a ClusterRole — this is useful for reusing common permission sets across namespaces while still scoping the actual access to a single namespace. The binding is what activates the permissions for specific subjects.",
+    "max_points": 10
+  },
+  {
+    "text": "A developer needs read-only access to pods and services in the 'staging' namespace, but also needs to view cluster-level node information. Describe the RBAC resources you would create and explain your design choices.",
+    "difficulty": "medium",
+    "topic": "Kubernetes RBAC",
+    "rubric": "Should describe: 1) A Role or ClusterRole for pod/service read access, 2) A RoleBinding in 'staging' namespace, 3) A ClusterRole for node read access, 4) A ClusterRoleBinding for node access. Should explain why they chose Role vs ClusterRole for namespace-scoped resources. Award points for mentioning specific verbs (get, list, watch) and resource names.",
+    "model_answer": "I would create: 1) A ClusterRole called 'staging-reader' with rules allowing verbs [get, list, watch] on resources [pods, services]. Using ClusterRole instead of Role allows reuse if we later need the same permissions in other namespaces. 2) A RoleBinding in the 'staging' namespace binding this ClusterRole to the developer's user or service account — this ensures the permissions only apply in 'staging'. 3) A ClusterRole called 'node-viewer' with rules allowing [get, list, watch] on [nodes]. 4) A ClusterRoleBinding binding 'node-viewer' to the developer. This approach follows least privilege and keeps concerns separated.",
+    "max_points": 15
+  },
+  {
+    "text": "Explain the concept of RBAC aggregation in Kubernetes. When and why would you use aggregated ClusterRoles?",
+    "difficulty": "hard",
+    "topic": "Kubernetes RBAC",
+    "rubric": "Should mention: aggregationRule with clusterRoleSelectors, label-based automatic combination of rules from multiple ClusterRoles. Use cases: extending default roles (admin, edit, view) for CRDs, building composable permission sets. Should explain that rules are automatically filled in by the controller and manually added rules are overwritten.",
+    "model_answer": "RBAC aggregation allows a ClusterRole to automatically combine rules from other ClusterRoles using label selectors. You define an aggregationRule with clusterRoleSelectors that match labels on other ClusterRoles. The aggregation controller continuously watches for matching ClusterRoles and merges their rules into the aggregate role. This is how Kubernetes' built-in 'admin', 'edit', and 'view' ClusterRoles work — they use aggregation so that when you install a CRD with its own ClusterRoles labeled appropriately, those permissions are automatically added to the built-in roles. Important: if you use aggregation, you should not manually add rules to the aggregate ClusterRole because the controller will overwrite them.",
+    "max_points": 15
+  },
+  {
+    "text": "Your organization runs a multi-tenant Kubernetes cluster. Each team has their own namespace. Describe a comprehensive RBAC strategy that provides: team isolation, a platform admin role, and a read-only auditor role. Address potential security pitfalls.",
+    "difficulty": "hard",
+    "topic": "Kubernetes RBAC",
+    "rubric": "Should cover: 1) Per-namespace Roles/RoleBindings for team isolation, 2) ClusterRole + ClusterRoleBinding for platform admins, 3) ClusterRole + per-namespace RoleBindings or ClusterRoleBinding for auditors, 4) Security pitfalls: privilege escalation via role creation, wildcard permissions, service account token exposure, RBAC not controlling resource quotas. Extra points for mentioning: deny-by-default, minimal verb sets, separating human and service account permissions.",
+    "model_answer": "For multi-tenant RBAC: 1) Team isolation: Create a ClusterRole 'team-developer' with permissions for common resources (pods, deployments, services, configmaps, secrets). In each team's namespace, create a RoleBinding binding this ClusterRole to the team's group. This reuses the permission definition while scoping access per namespace. 2) Platform admin: Create a ClusterRole with broad permissions and a ClusterRoleBinding to the platform team group. Consider using the built-in 'cluster-admin' ClusterRole sparingly and creating a custom one with only needed permissions. 3) Auditor: Create a ClusterRole 'auditor' with get/list/watch on all resources, bind with ClusterRoleBinding for cluster-wide read access. Security pitfalls: a) Privilege escalation — if a team can create Roles/RoleBindings, they could grant themselves more access. Mitigate with the 'escalate' and 'bind' verbs restrictions. b) Wildcard resources/verbs — avoid '*' in production roles. c) Secrets access — teams with secret read access can access service account tokens. d) Pod creation with serviceAccountName — users who can create pods can use any SA in the namespace. e) RBAC doesn't enforce resource quotas or network policies — those need separate mechanisms.",
+    "max_points": 20
+  }
+]

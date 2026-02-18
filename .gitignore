@@ -1,0 +1,6 @@
+/examiner
+/examiner.db
+*.env
+!*.env.example
+.task/
+*_templ.go

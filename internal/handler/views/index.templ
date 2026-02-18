@@ -1,0 +1,91 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int, config model.ExamConfig) {
+	@Layout(t(ctx, "AppTitle")) {
+		<h1>{ t(ctx, "AppTitle") }</h1>
+		<p>{ t(ctx, "AppSubtitle") }</p>
+		<section>
+			<h2>{ t(ctx, "StartNewExam") }</h2>
+			if availableCount > 0 {
+				<p>{ tp(ctx, "QuestionsAvailable", availableCount) }</p>
+				if config.Difficulty != "" || config.Topic != "" {
+					<p>
+						<small>
+							if config.Difficulty != "" {
+								{ t(ctx, "FilterDifficulty") }: <strong>{ config.Difficulty }</strong>
+								if config.Topic != "" {
+									{ " · " }
+								}
+							}
+							if config.Topic != "" {
+								{ t(ctx, "FilterTopic") }: <strong>{ config.Topic }</strong>
+							}
+						</small>
+					</p>
+				}
+				if examCount != availableCount {
+					<p>
+						<small>
+							{ td(ctx, "ExamWillUse", map[string]any{"Count": strconv.Itoa(examCount)}) }
+							if config.Shuffle {
+								{ " " }({ t(ctx, "Shuffled") })
+							}
+						</small>
+					</p>
+				} else if config.Shuffle {
+					<p><small>{ t(ctx, "Shuffled") }</small></p>
+				}
+				<form method="POST" action="/exam/start">
+					<button type="submit">
+						{ t(ctx, "StartExam") }
+						({ td(ctx, "NQuestions", map[string]any{"N": strconv.Itoa(examCount)}) })
+					</button>
+				</form>
+			} else {
+				<p>{ t(ctx, "NoQuestionsLoaded") }</p>
+			}
+		</section>
+		if len(sessions) > 0 {
+			<section>
+				<h2>{ t(ctx, "PreviousSessions") }</h2>
+				<table>
+					<thead>
+						<tr>
+							<th>{ t(ctx, "ColID") }</th>
+							<th>{ t(ctx, "ColStatus") }</th>
+							<th>{ t(ctx, "ColStarted") }</th>
+							<th>{ t(ctx, "ColAction") }</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, s := range sessions {
+							<tr>
+								<td>{ fmt.Sprint(s.ID) }</td>
+								<td>{ string(s.Status) }</td>
+								<td>{ s.StartedAt.Format("2006-01-02 15:04") }</td>
+								<td>
+									if s.Status == model.StatusInProgress {
+										<a href={ templ.SafeURL(fmt.Sprintf("/exam/%d", s.ID)) }>{ t(ctx, "Continue") }</a>
+									} else {
+										<a href={ templ.SafeURL(fmt.Sprintf("/review/%d", s.ID)) }>{ t(ctx, "Review") }</a>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		}
+		<section>
+			<h2>{ t(ctx, "TeacherReview") }</h2>
+			<a href="/review" role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
+		</section>
+	}
+}
