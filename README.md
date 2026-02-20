@@ -324,6 +324,20 @@ The `deploy` task automatically tags the image with the current git SHA
 and updates `~/.config/containers/systemd/examiner.container` on the
 remote host via `sed`.
 
+**Important:**
+
+- **Commit before deploying.** The image tag includes a `-dirty` suffix
+  when the working tree has uncommitted changes. If you deploy with a
+  dirty tree and then commit, `deploy-quick` will compute a different
+  (clean) SHA that doesn't exist on ghcr.io. Always commit first,
+  or pass `DEV_TAG=<sha>` explicitly.
+- **First push to ghcr.io.** New packages default to private. After the
+  first push, go to the package settings on GitHub and change visibility
+  to **Public** — otherwise the cloud host won't be able to pull.
+- **Manual Quadlet edits on the host.** If you edit the `.container`
+  file directly on `examiner-01`, run `systemctl --user daemon-reload`
+  before restarting the service.
+
 ### Caddy reverse proxy
 
 ```bash

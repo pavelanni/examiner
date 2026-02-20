@@ -1,12 +1,7 @@
 # Stage 1: Build
-# Use BUILDPLATFORM so the Go compiler runs natively (e.g. arm64 on Mac)
-# and cross-compiles to the target arch via GOOS/GOARCH.
-# For QEMU-emulated builds see Dockerfile.emulated.
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.25-bookworm AS build
+FROM docker.io/library/golang:1.25-bookworm AS build
 
-ARG TARGETOS TARGETARCH
-
-# Install templ CLI (runs on the build platform).
+# Install templ CLI.
 RUN go install github.com/a-h/templ/cmd/templ@latest
 
 WORKDIR /src
@@ -18,8 +13,7 @@ RUN go mod download
 # Copy source and generate + build.
 COPY . .
 RUN templ generate
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
-    go build -o /examiner ./cmd/examiner/
+RUN CGO_ENABLED=0 go build -o /examiner ./cmd/examiner/
 
 # Stage 2: Runtime
 FROM docker.io/library/debian:bookworm-slim
