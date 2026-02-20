@@ -4,7 +4,7 @@ After=network-online.target
 Wants=network-online.target
 
 [Container]
-Image=localhost/examiner:latest
+Image=ghcr.io/pavelanni/examiner:latest
 PublishPort=127.0.0.1:8080:8080
 Volume=examiner-data.volume:/data/db:Z
 Volume=%h/examiner/questions.json:/data/questions.json:ro,Z

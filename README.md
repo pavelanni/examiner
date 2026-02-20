@@ -185,6 +185,13 @@ task run             # build + run (pass flags via -- : task run -- -l ru)
 task test            # run tests
 task image           # build container image with Podman
 task image-run       # run container locally
+task image-amd64     # build x86_64 image for cloud (tagged with git SHA)
+task push            # push image to ghcr.io
+task release         # build amd64 + push in one step
+task deploy          # full pipeline: build, push, update remote, restart
+task deploy-quick    # update remote + restart (no rebuild)
+task deploy-status   # check service status on cloud host
+task deploy-logs     # show recent logs from cloud host
 task clean           # remove build artifacts
 task --list-all      # show all available tasks
 ```
@@ -263,17 +270,12 @@ podman volume rm examiner-data
 ## Deploying to a server
 
 See `deploy/` for all deployment files.
+Images are pushed to `ghcr.io/pavelanni/examiner` and tagged with the
+7-character git SHA (e.g. `2b1cf1b`).
 
-### Container image
+### Initial server setup
 
-```bash
-task image
-podman push localhost/examiner:latest registry.example.com/examiner:latest
-```
-
-### Quadlet (Podman + systemd)
-
-On the target server:
+On the target server (one-time):
 
 ```bash
 # Prepare directories and config.
@@ -290,9 +292,37 @@ cp deploy/examiner.container deploy/examiner-data.volume \
 # Reload and start.
 systemctl --user daemon-reload
 systemctl --user start examiner
-systemctl --user status examiner
-journalctl --user -u examiner -f
 ```
+
+### Deploying updates from a Mac
+
+The project builds x86_64 images on Apple Silicon and pushes to ghcr.io.
+The deploy task then SSHes to the cloud host to update the image tag
+and restart the service.
+
+Prerequisites:
+
+- `podman login ghcr.io` on your Mac
+- SSH access to the cloud host (configured as `examiner-01` in `~/.ssh/config`)
+
+```bash
+# Full deploy: build amd64 image, push to ghcr.io, restart remote service.
+task deploy
+
+# Deploy a previously pushed image (no rebuild).
+task deploy-quick
+
+# Deploy a specific version (rollback).
+task deploy-quick DEV_TAG=abc1234
+
+# Check status and logs.
+task deploy-status
+task deploy-logs
+```
+
+The `deploy` task automatically tags the image with the current git SHA
+and updates `~/.config/containers/systemd/examiner.container` on the
+remote host via `sed`.
 
 ### Caddy reverse proxy
 

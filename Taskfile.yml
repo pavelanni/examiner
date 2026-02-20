@@ -5,6 +5,14 @@ vars:
   MODULE: github.com/pavelanni/examiner
   IMAGE: examiner
   IMAGE_TAG: latest
+  REGISTRY: ghcr.io/pavelanni/examiner
+  GIT_SHA:
+    sh: git rev-parse --short HEAD
+  GIT_DIRTY:
+    sh: git diff --quiet && echo "" || echo "-dirty"
+  DEV_TAG: "{{.GIT_SHA}}{{.GIT_DIRTY}}"
+  DEPLOY_HOST: examiner-01
+  QUADLET_DIR: .config/containers/systemd
 
 tasks:
   default:
@@ -71,6 +79,60 @@ tasks:
         -e EXAMINER_LLM_URL=http://host.containers.internal:11434/v1
         {{.IMAGE}}:{{.IMAGE_TAG}}
         {{.CLI_ARGS}}
+
+  image-amd64:
+    desc: Build x86_64 image for cloud deployment
+    cmds:
+      - >-
+        podman build --platform linux/amd64
+        -t {{.REGISTRY}}:{{.DEV_TAG}}
+        .
+      - echo "Built {{.REGISTRY}}:{{.DEV_TAG}}"
+
+  push:
+    desc: Push image to ghcr.io
+    cmds:
+      - podman push {{.REGISTRY}}:{{.DEV_TAG}}
+      - echo "Pushed {{.REGISTRY}}:{{.DEV_TAG}}"
+
+  release:
+    desc: Build amd64 image and push to ghcr.io
+    cmds:
+      - task: image-amd64
+      - task: push
+
+  deploy:
+    desc: Deploy to cloud host (build, push, update remote, restart)
+    cmds:
+      - task: release
+      - >-
+        ssh {{.DEPLOY_HOST}}
+        "sed -i 's|^Image=.*|Image={{.REGISTRY}}:{{.DEV_TAG}}|'
+        {{.QUADLET_DIR}}/examiner.container &&
+        systemctl --user daemon-reload &&
+        systemctl --user restart examiner"
+      - echo "Deployed {{.DEV_TAG}} to {{.DEPLOY_HOST}}"
+
+  deploy-quick:
+    desc: Deploy without rebuilding (use current DEV_TAG)
+    cmds:
+      - >-
+        ssh {{.DEPLOY_HOST}}
+        "sed -i 's|^Image=.*|Image={{.REGISTRY}}:{{.DEV_TAG}}|'
+        {{.QUADLET_DIR}}/examiner.container &&
+        systemctl --user daemon-reload &&
+        systemctl --user restart examiner"
+      - echo "Deployed {{.DEV_TAG}} to {{.DEPLOY_HOST}}"
+
+  deploy-status:
+    desc: Check service status on cloud host
+    cmds:
+      - ssh {{.DEPLOY_HOST}} "systemctl --user status examiner"
+
+  deploy-logs:
+    desc: Show recent logs from cloud host
+    cmds:
+      - ssh {{.DEPLOY_HOST}} "journalctl --user -u examiner -n 50 --no-pager"
 
   clean:
     desc: Remove build artifacts
