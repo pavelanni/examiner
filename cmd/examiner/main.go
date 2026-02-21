@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -70,10 +71,14 @@ func main() {
 	}
 	handlerOpts := &slog.HandlerOptions{Level: logLevel}
 	var logHandler slog.Handler
-	if strings.ToLower(viper.GetString("log-format")) == "json" {
-		logHandler = slog.NewJSONHandler(os.Stderr, handlerOpts)
-	} else {
+	switch strings.ToLower(viper.GetString("log-format")) {
+	case "text":
 		logHandler = slog.NewTextHandler(os.Stderr, handlerOpts)
+	case "json":
+		logHandler = slog.NewJSONHandler(os.Stderr, handlerOpts)
+	default:
+		fmt.Fprintf(os.Stderr, "invalid --log-format %q: must be \"text\" or \"json\"\n", viper.GetString("log-format"))
+		os.Exit(1)
 	}
 	slog.SetDefault(slog.New(logHandler))
 
@@ -114,12 +119,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create LLM client.
+	// Create LLM client and verify connectivity.
 	llmClient := llm.New(
 		viper.GetString("llm-url"),
 		viper.GetString("llm-key"),
 		viper.GetString("llm-model"),
 	)
+	if err := llmClient.Ping(context.Background()); err != nil {
+		slog.Error("LLM health check failed", "url", viper.GetString("llm-url"), "error", err)
+		os.Exit(1)
+	}
+	slog.Info("LLM endpoint OK", "url", viper.GetString("llm-url"), "model", viper.GetString("llm-model"))
 
 	// Build exam config.
 	examCfg := model.ExamConfig{
