@@ -109,6 +109,26 @@ func (s *Store) migrate() error {
 		hash TEXT NOT NULL,
 		imported_at DATETIME NOT NULL
 	);
+
+	CREATE TABLE IF NOT EXISTS users (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		username      TEXT NOT NULL UNIQUE,
+		display_name  TEXT NOT NULL DEFAULT '',
+		password_hash TEXT NOT NULL,
+		role          TEXT NOT NULL DEFAULT 'student',
+		active        INTEGER NOT NULL DEFAULT 1,
+		created_at    DATETIME NOT NULL
+	);
+
+	CREATE TABLE IF NOT EXISTS auth_sessions (
+		id         TEXT PRIMARY KEY,
+		user_id    INTEGER NOT NULL REFERENCES users(id),
+		created_at DATETIME NOT NULL,
+		expires_at DATETIME NOT NULL
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
+		ON auth_sessions(expires_at);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -217,7 +237,7 @@ func (s *Store) GetBlueprint(id int64) (model.ExamBlueprint, error) {
 }
 
 // CreateSession creates an exam session with threads for each question.
-func (s *Store) CreateSession(blueprintID int64, questionIDs []int64) (int64, error) {
+func (s *Store) CreateSession(blueprintID int64, studentID int64, questionIDs []int64) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return 0, err
@@ -225,8 +245,8 @@ func (s *Store) CreateSession(blueprintID int64, questionIDs []int64) (int64, er
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.Exec(
-		`INSERT INTO exam_sessions (blueprint_id, student_id, status, started_at) VALUES (?, 1, 'in_progress', ?)`,
-		blueprintID, time.Now(),
+		`INSERT INTO exam_sessions (blueprint_id, student_id, status, started_at) VALUES (?, ?, 'in_progress', ?)`,
+		blueprintID, studentID, time.Now(),
 	)
 	if err != nil {
 		return 0, err
@@ -430,11 +450,11 @@ func (s *Store) GetGrade(sessionID int64) (*model.Grade, error) {
 }
 
 // FinalizeGrade sets the final grade after teacher review.
-func (s *Store) FinalizeGrade(sessionID int64, finalGrade float64) error {
+func (s *Store) FinalizeGrade(sessionID int64, finalGrade float64, reviewerID int64) error {
 	now := time.Now()
 	_, err := s.db.Exec(
-		`UPDATE grades SET final_grade = ?, reviewed_by = 1, reviewed_at = ? WHERE session_id = ?`,
-		finalGrade, now, sessionID,
+		`UPDATE grades SET final_grade = ?, reviewed_by = ?, reviewed_at = ? WHERE session_id = ?`,
+		finalGrade, reviewerID, now, sessionID,
 	)
 	if err != nil {
 		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
@@ -497,6 +517,27 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 // ListSessions returns all sessions.
 func (s *Store) ListSessions() ([]model.ExamSession, error) {
 	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sessions []model.ExamSession
+	for rows.Next() {
+		var sess model.ExamSession
+		if err := rows.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, sess)
+	}
+	return sessions, rows.Err()
+}
+
+// ListSessionsByUser returns sessions for a specific student.
+func (s *Store) ListSessionsByUser(userID int64) ([]model.ExamSession, error) {
+	rows, err := s.db.Query(
+		`SELECT id, blueprint_id, student_id, status, started_at, submitted_at
+		 FROM exam_sessions WHERE student_id = ? ORDER BY id DESC`, userID,
+	)
 	if err != nil {
 		return nil, err
 	}

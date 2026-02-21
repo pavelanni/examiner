@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/pavelanni/examiner/internal/i18n"
+	"github.com/pavelanni/examiner/internal/model"
 )
 
 templ Layout(title string) {
@@ -33,6 +34,7 @@ templ Layout(title string) {
 		</head>
 		<body>
 			<main class="container">
+				@userNav()
 				{ children... }
 			</main>
 		</body>
@@ -59,6 +61,32 @@ templ Nav(items []NavItem) {
 type NavItem struct {
 	Label string
 	URL   string
+}
+
+templ userNav() {
+	if user := model.UserFromContext(ctx); user != nil {
+		<nav>
+			<ul>
+				<li><a href="/">{ t(ctx, "Home") }</a></li>
+				if user.Role == model.UserRoleAdmin {
+					<li><a href="/admin/users">{ t(ctx, "Admin") }</a></li>
+				}
+				if user.Role == model.UserRoleTeacher || user.Role == model.UserRoleAdmin {
+					<li><a href="/review">{ t(ctx, "TeacherReview") }</a></li>
+				}
+			</ul>
+			<ul>
+				<li>{ user.DisplayName } <small>({ string(user.Role) })</small></li>
+				<li>
+					<form method="POST" action="/logout" style="margin:0;">
+						<button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.85rem;">
+							{ t(ctx, "Logout") }
+						</button>
+					</form>
+				</li>
+			</ul>
+		</nav>
+	}
 }
 
 // Convenience: get i18n.T via shorter alias usable in templ files.

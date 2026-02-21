@@ -1,0 +1,24 @@
+package views
+
+templ AdminQuestionsPage(flashMsg string, flashErr bool) {
+	@Layout(t(ctx, "AdminQuestions")) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "Admin")},
+			{Label: t(ctx, "AdminQuestions")},
+		})
+		<h1>{ t(ctx, "AdminQuestions") }</h1>
+		if flashMsg != "" {
+			if flashErr {
+				<p style="color: var(--pico-del-color);">{ flashMsg }</p>
+			} else {
+				<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
+			}
+		}
+		<form method="POST" action="/admin/questions" enctype="multipart/form-data">
+			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
+			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
+			<button type="submit">{ t(ctx, "UploadBtn") }</button>
+		</form>
+	}
+}

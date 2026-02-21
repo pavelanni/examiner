@@ -1,0 +1,17 @@
+package views
+
+templ LoginPage(errorMsg string) {
+	@Layout(t(ctx, "LoginTitle")) {
+		<h1>{ t(ctx, "LoginTitle") }</h1>
+		if errorMsg != "" {
+			<p style="color: var(--pico-del-color);">{ errorMsg }</p>
+		}
+		<form method="POST" action="/login">
+			<label for="username">{ t(ctx, "Username") }</label>
+			<input type="text" id="username" name="username" required autofocus/>
+			<label for="password">{ t(ctx, "Password") }</label>
+			<input type="password" id="password" name="password" required/>
+			<button type="submit">{ t(ctx, "LoginButton") }</button>
+		</form>
+	}
+}

@@ -29,19 +29,52 @@ func New(s *store.Store, l *llm.Client, cfg model.ExamConfig) (*Handler, error) 
 
 // Routes registers all HTTP routes.
 func (h *Handler) Routes(r chi.Router) {
-	r.Get("/", h.handleIndex)
-	r.Post("/exam/start", h.handleStartExam)
-	r.Get("/exam/{sessionID}", h.handleExamPage)
-	r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
-	r.Post("/exam/{sessionID}/submit", h.handleSubmit)
-	r.Get("/review", h.handleReviewList)
-	r.Get("/review/{sessionID}", h.handleReviewPage)
-	r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
-	r.Post("/review/{sessionID}/finalize", h.handleFinalize)
+	// Public routes.
+	r.Get("/login", h.handleLoginPage)
+	r.Post("/login", h.handleLogin)
+
+	// Authenticated routes.
+	r.Group(func(r chi.Router) {
+		r.Use(h.requireAuth)
+
+		r.Post("/logout", h.handleLogout)
+		r.Get("/", h.handleIndex)
+		r.Post("/exam/start", h.handleStartExam)
+		r.Get("/exam/{sessionID}", h.handleExamPage)
+		r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
+		r.Post("/exam/{sessionID}/submit", h.handleSubmit)
+
+		// Teacher + admin routes.
+		r.Group(func(r chi.Router) {
+			r.Use(requireRole(model.UserRoleTeacher, model.UserRoleAdmin))
+			r.Get("/review", h.handleReviewList)
+			r.Get("/review/{sessionID}", h.handleReviewPage)
+			r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
+			r.Post("/review/{sessionID}/finalize", h.handleFinalize)
+		})
+
+		// Admin-only routes.
+		r.Group(func(r chi.Router) {
+			r.Use(requireRole(model.UserRoleAdmin))
+			r.Get("/admin/users", h.handleAdminUsersPage)
+			r.Post("/admin/users", h.handleCreateUser)
+			r.Post("/admin/users/{userID}/toggle", h.handleToggleUserActive)
+			r.Get("/admin/questions", h.handleAdminQuestionsPage)
+			r.Post("/admin/questions", h.handleUploadQuestions)
+		})
+	})
 }
 
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	sessions, err := h.store.ListSessions()
+	user := model.UserFromContext(r.Context())
+
+	var sessions []model.ExamSession
+	var err error
+	if user.Role == model.UserRoleStudent {
+		sessions, err = h.store.ListSessionsByUser(user.ID)
+	} else {
+		sessions, err = h.store.ListSessions()
+	}
 	if err != nil {
 		slog.Error("failed to list sessions", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -121,7 +154,8 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		questionIDs = append(questionIDs, q.ID)
 	}
 
-	sessionID, err := h.store.CreateSession(1, questionIDs)
+	user := model.UserFromContext(r.Context())
+	sessionID, err := h.store.CreateSession(1, user.ID, questionIDs)
 	if err != nil {
 		slog.Error("failed to create session", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -142,6 +176,12 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		slog.Error("failed to get session view", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	user := model.UserFromContext(r.Context())
+	if user.Role == model.UserRoleStudent && view.Session.StudentID != user.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -167,6 +207,13 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	user := model.UserFromContext(r.Context())
+	if user.Role == model.UserRoleStudent && sess.StudentID != user.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
 	if sess.Status != model.StatusInProgress {
 		http.Error(w, "exam already submitted", http.StatusBadRequest)
 		return
@@ -425,7 +472,8 @@ func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store.FinalizeGrade(sessionID, finalGrade); err != nil {
+	user := model.UserFromContext(r.Context())
+	if err := h.store.FinalizeGrade(sessionID, finalGrade, user.ID); err != nil {
 		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
