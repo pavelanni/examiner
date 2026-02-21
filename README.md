@@ -69,7 +69,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per answer |
 | `--shuffle` | | `false` | Randomize question order |
-| `--admin-password` | | (generated) | Initial admin password (first run only) |
+| `--admin-password` | | (required) | Admin password (required on first run) |
 
 #### Environment variables
 
@@ -133,17 +133,10 @@ Provide a password via the `--admin-password` flag or the
 EXAMINER_ADMIN_PASSWORD=secret123 ./examiner --questions questions/physics_en.json
 ```
 
-If neither is set, the server generates a random 16-character password
-and prints it to stderr on first startup:
-
-```text
-========================================
-  Generated admin password: aB3xK9mPqR7wZ2nL
-========================================
-```
-
-The admin user is only created once (when the `users` table is empty).
-Changing the flag or variable on subsequent runs has no effect.
+The server will refuse to start if no admin password is set and no
+users exist in the database yet. The admin user is only created once
+(when the `users` table is empty). On subsequent runs the password
+setting is ignored.
 
 ### Adding users
 

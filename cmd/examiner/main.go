@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -265,10 +264,7 @@ func seedAdmin(db *store.Store, password string) error {
 	}
 
 	if password == "" {
-		password = generateRandomPassword(16)
-		fmt.Fprintf(os.Stderr, "\n========================================\n")
-		fmt.Fprintf(os.Stderr, "  Generated admin password: %s\n", password)
-		fmt.Fprintf(os.Stderr, "========================================\n\n")
+		return fmt.Errorf("admin password is required: set --admin-password flag or EXAMINER_ADMIN_PASSWORD env var")
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
@@ -289,16 +285,4 @@ func seedAdmin(db *store.Store, password string) error {
 
 	slog.Info("seeded default admin user", "username", "admin")
 	return nil
-}
-
-func generateRandomPassword(length int) string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, length)
-	if _, err := rand.Read(b); err != nil {
-		panic("crypto/rand failed: " + err.Error())
-	}
-	for i := range b {
-		b[i] = charset[int(b[i])%len(charset)]
-	}
-	return string(b)
 }
