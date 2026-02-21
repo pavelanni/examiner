@@ -17,14 +17,23 @@
 - **Runtime**: Podman Quadlet + systemd (user services)
 - **Reverse proxy**: Caddy with auto-TLS
 
+### Dual-language setup
+
+Two container instances run behind Caddy with path-based routing:
+
+- `/` and `/*` -> English instance (port 8080)
+- `/ru/` and `/ru/*` -> Russian instance (port 8081)
+
+Each instance has its own database, questions file, and env config.
+
 ### Deploy workflow
 
 ```bash
-task deploy          # build amd64, push to ghcr.io, update remote, restart
-task deploy-quick    # update tag + restart (no rebuild)
+task deploy          # build amd64, push to ghcr.io, update both instances
+task deploy-quick    # update tag + restart both (no rebuild)
 task deploy-quick DEV_TAG=abc1234   # rollback to specific version
-task deploy-status   # check remote service status
-task deploy-logs     # show remote logs
+task deploy-status   # check both service statuses
+task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 ```
 
 ### How deploy works
@@ -32,9 +41,9 @@ task deploy-logs     # show remote logs
 1. Builds `linux/amd64` image on Mac (cross-platform via Podman)
 1. Tags as `ghcr.io/pavelanni/examiner:<git-sha>`
 1. Pushes to ghcr.io
-1. SSHes to `examiner-01`, updates `Image=` line in
-   `~/.config/containers/systemd/examiner.container` via `sed`
-1. Runs `systemctl --user daemon-reload && systemctl --user restart examiner`
+1. SSHes to `examiner-01`, updates `Image=` line in both
+   `examiner-en.container` and `examiner-ru.container` via `sed`
+1. Runs `systemctl --user daemon-reload && systemctl --user restart examiner-en examiner-ru`
 
 ### Important notes
 
@@ -49,19 +58,23 @@ task deploy-logs     # show remote logs
   `https://github.com/users/pavelanni/packages/container/examiner/settings`
   and change visibility to **Public** (or `podman login ghcr.io` on
   `examiner-01`).
-- **Manual Quadlet edits on the host.** If you edit
-  `~/.config/containers/systemd/examiner.container` directly on
-  `examiner-01`, you must run `systemctl --user daemon-reload` before
-  restarting the service.
+- **Manual Quadlet edits on the host.** If you edit container files
+  directly on `examiner-01`, you must run
+  `systemctl --user daemon-reload` before restarting.
+- **Questions files on host.** Each instance mounts a separate questions
+  file: `~/examiner/questions-en.json` and `~/examiner/questions-ru.json`.
 
 ### Key deployment files
 
 | File | Purpose |
 | ---- | ------- |
-| `deploy/examiner.container` | Podman Quadlet systemd unit |
-| `deploy/examiner-data.volume` | Named volume for SQLite database |
-| `deploy/examiner.env.example` | Environment variable template |
-| `deploy/Caddyfile` | Caddy reverse proxy config |
+| `deploy/examiner-en.container` | English instance Quadlet unit (port 8080) |
+| `deploy/examiner-ru.container` | Russian instance Quadlet unit (port 8081) |
+| `deploy/examiner-en-data.volume` | English database volume |
+| `deploy/examiner-ru-data.volume` | Russian database volume |
+| `deploy/examiner-en.env.example` | English env template |
+| `deploy/examiner-ru.env.example` | Russian env template |
+| `deploy/Caddyfile` | Caddy reverse proxy with path routing |
 
 ## Project structure
 

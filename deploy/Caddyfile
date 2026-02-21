@@ -2,9 +2,14 @@
 # Caddy automatically provisions TLS via Let's Encrypt.
 
 examiner.example.com {
+	handle /ru {
+		redir /ru/ permanent
+	}
+	handle_path /ru/* {
+		reverse_proxy localhost:8081
+	}
 	reverse_proxy localhost:8080
 
-	# Optional: access logging.
 	log {
 		output file /var/log/caddy/examiner-access.log
 	}
