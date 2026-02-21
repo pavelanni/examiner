@@ -31,7 +31,7 @@ func init() {
 	// Define flags with shorthands where useful.
 	flag.StringP("addr", "a", ":8080", "HTTP listen address")
 	flag.String("db", "examiner.db", "SQLite database path")
-	flag.StringSliceP("questions", "q", []string{"questions.json"}, "Paths to questions JSON files (repeatable)")
+	flag.StringSliceP("questions", "q", []string{"questions/physics_en.json"}, "Paths to questions JSON files (repeatable)")
 	flag.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
 	flag.String("llm-key", "ollama", "API key for LLM")
 	flag.String("llm-model", "llama3.2", "LLM model name")

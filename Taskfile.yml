@@ -73,7 +73,7 @@ tasks:
         podman run --rm -it
         -p 8080:8080
         -v examiner-data:/data/db:Z
-        -v ./questions.json:/data/questions.json:ro,Z
+        -v ./questions/physics_en.json:/data/questions.json:ro,Z
         -e EXAMINER_DB=/data/db/examiner.db
         -e EXAMINER_QUESTIONS=/data/questions.json
         -e EXAMINER_LLM_URL=http://host.containers.internal:11434/v1

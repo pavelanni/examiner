@@ -34,14 +34,14 @@ templ generate
 go build -o examiner ./cmd/examiner/
 
 # With Ollama (default settings)
-./examiner --questions questions.json
+./examiner --questions questions/physics_en.json
 
 # With a remote API
 ./examiner \
   --llm-url https://api.openai.com/v1 \
   --llm-key "$OPENAI_API_KEY" \
   --llm-model gpt-4o \
-  --questions questions.json
+  --questions questions/physics_en.json
 ```
 
 On first run, note the generated admin password printed to stderr
@@ -59,7 +59,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | ---- | ----- | ------- | ----------- |
 | `--addr` | `-a` | `:8080` | HTTP listen address |
 | `--db` | | `examiner.db` | SQLite database path |
-| `--questions` | `-q` | `questions.json` | Path to questions JSON file |
+| `--questions` | `-q` | `questions/physics_en.json` | Path to questions JSON file |
 | `--llm-url` | | `http://localhost:11434/v1` | OpenAI-compatible API base URL |
 | `--llm-key` | | `ollama` | API key for the LLM |
 | `--llm-model` | | `llama3.2` | Model name |
@@ -94,7 +94,7 @@ directory, `~/.config/examiner/`, or `/etc/examiner/`:
 ```yaml
 addr: ":8080"
 db: examiner.db
-questions: questions_physics_ru.json
+questions: questions/physics_ru.json
 lang: ru
 llm-url: https://api.openai.com/v1
 llm-key: sk-...
@@ -127,10 +127,10 @@ Provide a password via the `--admin-password` flag or the
 
 ```bash
 # Via flag
-./examiner --admin-password secret123 --questions questions.json
+./examiner --admin-password secret123 --questions questions/physics_en.json
 
 # Via environment variable
-EXAMINER_ADMIN_PASSWORD=secret123 ./examiner --questions questions.json
+EXAMINER_ADMIN_PASSWORD=secret123 ./examiner --questions questions/physics_en.json
 ```
 
 If neither is set, the server generates a random 16-character password
@@ -175,9 +175,9 @@ flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
 ## Question format
 
 Questions are loaded from a JSON file on first startup
-(when the database is empty). See `questions.json` for the
-Kubernetes RBAC example or `questions_physics_ru.json` for a
-Russian-language high school physics set.
+(when the database is empty). See `questions/physics_en.json`
+for an English physics set or `questions/physics_ru.json` for
+a Russian-language version.
 
 ```json
 [
@@ -282,11 +282,11 @@ podman volume create examiner-data
 podman run --rm -it \
   -p 8080:8080 \
   -v examiner-data:/data/db:Z \
-  -v ./questions.json:/data/questions.json:ro,Z \
+  -v ./questions/physics_en.json:/data/questions.json:ro,Z \
   -e EXAMINER_DB=/data/db/examiner.db \
   -e EXAMINER_QUESTIONS=/data/questions.json \
   -e EXAMINER_LLM_URL=http://host.containers.internal:11434/v1 \
-  -e EXAMINER_LANG=ru \
+  -e EXAMINER_LANG=en \
   -e EXAMINER_ADMIN_PASSWORD=changeme \
   examiner:latest
 
@@ -294,7 +294,7 @@ podman run --rm -it \
 podman run --rm -it \
   -p 8080:8080 \
   -v examiner-data:/data/db:Z \
-  -v ./questions_physics_ru.json:/data/questions.json:ro,Z \
+  -v ./questions/physics_ru.json:/data/questions.json:ro,Z \
   -e EXAMINER_DB=/data/db/examiner.db \
   -e EXAMINER_QUESTIONS=/data/questions.json \
   -e EXAMINER_LLM_URL=https://api.openai.com/v1 \
@@ -342,7 +342,7 @@ On the target server (one-time):
 ```bash
 # Prepare directories and config.
 mkdir -p ~/examiner
-cp questions.json ~/examiner/
+cp questions/physics_en.json ~/examiner/
 cp deploy/examiner.env.example ~/examiner/examiner.env
 # Edit examiner.env with your LLM API key.
 

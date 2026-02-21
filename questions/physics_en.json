@@ -1,0 +1,450 @@
+[
+  {
+    "text": "State Newton's first law of motion. What is an inertial reference frame and why is this concept essential to the law's formulation?",
+    "difficulty": "easy",
+    "topic": "Newton's laws",
+    "rubric": "Must state the law of inertia: a body remains at rest or moves with constant velocity unless acted upon by an unbalanced force. Must define an inertial frame as one in which the first law holds. Should mention that in non-inertial frames, fictitious forces must be introduced.",
+    "model_answer": "Newton's first law (law of inertia): there exist reference frames in which a body remains at rest or continues moving at constant velocity in a straight line unless acted upon by an external unbalanced force. Such reference frames are called inertial. The concept is essential because Newton's laws are valid only in inertial frames. In non-inertial frames (e.g., a rotating carousel), additional fictitious forces must be introduced to describe motion correctly.",
+    "max_points": 10
+  },
+  {
+    "text": "State Newton's second law of motion. Write it mathematically and explain the physical meaning of each quantity in the equation.",
+    "difficulty": "easy",
+    "topic": "Newton's laws",
+    "rubric": "Statement: the acceleration of a body is directly proportional to the net force and inversely proportional to the mass. Formula: F = ma (vector form). Must explain: F is the net (resultant) force in newtons, m is mass in kilograms, a is acceleration in m/s². Should note the vector nature of the equation.",
+    "model_answer": "Newton's second law: the acceleration of a body is directly proportional to the net force acting on it and inversely proportional to its mass. Mathematically: F⃗ = m·a⃗, where F⃗ is the net (resultant) force — the vector sum of all forces acting on the body, measured in newtons (N); m is the body's mass, a measure of its inertia, in kilograms (kg); a⃗ is the acceleration vector, in m/s². This is a vector equation: the acceleration points in the same direction as the net force. The law is valid only in inertial reference frames.",
+    "max_points": 10
+  },
+  {
+    "text": "State Newton's third law of motion. Give examples and explain why two interacting bodies can move differently even though the forces are equal in magnitude.",
+    "difficulty": "easy",
+    "topic": "Newton's laws",
+    "rubric": "Statement: every action has an equal and opposite reaction, forces act on different bodies. Examples required. Must explain that different accelerations result from different masses (via the second law). Common misconception: thinking the forces cancel — they don't because they act on different bodies.",
+    "model_answer": "Newton's third law: when two bodies interact, they exert forces on each other that are equal in magnitude and opposite in direction: F⃗₁₂ = −F⃗₂₁. These forces are of the same nature, act along the same line, but are applied to different bodies. Examples: the Earth pulls an apple down while the apple pulls the Earth up; when walking, you push the ground backward and the ground pushes you forward. Although the forces are equal in magnitude, the bodies accelerate differently because they have different masses. By Newton's second law, a = F/m: for the same force, the smaller mass gains a larger acceleration. So the apple falls noticeably while Earth's acceleration is negligibly small.",
+    "max_points": 10
+  },
+  {
+    "text": "Two masses m₁ = 3 kg and m₂ = 5 kg are connected by a string over a massless frictionless pulley (Atwood machine). Find the acceleration of the system, the tension in the string, and compare the tension to the weight of each mass.",
+    "difficulty": "medium",
+    "topic": "Newton's laws",
+    "rubric": "Equations: m₂g − T = m₂a and T − m₁g = m₁a. Adding: a = (m₂ − m₁)g/(m₁ + m₂) = 2×10/8 = 2.5 m/s². T = m₁(g + a) = 3×12.5 = 37.5 N. Check: T = m₂(g − a) = 5×7.5 = 37.5 N. Tension is between the two weights (30 N and 50 N).",
+    "model_answer": "Apply Newton's second law to each mass (upward positive for m₁, downward positive for m₂): T − m₁g = m₁a and m₂g − T = m₂a. Adding both equations: (m₂ − m₁)g = (m₁ + m₂)a, so a = (m₂ − m₁)g/(m₁ + m₂) = (5 − 3)×10/(5 + 3) = 20/8 = 2.5 m/s². Tension: T = m₁(g + a) = 3×(10 + 2.5) = 37.5 N. Check: T = m₂(g − a) = 5×(10 − 2.5) = 37.5 N ✓. Weight of m₁ at rest: 30 N; weight of m₂: 50 N. The tension (37.5 N) lies between these values.",
+    "max_points": 10
+  },
+  {
+    "text": "A 4 kg block is pulled along a horizontal surface by a spring balance angled at 30° above the horizontal, reading 20 N. The coefficient of friction is μ = 0.25. Find the block's acceleration.",
+    "difficulty": "medium",
+    "topic": "Newton's laws",
+    "rubric": "Horizontal component: F·cos 30° = 20×(√3/2) ≈ 17.3 N. Vertical equilibrium: N = mg − F·sin 30° = 40 − 10 = 30 N. Friction: μN = 0.25×30 = 7.5 N. Newton's second law: ma = F·cos α − μN → a = (17.3 − 7.5)/4 ≈ 2.45 m/s².",
+    "model_answer": "Resolve the applied force F = 20 N into components: horizontal Fx = F·cos 30° = 20×(√3/2) ≈ 17.3 N; vertical Fy = F·sin 30° = 20×0.5 = 10 N. Vertical equilibrium: N + Fy = mg, so N = mg − Fy = 4×10 − 10 = 30 N. Friction force: f = μN = 0.25×30 = 7.5 N. Newton's second law horizontally: ma = Fx − f = 17.3 − 7.5 = 9.8 N. Acceleration: a = 9.8/4 ≈ 2.45 m/s².",
+    "max_points": 10
+  },
+  {
+    "text": "A 2 kg block on a smooth table is connected via a string over a pulley at the table's edge to a hanging 1 kg mass. Find the acceleration and string tension. How do the answers change if friction μ = 0.1 acts between the block and table?",
+    "difficulty": "medium",
+    "topic": "Newton's laws",
+    "rubric": "Without friction: a = m₂g/(m₁ + m₂) = 10/3 ≈ 3.33 m/s². T = m₁m₂g/(m₁ + m₂) = 20/3 ≈ 6.67 N. With friction: a = (m₂g − μm₁g)/(m₁ + m₂) = (10 − 2)/3 ≈ 2.67 m/s². T = m₂(g − a) ≈ 7.33 N.",
+    "model_answer": "Without friction. For the block (horizontal): T = m₁a. For the hanging mass (vertical): m₂g − T = m₂a. Adding: m₂g = (m₁ + m₂)a, so a = m₂g/(m₁ + m₂) = 1×10/(2 + 1) = 10/3 ≈ 3.33 m/s². T = m₁a = 2×10/3 = 20/3 ≈ 6.67 N. With friction (μ = 0.1). For the block: T − μm₁g = m₁a. For the hanging mass: m₂g − T = m₂a. Adding: m₂g − μm₁g = (m₁ + m₂)a, so a = (10 − 0.1×2×10)/3 = 8/3 ≈ 2.67 m/s². T = m₁(a + μg) = 2×(2.67 + 1) = 7.33 N. Friction reduces acceleration and increases tension.",
+    "max_points": 10
+  },
+  {
+    "text": "Two blocks of masses m₁ = 1 kg and m₂ = 3 kg on a smooth surface are connected by a light spring of stiffness k = 200 N/m. A constant force F = 8 N is applied to m₁. Find the acceleration and the spring extension in the steady-state regime.",
+    "difficulty": "hard",
+    "topic": "Newton's laws",
+    "rubric": "In steady state both blocks have the same acceleration: a = F/(m₁ + m₂) = 8/4 = 2 m/s². For m₂: kΔx = m₂a → Δx = m₂a/k = 3×2/200 = 0.03 m = 3 cm. Check via m₁: F − kΔx = m₁a → 8 − 6 = 2 N = 1×2 ✓.",
+    "model_answer": "In the steady-state regime, the spring has constant extension and both blocks move with the same acceleration. For the whole system: F = (m₁ + m₂)a, so a = F/(m₁ + m₂) = 8/(1 + 3) = 2 m/s². For m₂ alone (only the spring force acts on it): kΔx = m₂a, so Δx = m₂a/k = 3×2/200 = 0.03 m = 3 cm. Check for m₁: F − kΔx = m₁a → 8 − 200×0.03 = 8 − 6 = 2 N = 1×2 ✓. The spring extends by 3 cm and the system accelerates at 2 m/s².",
+    "max_points": 15
+  },
+  {
+    "text": "A body of mass m rests on an inclined plane with angle α. The plane begins accelerating horizontally with acceleration a (toward the slope). For what range of a does the body remain stationary on the plane? The coefficient of friction is μ.",
+    "difficulty": "hard",
+    "topic": "Newton's laws",
+    "rubric": "In the non-inertial frame, a pseudo-force ma acts horizontally. Normal force: N = m(g·cos α + a·sin α). Along the plane: |mg·sin α − ma·cos α| ≤ μN. This gives a range of a. Should discuss both cases (body tending to slide up or down).",
+    "model_answer": "In the reference frame of the accelerating plane (non-inertial), a pseudo-force ma acts horizontally (opposite to the acceleration). Projecting along the incline (up positive): ma·cos α − mg·sin α is the net component. Perpendicular to the incline: N = mg·cos α + ma·sin α. The body stays stationary when |ma·cos α − mg·sin α| ≤ μN = μ(mg·cos α + ma·sin α). This gives: g(tan α − μ)/(1 + μ·tan α) ≤ a ≤ g(tan α + μ)/(1 − μ·tan α), valid when μ·tan α < 1. Below the lower bound, the body slides down; above the upper bound, it slides up.",
+    "max_points": 15
+  },
+  {
+    "text": "What is friction? Describe the differences between static friction, kinetic (sliding) friction, and rolling friction. What factors determine the magnitude of kinetic friction?",
+    "difficulty": "easy",
+    "topic": "Forces in mechanics",
+    "rubric": "Definition of friction. Static friction: prevents motion from starting, varies from 0 to a maximum value. Kinetic friction: occurs during sliding, F = μN. Rolling friction: typically much smaller. Depends on friction coefficient and normal force. Independent of contact area (Amontons-Coulomb model).",
+    "model_answer": "Friction is a force that arises at the contact surface between two bodies and opposes their relative motion. Static friction acts when the body is not moving; it matches the applied force up to a maximum value: f_s ≤ μ_s·N. Kinetic (sliding) friction arises when the body slides: f_k = μ_k·N, where μ_k is the coefficient of kinetic friction and N is the normal force. It is roughly independent of contact area and speed (in the Amontons-Coulomb model). Rolling friction occurs when a body rolls on a surface and is typically much smaller than sliding friction — which is why wheels are so important in engineering.",
+    "max_points": 10
+  },
+  {
+    "text": "Explain the principle of superposition of forces. A body rests on an inclined plane at angle α. Resolve the gravitational force into components and determine the condition for the body to start sliding.",
+    "difficulty": "easy",
+    "topic": "Forces in mechanics",
+    "rubric": "Superposition: net effect of multiple forces equals the effect of their vector sum. Components: mg·sin α along the plane (downward), mg·cos α perpendicular. Sliding condition: mg·sin α > μmg·cos α → tan α > μ.",
+    "model_answer": "The principle of superposition states that when several forces act on a body simultaneously, their combined effect is equivalent to a single resultant force — the vector sum of all forces. On an inclined plane, gravity mg is resolved into: mg·sin α along the slope (pulling the body downward), and mg·cos α perpendicular to the slope (pressing the body against the surface). The normal force N = mg·cos α. Maximum static friction: f = μN = μmg·cos α. The body begins to slide when the component along the plane exceeds maximum friction: mg·sin α > μmg·cos α, which simplifies to tan α > μ.",
+    "max_points": 10
+  },
+  {
+    "text": "What is the elastic (spring) force? State Hooke's law and explain the limits of its applicability. Give examples of elastic forces in everyday life and engineering.",
+    "difficulty": "easy",
+    "topic": "Forces in mechanics",
+    "rubric": "Elastic force arises upon deformation and is directed opposite to the deformation. Hooke's law: F = kx (F = −kx in vector form). k is stiffness (N/m), x is deformation. Valid for small deformations within the elastic limit. Examples: springs, beam deflection, cable tension.",
+    "model_answer": "The elastic force arises when a body is deformed and acts in the direction opposite to the deformation. Hooke's law: F = kΔx, where k is the spring constant (stiffness) in N/m and Δx is the extension or compression. Hooke's law is valid only for small deformations that do not exceed the elastic limit of the material. Beyond this limit, permanent (plastic) deformation occurs and the linear relationship breaks down. Examples: a spring in a car suspension, the elastic deflection of a diving board, stretching of a rubber band, deformation of a ball during a bounce.",
+    "max_points": 10
+  },
+  {
+    "text": "A 5 kg body sits on a horizontal surface with kinetic friction coefficient μ = 0.3. What horizontal force is needed for the body to move at constant velocity? What happens if twice that force is applied?",
+    "difficulty": "medium",
+    "topic": "Forces in mechanics",
+    "rubric": "Constant velocity: F = μmg = 0.3×5×10 = 15 N. Double force (30 N): net = 30 − 15 = 15 N, a = 15/5 = 3 m/s². Must show application of Newton's second law. Use g = 10 m/s².",
+    "model_answer": "For constant velocity, acceleration is zero so the net force is zero. The applied force must equal friction: F = μmg = 0.3×5×10 = 15 N. If twice the force is applied, F₂ = 30 N: net force = 30 − 15 = 15 N. By Newton's second law: a = 15/5 = 3 m/s². The body accelerates uniformly at 3 m/s².",
+    "max_points": 10
+  },
+  {
+    "text": "Explain what weightlessness and overload (g-force) are. How are the weight of a body and the gravitational force related? In what situations does a body's weight equal zero?",
+    "difficulty": "medium",
+    "topic": "Forces in mechanics",
+    "rubric": "Weight is the force a body exerts on its support (or the tension in its suspension). Differs from gravity: weight acts on the support, gravity acts on the body. Weightlessness: weight = 0 (free fall, orbital motion). Overload: weight > mg (upward acceleration). Formula: W = m(g ± a).",
+    "model_answer": "Weight is the force a body exerts on its support or suspension due to gravity. It acts on the support, unlike gravity which acts on the body itself. At rest or constant velocity, weight equals the gravitational force: W = mg. With acceleration: W = m(g + a) for upward acceleration (overload/g-force), and W = m(g − a) for downward acceleration. Weightlessness occurs when a = g, i.e., the body is in free fall: W = 0. Examples of weightlessness: free fall, an astronaut in orbit (orbital motion is free fall along a curved path). Overload: an elevator accelerating upward; an aircraft pulling out of a dive.",
+    "max_points": 10
+  },
+  {
+    "text": "Two blocks of masses m₁ = 2 kg and m₂ = 3 kg rest on a rough horizontal surface (μ = 0.2) in contact. A force F = 25 N is applied horizontally to m₁. Find the system's acceleration and the contact force between the blocks.",
+    "difficulty": "medium",
+    "topic": "Forces in mechanics",
+    "rubric": "Total friction: μ(m₁ + m₂)g = 0.2×5×10 = 10 N. Acceleration: a = (F − friction)/(m₁ + m₂) = (25 − 10)/5 = 3 m/s². Contact force (for m₂): N₁₂ = m₂(a + μg) = 3×(3 + 2) = 15 N.",
+    "model_answer": "Treat both blocks as a system. Total friction: f = μ(m₁ + m₂)g = 0.2×5×10 = 10 N. System acceleration: a = (F − f)/(m₁ + m₂) = (25 − 10)/5 = 3 m/s². For the contact force, consider m₂ alone: forces are the contact force N₁₂ (forward) and friction μm₂g = 6 N (backward). Newton's second law: N₁₂ − μm₂g = m₂a → N₁₂ = m₂(a + μg) = 3×(3 + 2) = 15 N. Check via m₁: F − μm₁g − N₁₂ = m₁a → 25 − 4 − 15 = 6 = 2×3 ✓.",
+    "max_points": 10
+  },
+  {
+    "text": "A body rests on an inclined plane with angle α = 45° and friction coefficient μ = 0.5. A force F directed up the slope is applied. Sketch the graph of friction force vs. applied force F. At what F does the body begin moving upward?",
+    "difficulty": "hard",
+    "topic": "Forces in mechanics",
+    "rubric": "At F = 0 static friction is directed up: f = mg·sin α. As F increases, friction decreases to zero (at F = mg·sin α), then reverses direction and increases up to μmg·cos α. Body moves up when F > mg·sin α + μmg·cos α = mg(sin 45° + 0.5·cos 45°) = 3mg√2/4. Graph: piecewise linear with a kink at f = 0.",
+    "model_answer": "At F = 0, the body doesn't slide thanks to static friction directed up the slope: f = mg·sin 45° = mg√2/2 (balancing the gravity component). As F increases, friction decreases (f = mg·sin α − F), still directed upward. At F = mg·sin α, friction is zero. Beyond this, friction reverses direction (now opposing upward motion) and increases: f = F − mg·sin α, until it reaches the maximum μN = μmg·cos α. The body starts moving up when: F > mg·sin α + μmg·cos α = mg(sin 45° + 0.5·cos 45°) = mg(√2/2 + √2/4) = 3mg√2/4. The graph of friction vs. F is piecewise linear: decreasing from mg·sin α to 0, then increasing in the opposite direction to μmg·cos α.",
+    "max_points": 15
+  },
+  {
+    "text": "A 10 kg body is suspended by two strings, one horizontal and the other making an angle of 60° with the ceiling. Find the tension in each string. Which string would break first if they have equal breaking strength?",
+    "difficulty": "hard",
+    "topic": "Forces in mechanics",
+    "rubric": "Angled string: T₂·cos 30° = mg → T₂ = mg/cos 30° = 100/(√3/2) ≈ 115.5 N. Horizontal: T₁ = T₂·sin 30° ≈ 57.7 N. The angled string has higher tension and breaks first.",
+    "model_answer": "Let T₁ be the tension in the horizontal string and T₂ in the angled string (60° from ceiling = 30° from horizontal). Horizontal equilibrium: T₁ = T₂·sin 30°. Vertical equilibrium: T₂·cos 30° = mg. From the vertical equation: T₂ = mg/cos 30° = 100/(√3/2) = 200/√3 ≈ 115.5 N. From the horizontal equation: T₁ = T₂·sin 30° = 115.5×0.5 ≈ 57.7 N. The angled string carries greater tension (115.5 N > 57.7 N) and would break first if both have equal breaking strength.",
+    "max_points": 15
+  },
+  {
+    "text": "What is momentum? Define the impulse of a force. State the law of conservation of momentum and the conditions under which it applies.",
+    "difficulty": "easy",
+    "topic": "Momentum",
+    "rubric": "Momentum: p = mv (vector). Impulse: FΔt. Relationship: FΔt = Δp. Conservation law: in a closed system the total momentum is constant. Condition: no external forces (or zero net external force).",
+    "model_answer": "Momentum is a vector quantity equal to the product of a body's mass and velocity: p⃗ = mv⃗, measured in kg·m/s. The impulse of a force is the product of the force and the time interval over which it acts: J = FΔt. They are linked by Newton's second law in impulse form: F⃗Δt = Δp⃗ = mv⃗₂ − mv⃗₁. The law of conservation of momentum: in a closed system (where external forces are absent or their resultant is zero), the total momentum remains constant: Σp⃗ = const. It is widely applied to collisions, explosions, and recoil problems.",
+    "max_points": 10
+  },
+  {
+    "text": "Explain the difference between elastic and inelastic collisions. Which conservation laws hold in each case? Give everyday examples of each.",
+    "difficulty": "easy",
+    "topic": "Momentum",
+    "rubric": "Elastic: both momentum and kinetic energy are conserved. Inelastic: only momentum is conserved; kinetic energy is partly converted to internal energy. Perfectly inelastic: bodies stick together. Examples: billiard balls (elastic), car crash (inelastic).",
+    "model_answer": "In a perfectly elastic collision, both momentum and kinetic energy are conserved. The bodies bounce off each other. Examples: collisions between billiard balls, molecular collisions in an ideal gas. In an inelastic collision, only momentum is conserved; some kinetic energy is converted to internal energy (heat, deformation, sound). In a perfectly inelastic collision, the bodies stick together and the kinetic energy loss is maximized. Examples: a car crash (bodywork deforms), a ball of clay hitting a wall, a bullet embedding in a block.",
+    "max_points": 10
+  },
+  {
+    "text": "Why is the recoil of a rifle noticeable even though the bullet's mass is small? Explain using the law of conservation of momentum.",
+    "difficulty": "easy",
+    "topic": "Momentum",
+    "rubric": "Before firing, total momentum = 0. After: m_bullet·v_bullet + m_rifle·v_rifle = 0 → v_rifle = −m_bullet·v_bullet/m_rifle. Although recoil speed is small, the momentum is equal in magnitude to the bullet's. The kick is felt because this momentum is transferred in a very short time (large force).",
+    "model_answer": "Before the shot, the rifle-bullet system is at rest with zero total momentum. By conservation of momentum: m_bullet·v_bullet + m_rifle·v_rifle = 0, so v_rifle = −(m_bullet/m_rifle)·v_bullet. The rifle's momentum equals the bullet's in magnitude: |p_rifle| = |p_bullet|. Although the bullet is light (~10 g), its speed is enormous (~700 m/s), giving a substantial momentum: p = 0.01×700 = 7 kg·m/s. The same momentum is imparted to the rifle. The recoil is felt because this momentum is delivered over a very short time (Δt ~ 0.01 s), producing a large force: F = p/Δt = 7/0.01 = 700 N.",
+    "max_points": 10
+  },
+  {
+    "text": "Two balls of masses 2 kg and 3 kg move toward each other at 4 m/s and 2 m/s respectively. Find their velocity after a perfectly inelastic collision. In which direction does the combined mass move?",
+    "difficulty": "medium",
+    "topic": "Momentum",
+    "rubric": "Conservation of momentum: m₁v₁ − m₂v₂ = (m₁ + m₂)u. Substituting: 2×4 − 3×2 = 5u → 8 − 6 = 5u → u = 0.4 m/s. System moves in the direction of the first ball (larger momentum). Must handle signs correctly.",
+    "model_answer": "In a perfectly inelastic collision the bodies stick together. Take the first ball's direction as positive. Conservation of momentum: m₁v₁ − m₂v₂ = (m₁ + m₂)u → 2×4 − 3×2 = (2 + 3)×u → 8 − 6 = 5u → u = 2/5 = 0.4 m/s. The positive result means the combined mass moves in the direction of the first ball, which had the larger momentum (8 kg·m/s vs. 6 kg·m/s).",
+    "max_points": 10
+  },
+  {
+    "text": "A 10 kg shell flying horizontally at 200 m/s explodes into two fragments. The 4 kg fragment flies backward at 100 m/s. Find the velocity of the other fragment.",
+    "difficulty": "medium",
+    "topic": "Momentum",
+    "rubric": "Conservation of momentum: mv = m₁v₁ + m₂v₂. Forward is positive. 10×200 = 4×(−100) + 6×v₂ → 2000 = −400 + 6v₂ → v₂ = 2400/6 = 400 m/s forward.",
+    "model_answer": "Apply conservation of momentum, taking the original direction as positive. Before explosion: p₀ = mv = 10×200 = 2000 kg·m/s. After: first fragment (backward) has p₁ = 4×(−100) = −400 kg·m/s. Second fragment mass: m₂ = 10 − 4 = 6 kg. Conservation: p₀ = p₁ + p₂ → 2000 = −400 + 6v₂ → 6v₂ = 2400 → v₂ = 400 m/s. The second fragment flies forward at 400 m/s.",
+    "max_points": 10
+  },
+  {
+    "text": "A steel ball (100 g) falls from a height of 1 m onto a steel plate and bounces to 0.8 m. What fraction of kinetic energy was lost? Is this collision elastic?",
+    "difficulty": "medium",
+    "topic": "Momentum",
+    "rubric": "KE₁ = mgh₁ = 0.1×10×1 = 1 J. KE₂ = mgh₂ = 0.1×10×0.8 = 0.8 J. Loss: (1 − 0.8)/1 = 0.2 = 20%. Not perfectly elastic (energy lost) nor perfectly inelastic (ball bounced). Partially inelastic.",
+    "model_answer": "Kinetic energy just before impact equals potential energy at the drop height: KE₁ = mgh₁ = 0.1×10×1 = 1 J. Kinetic energy just after impact: KE₂ = mgh₂ = 0.1×10×0.8 = 0.8 J. Energy loss: ΔE = 1 − 0.8 = 0.2 J. Fraction lost: ΔE/KE₁ = 0.2/1 = 20%. The collision is not perfectly elastic (20% of kinetic energy was lost to deformation, heat, and sound) but not perfectly inelastic either (the ball bounced rather than sticking). It is a partially inelastic collision.",
+    "max_points": 10
+  },
+  {
+    "text": "A ball of mass m₁ strikes a stationary ball of mass m₂ in a head-on elastic collision at speed v. Find the velocities of both balls after collision. Analyze the special cases: m₁ = m₂, m₁ >> m₂, and m₁ << m₂.",
+    "difficulty": "hard",
+    "topic": "Momentum",
+    "rubric": "System: m₁v = m₁v₁ + m₂v₂ and m₁v²/2 = m₁v₁²/2 + m₂v₂²/2. Solution: v₁ = v(m₁ − m₂)/(m₁ + m₂), v₂ = 2m₁v/(m₁ + m₂). Cases: equal masses → v₁ = 0, v₂ = v; heavy striker → v₁ ≈ v, v₂ ≈ 2v; light striker → v₁ ≈ −v, v₂ ≈ 0.",
+    "model_answer": "Write conservation of momentum and kinetic energy: m₁v = m₁v₁ + m₂v₂ and m₁v² = m₁v₁² + m₂v₂². From the first: m₁(v − v₁) = m₂v₂. From the second: m₁(v² − v₁²) = m₂v₂², i.e., m₁(v − v₁)(v + v₁) = m₂v₂². Dividing: v + v₁ = v₂. Substituting back: v₁ = v(m₁ − m₂)/(m₁ + m₂), v₂ = 2m₁v/(m₁ + m₂). Special cases: m₁ = m₂ → v₁ = 0, v₂ = v (balls exchange velocities); m₁ >> m₂ → v₁ ≈ v, v₂ ≈ 2v (heavy ball barely slows, light one flies off at twice the speed); m₁ << m₂ → v₁ ≈ −v, v₂ ≈ 0 (light ball bounces back, heavy one stays put — like a ball off a wall).",
+    "max_points": 15
+  },
+  {
+    "text": "A rocket of mass M is at rest in deep space. Its engine ejects gas at speed u relative to the rocket. What fraction of the rocket's mass must be expelled as fuel for the rocket to reach speed v = u? Use the Tsiolkovsky rocket equation.",
+    "difficulty": "hard",
+    "topic": "Momentum",
+    "rubric": "Tsiolkovsky equation: v = u·ln(M₀/M). At v = u: ln(M₀/M) = 1 → M₀/M = e → M = M₀/e. Expelled fraction: (M₀ − M)/M₀ = 1 − 1/e ≈ 0.632 = 63.2%. Should derive or state the formula. Physical insight: more than half the rocket must be fuel.",
+    "model_answer": "The Tsiolkovsky rocket equation relates final velocity to mass ratio: v = u·ln(M₀/M), where M₀ is the initial mass, M is the final mass, and u is the exhaust velocity. Setting v = u: u = u·ln(M₀/M) → ln(M₀/M) = 1 → M₀/M = e ≈ 2.718. Final mass: M = M₀/e. Expelled gas mass: ΔM = M₀ − M₀/e = M₀(1 − 1/e). Fraction expelled: ΔM/M₀ = 1 − 1/e ≈ 1 − 0.368 = 0.632 = 63.2%. About 63% of the initial mass must be fuel to reach the exhaust speed. This is why rockets are mostly propellant by mass.",
+    "max_points": 15
+  },
+  {
+    "text": "Define mechanical work and power. Can a force do negative work? Give examples.",
+    "difficulty": "easy",
+    "topic": "Work and energy",
+    "rubric": "Work: W = Fs·cos θ. Can be positive, negative, or zero. Power: P = W/t = Fv·cos θ. Negative work occurs when the angle between force and displacement exceeds 90°. Examples: friction during sliding, gravity during upward motion.",
+    "model_answer": "Mechanical work is a scalar quantity equal to the product of the force magnitude, displacement magnitude, and the cosine of the angle between them: W = F·s·cos θ. Unit: joule (J). Power is the rate of doing work: P = W/t. Also P = F·v·cos θ. Unit: watt (W). Work can be negative when θ > 90° (cos θ < 0). Examples of negative work: kinetic friction always opposes motion (θ = 180°), so its work is negative; gravity does negative work when a body is lifted upward.",
+    "max_points": 10
+  },
+  {
+    "text": "What are kinetic and potential energy? State the law of conservation of mechanical energy and give an example of its application.",
+    "difficulty": "easy",
+    "topic": "Work and energy",
+    "rubric": "Kinetic: KE = mv²/2. Potential (gravitational): PE = mgh. Conservation: when only conservative forces act, E = KE + PE = const. Example: free fall, pendulum. Should note when it fails (friction present).",
+    "model_answer": "Kinetic energy is the energy of motion: KE = mv²/2. Potential energy is the energy of configuration; in a gravitational field: PE = mgh (h measured from a chosen reference level). The law of conservation of mechanical energy: when only conservative forces act (gravity, elasticity), the total mechanical energy is conserved: KE + PE = const. Example: a ball thrown vertically upward — as it rises, kinetic energy converts to potential; at the top, all energy is potential; on descent, the reverse. If friction (a non-conservative force) acts, mechanical energy decreases — some is converted to thermal energy.",
+    "max_points": 10
+  },
+  {
+    "text": "What are conservative and non-conservative forces? Give examples and explain why the work done by a conservative force is path-independent.",
+    "difficulty": "easy",
+    "topic": "Work and energy",
+    "rubric": "Conservative: work depends only on initial and final positions, not on path (gravity, elasticity). Non-conservative: work depends on path (friction). For conservative forces one can define potential energy. Work around a closed loop = 0.",
+    "model_answer": "Conservative forces are forces whose work depends only on the initial and final positions and is independent of the path taken. Examples: gravity, elastic (spring) force, electrostatic force. For these, the work done around any closed path is zero, and one can define a potential energy: W = −ΔPE. Non-conservative (dissipative) forces do work that depends on the path. Example: friction — the longer the path, the greater the work done (in magnitude). Work done by friction around a closed loop is not zero; energy is irreversibly converted to heat. This is why potential energy cannot be defined for non-conservative forces.",
+    "max_points": 10
+  },
+  {
+    "text": "A stone is thrown vertically upward at 20 m/s. Using energy conservation, find the maximum height. Verify your answer using kinematics.",
+    "difficulty": "medium",
+    "topic": "Work and energy",
+    "rubric": "Energy method: mv²/2 = mgh → h = v²/(2g) = 400/20 = 20 m. Kinematics: v² = v₀² − 2gh, v = 0 → h = v₀²/(2g) = 20 m. Results agree. Use g = 10 m/s².",
+    "model_answer": "Energy method: at the bottom, all energy is kinetic; at the top, all potential. By conservation: mv₀²/2 = mgh. Mass cancels: h = v₀²/(2g) = 20²/(2×10) = 400/20 = 20 m. Kinematics: at the top, v = 0. Using v² = v₀² − 2gh: 0 = 400 − 20h → h = 20 m. Both methods give the same answer: maximum height is 20 m.",
+    "max_points": 10
+  },
+  {
+    "text": "A spring with stiffness k = 500 N/m is compressed by 10 cm and a 50 g ball is placed against it. To what height will the ball rise after being launched vertically? Neglect air resistance.",
+    "difficulty": "medium",
+    "topic": "Work and energy",
+    "rubric": "Spring PE: E = kx²/2 = 500×0.01/2 = 2.5 J. Conversion to gravitational PE: mgh = 2.5 → h = 2.5/(0.05×10) = 5 m.",
+    "model_answer": "Energy stored in the compressed spring: E = kx²/2 = 500×(0.1)²/2 = 500×0.01/2 = 2.5 J. When released, all elastic energy converts to kinetic energy, then to gravitational potential energy at maximum height. By conservation: kx²/2 = mgh → h = kx²/(2mg) = 2.5/(0.05×10) = 2.5/0.5 = 5 m. The ball rises to a height of 5 m.",
+    "max_points": 10
+  },
+  {
+    "text": "A pendulum of length L = 2 m is displaced to 60° from the vertical and released. Find the speed at the lowest point and the string tension at that point if the bob's mass is m = 0.5 kg.",
+    "difficulty": "medium",
+    "topic": "Work and energy",
+    "rubric": "Height: h = L(1 − cos 60°) = 2×0.5 = 1 m. Speed from energy: v = √(2gh) = √20 ≈ 4.47 m/s. Tension at bottom: T − mg = mv²/L → T = m(g + v²/L) = 0.5×(10 + 10) = 10 N.",
+    "model_answer": "Height of the bob above the lowest point: h = L − L·cos 60° = L(1 − cos 60°) = 2×(1 − 0.5) = 1 m. By energy conservation: mgh = mv²/2 → v = √(2gh) = √(2×10×1) = √20 ≈ 4.47 m/s. At the lowest point, the bob moves in a circle; centripetal acceleration is directed upward. Newton's second law: T − mg = mv²/L. Tension: T = m(g + v²/L) = 0.5×(10 + 20/2) = 0.5×20 = 10 N. The tension at the lowest point is twice the weight of the bob.",
+    "max_points": 10
+  },
+  {
+    "text": "A 2 kg body slides from the top of an inclined plane of height 5 m, angle 30°, with friction coefficient μ = 0.2. Find its speed at the bottom.",
+    "difficulty": "hard",
+    "topic": "Work and energy",
+    "rubric": "Length: L = h/sin α = 5/0.5 = 10 m. N = mg·cos α. Friction work: W_f = −μmg·cos α·L. Energy equation: mgh + W_f = mv²/2. Compute: 100 − 20√3 ≈ 100 − 34.6 = 65.4. v = √65.4 ≈ 8.1 m/s.",
+    "model_answer": "Length of the incline: L = h/sin α = 5/sin 30° = 10 m. Normal force: N = mg·cos α = 2×10×cos 30° = 20×(√3/2) = 10√3 N. Work done by friction: W_f = −μNL = −0.2×10√3×10 = −20√3 ≈ −34.6 J. Energy equation (conservation with friction): mgh + W_f = mv²/2. Substituting: 100 − 34.6 = v² → v² = 65.4 → v ≈ 8.1 m/s.",
+    "max_points": 15
+  },
+  {
+    "text": "A 30 kg sled slides down a hill of height 10 m (slope angle 30°, μ = 0.1) and onto a horizontal stretch with the same friction coefficient. How far does the sled travel on the horizontal before stopping?",
+    "difficulty": "hard",
+    "topic": "Work and energy",
+    "rubric": "Slope length: L₁ = h/sin 30° = 20 m. Friction on slope: W₁ = −μmg·cos 30°·L₁ ≈ −520 J. On horizontal: W₂ = −μmg·L₂ = −30L₂. Energy: mgh + W₁ + W₂ = 0 → 3000 − 520 − 30L₂ = 0 → L₂ ≈ 82.7 m.",
+    "model_answer": "Slope length: L₁ = h/sin 30° = 10/0.5 = 20 m. Friction work on the slope: W₁ = −μmg·cos 30°·L₁ = −0.1×30×10×(√3/2)×20 = −300√3 ≈ −519.6 J. On the horizontal: W₂ = −μmg·L₂ = −0.1×30×10×L₂ = −30L₂. By energy conservation (with friction): mgh + W₁ + W₂ = 0 → 30×10×10 − 519.6 − 30L₂ = 0 → 3000 − 519.6 = 30L₂ → L₂ = 2480.4/30 ≈ 82.7 m. The sled travels about 83 m on the horizontal before stopping.",
+    "max_points": 15
+  },
+  {
+    "text": "State the law of universal gravitation. How can it be used to calculate the acceleration due to gravity on a planet's surface?",
+    "difficulty": "easy",
+    "topic": "Gravitation",
+    "rubric": "Law: F = GMm/r². G is the gravitational constant. Surface gravity: mg = GMm/R² → g = GM/R². Depends on planet mass and radius. May mention that g decreases with altitude.",
+    "model_answer": "The law of universal gravitation: every two bodies attract each other with a force proportional to the product of their masses and inversely proportional to the square of the distance between them: F = G·M·m/r², where G = 6.67×10⁻¹¹ N·m²/kg² is the gravitational constant. To find g on a planet's surface, equate gravitational force and weight: mg = GMm/R², where R is the planet's radius. Canceling m: g = GM/R². Thus g depends on the planet's mass and radius. For example, on the Moon g ≈ 1.6 m/s². With increasing altitude, g decreases: g(h) = GM/(R+h)².",
+    "max_points": 10
+  },
+  {
+    "text": "What is a gravitational field? Define gravitational field strength and explain how it relates to the acceleration due to gravity.",
+    "difficulty": "easy",
+    "topic": "Gravitation",
+    "rubric": "Gravitational field: a region where a mass experiences a gravitational force. Field strength: g⃗ = F⃗/m — force per unit test mass. Numerically equals the acceleration due to gravity. Units: N/kg = m/s².",
+    "model_answer": "A gravitational field is a region of space around any massive object where another mass experiences a gravitational force. Gravitational field strength is a vector quantity defined as the gravitational force per unit test mass: g⃗ = F⃗/m. For a point mass M: g = GM/r². The field strength is numerically equal to the acceleration due to gravity: if only gravity acts on a body, F = mg gives a = F/m = g. Units: N/kg, which is equivalent to m/s². The field strength vector points toward the center of the mass producing the field.",
+    "max_points": 10
+  },
+  {
+    "text": "Explain why all bodies fall with the same acceleration regardless of mass (in vacuum). How does this follow from the law of gravitation and Newton's second law?",
+    "difficulty": "easy",
+    "topic": "Gravitation",
+    "rubric": "Gravity: F = GMm/R². Second law: ma = GMm/R² → a = GM/R² = g. Mass m cancels; acceleration is independent of the body's mass. Related to the equivalence of inertial and gravitational mass.",
+    "model_answer": "The gravitational force on a body of mass m near Earth's surface is F = GMm/R². By Newton's second law: ma = GMm/R². The mass m cancels from both sides: a = GM/R² = g. The acceleration is independent of the body's mass — it depends only on Earth's mass and radius. This is possible because the mass appearing in the law of gravitation (gravitational mass) equals the mass in Newton's second law (inertial mass). This experimentally confirmed fact, known as the equivalence principle, forms the foundation of Einstein's general theory of relativity.",
+    "max_points": 10
+  },
+  {
+    "text": "At what altitude above Earth's surface does the acceleration due to gravity decrease by a factor of 4? (Earth's radius R = 6400 km.) What would be the orbital period of a satellite at that altitude?",
+    "difficulty": "medium",
+    "topic": "Gravitation",
+    "rubric": "g(h) = GM/(R+h)² = g/4 when (R+h)² = 4R² → R+h = 2R → h = R = 6400 km. Period: T = 2π(R+h)/v, where v = √(g(h)·(R+h)). Calculate T ≈ 3.9 h.",
+    "model_answer": "At height h: g(h) = GM/(R+h)². Setting g(h) = g/4: GM/(R+h)² = GM/(4R²) → (R+h)² = 4R² → R+h = 2R → h = R = 6400 km. Satellite at this orbit: gravity provides centripetal acceleration: g(h) = v²/(R+h). Speed: v = √(g(h)·(R+h)) = √(2.5×12.8×10⁶) = √(32×10⁶) ≈ 5657 m/s. Period: T = 2π(R+h)/v = 2π×12.8×10⁶/5657 ≈ 14,220 s ≈ 3.95 hours — roughly twice the ISS orbital period.",
+    "max_points": 10
+  },
+  {
+    "text": "Derive the expression for the first cosmic velocity (minimum orbital speed) for a satellite at height h. Explain its physical meaning.",
+    "difficulty": "medium",
+    "topic": "Gravitation",
+    "rubric": "Gravitational force provides centripetal acceleration: GMm/(R+h)² = mv²/(R+h). So v = √(GM/(R+h)). For h ≈ 0: v₁ = √(gR) ≈ 7.9 km/s. Physical meaning: minimum speed for circular orbit near the surface. Use g = GM/R².",
+    "model_answer": "On a circular orbit, gravity is the centripetal force: GMm/(R+h)² = mv²/(R+h), where M is Earth's mass, R is Earth's radius, h is the orbit height. Canceling m and (R+h): v = √(GM/(R+h)). For a low orbit (h << R): v₁ = √(GM/R). Since g = GM/R²: v₁ = √(gR) = √(10×6.4×10⁶) ≈ 7.9 km/s. The first cosmic velocity is the minimum speed that must be given to a body near Earth's surface (horizontally) for it to become a satellite on a circular orbit.",
+    "max_points": 10
+  },
+  {
+    "text": "Two identical satellites orbit Earth at h₁ = 200 km and h₂ = 2000 km. Compare their speeds, orbital periods, and accelerations.",
+    "difficulty": "medium",
+    "topic": "Gravitation",
+    "rubric": "v = √(GM/(R+h)), T = 2π(R+h)^(3/2)/√(GM), a = GM/(R+h)². The lower satellite is faster, has a shorter period, and higher acceleration. Quantitative ratios using r₁/r₂ = 6600/8400.",
+    "model_answer": "Let r₁ = R + h₁ = 6400 + 200 = 6600 km, r₂ = R + h₂ = 6400 + 2000 = 8400 km. Speeds: v = √(GM/r), so v₁/v₂ = √(r₂/r₁) = √(8400/6600) ≈ 1.13. The lower satellite is ~13% faster. Periods: T = 2πr^(3/2)/√(GM), so T₁/T₂ = (r₁/r₂)^(3/2) = (6600/8400)^(3/2) ≈ 0.70. The lower satellite's period is ~70% of the higher one. Accelerations: a = GM/r², so a₁/a₂ = (r₂/r₁)² = (8400/6600)² ≈ 1.62. The lower satellite has ~1.6× greater acceleration. Conclusion: closer satellites orbit faster, have shorter periods, and experience stronger gravitational acceleration.",
+    "max_points": 10
+  },
+  {
+    "text": "Derive the formula for escape velocity (second cosmic velocity). Why is it exactly √2 times the orbital velocity? What is the physical meaning of the third cosmic velocity?",
+    "difficulty": "hard",
+    "topic": "Gravitation",
+    "rubric": "Escape velocity from E = KE + PE = 0 (parabolic orbit): mv²/2 − GMm/R = 0 → v₂ = √(2GM/R) = √2·v₁. The √2 factor comes from needing to fully overcome the gravitational field (E = 0). Third cosmic velocity: speed to leave the Solar System, ≈ 16.7 km/s from Earth's surface.",
+    "model_answer": "Escape velocity is the minimum speed at which a body leaves a planet's gravitational field (reaches infinity with zero residual speed). At infinity, both KE and PE are zero: E = mv²/2 − GMm/R = 0 → v₂ = √(2GM/R). Comparing with orbital velocity v₁ = √(GM/R): v₂ = √2·v₁ ≈ 11.2 km/s. The √2 factor has a deep meaning: circular orbit requires KE = GMm/(2R), while escape requires twice that: KE = GMm/R. The third cosmic velocity (~16.7 km/s) is the speed needed to leave the Solar System entirely. It accounts for both Earth's and the Sun's gravity, as well as Earth's orbital velocity.",
+    "max_points": 15
+  },
+  {
+    "text": "A planet has twice Earth's mass and 1.5 times its radius. Find the surface gravity, first and second cosmic velocities on this planet (express in terms of Earth's values).",
+    "difficulty": "hard",
+    "topic": "Gravitation",
+    "rubric": "g' = GM'/R'² = G·2M/(1.5R)² = 2g/2.25 = 8g/9 ≈ 0.89g. v₁' = √(g'R') = v₁·√(4/3) ≈ 1.15v₁. v₂' = √2·v₁' ≈ 1.15v₂.",
+    "model_answer": "Let M' = 2M, R' = 1.5R. Surface gravity: g' = GM'/R'² = G·2M/(1.5R)² = 2GM/(2.25R²) = (2/2.25)g = 8g/9 ≈ 0.89g ≈ 8.9 m/s². First cosmic velocity: v₁' = √(g'R') = √((8g/9)·1.5R) = √(12gR/9) = √(4gR/3) = v₁·√(4/3) ≈ 1.155v₁ ≈ 9.1 km/s. Second cosmic velocity: v₂' = √2·v₁' = v₂·√(4/3) ≈ 1.155v₂ ≈ 12.9 km/s. Despite greater mass, the larger radius partially offsets the gravity increase — g actually decreases, but cosmic velocities increase because radius appears as v₁ = √(gR).",
+    "max_points": 15
+  },
+  {
+    "text": "What is centripetal acceleration? Derive the formula for centripetal acceleration in uniform circular motion.",
+    "difficulty": "easy",
+    "topic": "Circular motion",
+    "rubric": "Centripetal acceleration is directed toward the center. Formula: a = v²/R = ω²R = 4π²R/T². Derivation via change in velocity vector over a small time interval. Speed is constant; direction changes.",
+    "model_answer": "In uniform circular motion the speed is constant but the direction of velocity continuously changes. This change in direction constitutes an acceleration directed toward the center of the circle — centripetal acceleration. Derivation: in a small time Δt, the body traverses arc Δs = vΔt, and the velocity vector rotates through angle Δφ = Δs/R = vΔt/R. The magnitude of the velocity change: |Δv| = v·Δφ = v²Δt/R. Acceleration: a = |Δv|/Δt = v²/R. Also: a = ω²R = (2π/T)²R = 4π²R/T², where ω is the angular velocity and T is the period. Centripetal acceleration is always directed toward the center, perpendicular to the velocity vector.",
+    "max_points": 10
+  },
+  {
+    "text": "What is angular velocity? How is it related to linear velocity and the period of revolution? What is Earth's angular velocity about its axis?",
+    "difficulty": "easy",
+    "topic": "Circular motion",
+    "rubric": "ω = Δφ/Δt (rad/s). Relations: v = ωR, ω = 2π/T = 2πν. Earth's angular velocity: ω = 2π/(24×3600) ≈ 7.27×10⁻⁵ rad/s. All points of a rigid body share the same angular velocity but have different linear velocities.",
+    "model_answer": "Angular velocity is the rate of change of angle: ω = Δφ/Δt, measured in rad/s. Relation to linear velocity: v = ωR, where R is the radius of the circular path. Relation to period: ω = 2π/T. Relation to frequency: ω = 2πν. Earth's angular velocity about its axis: T = 24 h = 86,400 s, so ω = 2π/86,400 ≈ 7.27×10⁻⁵ rad/s. Important property: all points of a rotating rigid body have the same angular velocity, but linear velocity increases with distance from the axis. At the equator v ≈ 465 m/s; at the poles v = 0.",
+    "max_points": 10
+  },
+  {
+    "text": "A wheel of radius 0.5 m rotates at 10 rev/s. Find the linear speed, centripetal acceleration, and period of a point on the rim.",
+    "difficulty": "easy",
+    "topic": "Circular motion",
+    "rubric": "T = 1/ν = 0.1 s. ω = 2πν = 20π ≈ 62.8 rad/s. v = ωR = 62.8×0.5 = 31.4 m/s. a = ω²R = v²/R ≈ 1975 m/s².",
+    "model_answer": "Period: T = 1/ν = 1/10 = 0.1 s. Angular velocity: ω = 2πν = 2π×10 = 20π ≈ 62.8 rad/s. Linear speed at the rim: v = ωR = 62.8×0.5 = 31.4 m/s ≈ 113 km/h. Centripetal acceleration: a = v²/R = 31.4²/0.5 ≈ 1975 m/s² ≈ 200g. Even at moderate rotation rates, centripetal acceleration can be enormous — this is why centrifuges are effective for separation.",
+    "max_points": 10
+  },
+  {
+    "text": "A 1200 kg car travels over a convex bridge of radius 50 m. What is the maximum speed at the top of the bridge so the car doesn't leave the road?",
+    "difficulty": "medium",
+    "topic": "Circular motion",
+    "rubric": "At the top: mg − N = mv²/R. Liftoff when N = 0: mg = mv²/R → v = √(gR) = √(10×50) = √500 ≈ 22.4 m/s. Must write Newton's second law for circular motion and state the liftoff condition.",
+    "model_answer": "At the top of the convex bridge, the car experiences gravity mg (downward) and normal force N (upward). Centripetal acceleration is directed downward (toward the center of curvature). Newton's second law: mg − N = mv²/R. The car leaves the road when N = 0: mg = mv²/R → v² = gR → v = √(gR) = √(10×50) = √500 ≈ 22.4 m/s ≈ 80 km/h. Above this speed, gravity cannot provide the required centripetal acceleration, and the car lifts off.",
+    "max_points": 10
+  },
+  {
+    "text": "A car rounds a flat curve of radius 100 m. The friction coefficient is μ = 0.4. Find the maximum safe speed. How does the answer change if the road is banked at 15°?",
+    "difficulty": "medium",
+    "topic": "Circular motion",
+    "rubric": "Flat: μmg = mv²/R → v = √(μgR) = √(0.4×10×100) = 20 m/s. Banked: combine friction and normal force components. Result: v ≈ 27.4 m/s.",
+    "model_answer": "On a flat road, friction provides the centripetal force: μmg = mv²/R → v = √(μgR) = √(0.4×10×100) = √400 = 20 m/s = 72 km/h. On a banked road (angle β = 15°), both friction and the normal force contribute. Projecting horizontally (toward center): N·sin β + f·cos β = mv²/R. Vertically: N·cos β − f·sin β = mg. With f = μN: v² = gR·(sin β + μ·cos β)/(cos β − μ·sin β) = 10×100×(0.259 + 0.386)/(0.966 − 0.104) = 1000×0.645/0.862 ≈ 748. v ≈ 27.4 m/s ≈ 99 km/h. Banking increases the safe speed by nearly 37%.",
+    "max_points": 10
+  },
+  {
+    "text": "A ball on a string of length L = 0.5 m swings as a conical pendulum with the string at 30° to the vertical. Find the ball's speed, period, and string tension (mass 200 g).",
+    "difficulty": "medium",
+    "topic": "Circular motion",
+    "rubric": "Radius: r = L·sin 30° = 0.25 m. Vertical: T·cos 30° = mg → T = mg/cos 30° ≈ 2.31 N. Horizontal: T·sin 30° = mv²/r. Solve for v ≈ 1.2 m/s. Period ≈ 1.31 s.",
+    "model_answer": "Circular radius: r = L·sin 30° = 0.5×0.5 = 0.25 m. Vertical equilibrium: T·cos 30° = mg → T = mg/cos 30° = 0.2×10/(√3/2) = 2/(√3/2) = 4/√3 ≈ 2.31 N. Horizontal (centripetal): T·sin 30° = mv²/r → v² = T·sin 30°·r/m = 2.31×0.5×0.25/0.2 = 1.44 → v ≈ 1.2 m/s. Period: P = 2πr/v = 2π×0.25/1.2 ≈ 1.31 s. Check: P = 2π√(L·cos α/g) = 2π√(0.5×cos 30°/10) = 2π√(0.0433) ≈ 1.31 s ✓.",
+    "max_points": 10
+  },
+  {
+    "text": "A 0.5 kg body on a 1 m string swings in a vertical circle. Find the minimum speed at the top for the string to remain taut, and the string tension at the bottom at that speed.",
+    "difficulty": "hard",
+    "topic": "Circular motion",
+    "rubric": "Top: mg + T = mv²/L, at T = 0: v_top = √(gL) = √10 ≈ 3.16 m/s. Bottom (energy conservation): v_bottom² = v_top² + 4gL = 10 + 40 = 50. T − mg = mv²_bottom/L → T = m(v²_bottom/L + g) = 0.5×(50 + 10) = 30 N = 6mg.",
+    "model_answer": "At the top, both gravity mg and tension T point toward the center: mg + T = mv²_top/L. Minimum speed when T = 0: mg = mv²_top/L → v_top = √(gL) = √(10×1) ≈ 3.16 m/s. Speed at the bottom via energy conservation: mv²_bottom/2 = mv²_top/2 + mg·2L → v²_bottom = v²_top + 4gL = 10 + 40 = 50 m²/s². At the bottom: T − mg = mv²_bottom/L → T = m(v²_bottom/L + g) = 0.5×(50/1 + 10) = 0.5×60 = 30 N. Note that T = 6mg at the minimum rotation speed.",
+    "max_points": 15
+  },
+  {
+    "text": "A coin of mass m sits on a rotating horizontal turntable at distance r from the center. The friction coefficient is μ. What is the maximum r before the coin slides off? How does the answer change if the turntable is tilted at angle α and the coin is at the highest point?",
+    "difficulty": "hard",
+    "topic": "Circular motion",
+    "rubric": "Horizontal: μmg = mω²r → r = μg/ω². Tilted (top point): friction must oppose both gravity component and centripetal tendency. Simplified: μmg·cos α ≥ mω²r + mg·sin α → r ≤ g(μ·cos α − sin α)/ω². Requires μ > tan α.",
+    "model_answer": "On a horizontal turntable, friction provides the centripetal force. At the limit: μmg = mω²r → r_max = μg/ω². On a tilted turntable with the coin at the highest point: gravity component mg·sin α pulls the coin down the slope. Centripetal force mω²r is directed away from the center (downhill at the top). Normal force: N ≈ mg·cos α. Friction must resist both: μmg·cos α ≥ mω²r + mg·sin α (simplified model). So: r_max = g(μ·cos α − sin α)/ω². The coin stays only if μ > tan α; otherwise it slides at any r. The tilt reduces the maximum radius compared to a horizontal turntable.",
+    "max_points": 15
+  },
+  {
+    "text": "What is the moment (torque) of a force? State the conditions for equilibrium of a rigid body. Give examples.",
+    "difficulty": "easy",
+    "topic": "Statics",
+    "rubric": "Torque: τ = F·d (force × lever arm). Two equilibrium conditions: 1) net force = 0 (no translational acceleration); 2) net torque about any axis = 0 (no rotation). Examples: lever, beam on supports, seesaw.",
+    "model_answer": "The moment (torque) of a force about an axis is the product of the force magnitude and its lever arm (the perpendicular distance from the axis to the line of action of the force): τ = F·d. Unit: N·m. Equilibrium conditions for a rigid body: 1) The vector sum of all forces is zero: ΣF⃗ = 0 — no translational acceleration. 2) The sum of all torques about any axis is zero: Στ = 0 — no rotational acceleration. Examples: a lever in balance (F₁d₁ = F₂d₂), children of different weights on a seesaw sitting at different distances from the pivot, a bridge on two supports.",
+    "max_points": 10
+  },
+  {
+    "text": "What is the center of mass (center of gravity) of a body? How do you find the center of mass of a two-body system? Where is the center of mass of simple uniform shapes?",
+    "difficulty": "easy",
+    "topic": "Statics",
+    "rubric": "Center of mass: point where total mass can be considered concentrated. For two bodies: x_cm = (m₁x₁ + m₂x₂)/(m₁ + m₂). For uniform shapes: at the geometric center (rod, disc, sphere). For composite bodies: calculated from the formula.",
+    "model_answer": "The center of mass (center of gravity) is the point about which the total gravitational torque of all parts is zero. For a two-body system: x_cm = (m₁x₁ + m₂x₂)/(m₁ + m₂). The center of mass divides the distance between the bodies in the inverse ratio of their masses — closer to the heavier body. For uniform bodies of simple shape, the center of mass coincides with the geometric center: midpoint of a rod, center of a disc, center of a sphere, intersection of diagonals of a rectangle. For irregular shapes, the center of mass can be found experimentally by suspending the body from different points — the intersection of vertical lines gives the center of mass.",
+    "max_points": 10
+  },
+  {
+    "text": "Explain the lever rule. A 1.5 m lever is balanced when the fulcrum is 0.5 m from one end. A 20 kg mass hangs from that end. What mass hangs from the other end?",
+    "difficulty": "easy",
+    "topic": "Statics",
+    "rubric": "Lever rule: F₁·d₁ = F₂·d₂ (equal torques). d₁ = 0.5 m, d₂ = 1.0 m. m₁g·d₁ = m₂g·d₂ → 20×0.5 = m₂×1.0 → m₂ = 10 kg. Neglect the lever's own weight.",
+    "model_answer": "The lever rule (Archimedes): a lever is in equilibrium when the torques about the fulcrum are equal: F₁·d₁ = F₂·d₂. Solution: d₁ = 0.5 m (arm of the first mass), d₂ = 1.5 − 0.5 = 1.0 m (arm of the second mass). Equilibrium: m₁g·d₁ = m₂g·d₂ → 20×0.5 = m₂×1.0 → m₂ = 10 kg. A 10 kg mass hangs from the other end. The force advantage is proportional to the arm ratio: twice the arm length balances twice the load.",
+    "max_points": 10
+  },
+  {
+    "text": "A uniform beam of length 4 m and mass 20 kg rests on two supports at its ends. A 30 kg load sits 1 m from the left support. Find the reaction forces at both supports.",
+    "difficulty": "medium",
+    "topic": "Statics",
+    "rubric": "Sum of forces: N₁ + N₂ = (20+30)g = 500 N. Torques about left support: 30g×1 + 20g×2 = N₂×4 → 300 + 400 = 4N₂ → N₂ = 175 N, N₁ = 325 N.",
+    "model_answer": "Let N₁ be the left support reaction and N₂ the right. Force equilibrium (vertical): N₁ + N₂ = (20 + 30)×10 = 500 N. Torques about the left support (clockwise positive): load: 30×10×1 = 300 N·m; beam (center of mass at 2 m): 20×10×2 = 400 N·m; right support: −N₂×4. Equation: 300 + 400 − 4N₂ = 0 → N₂ = 175 N, N₁ = 500 − 175 = 325 N.",
+    "max_points": 10
+  },
+  {
+    "text": "A 5 m ladder of mass 15 kg leans against a smooth vertical wall at 60° to the floor. The friction coefficient between ladder and floor is μ = 0.3. How high can an 80 kg person climb before the ladder starts to slip?",
+    "difficulty": "medium",
+    "topic": "Statics",
+    "rubric": "Forces: ladder weight (center at 2.5 m), person's weight (at distance x), floor normal, wall normal, floor friction = μN_floor. Torques about the base. Limiting equilibrium: N_wall = μN_floor. N_floor = (15+80)g = 950 N. Solve for x, then h = x·sin 60°.",
+    "model_answer": "Let x be the distance from the base along the ladder to the person. Forces: N_floor (up), friction f = μN_floor (toward wall), N_wall (horizontal, away from wall), weights: m_Lg at L/2 and m_Pg at x. Vertical: N_floor = (m_L + m_P)g = (15 + 80)×10 = 950 N. Horizontal: N_wall = μN_floor = 0.3×950 = 285 N (at the slip limit). Torques about the base: N_wall·L·sin 60° = m_Lg·(L/2)·cos 60° + m_Pg·x·cos 60°. 285×5×0.866 = 150×2.5×0.5 + 800×x×0.5. 1234 = 187.5 + 400x → 400x = 1046.5 → x ≈ 2.62 m. Height: h = x·sin 60° = 2.62×0.866 ≈ 2.27 m. The person can climb to about 2.3 m.",
+    "max_points": 10
+  },
+  {
+    "text": "A crane lifts a 500 kg load. Its 10 m boom is inclined at 45° to the horizontal. A horizontal cable is attached to the top of the boom. Find the cable tension and the hinge reaction at the boom's base. Neglect the boom's mass.",
+    "difficulty": "medium",
+    "topic": "Statics",
+    "rubric": "Torques about hinge: T·L·sin 45° = mg·L·cos 45° → T = mg = 5000 N. Hinge reaction: horizontal = T = 5000 N, vertical = mg = 5000 N. Magnitude: R = √(5000² + 5000²) = 5000√2 ≈ 7070 N.",
+    "model_answer": "Torques about the hinge (boom base). Load torque: mg·L·cos 45° (clockwise). Cable torque: T·L·sin 45° (counterclockwise). Equilibrium: T·L·sin 45° = mg·L·cos 45°. Since sin 45° = cos 45°: T = mg = 500×10 = 5000 N. Hinge reaction: horizontally: Rx = T = 5000 N; vertically: Ry = mg = 5000 N. Magnitude: R = √(Rx² + Ry²) = √(5000² + 5000²) = 5000√2 ≈ 7070 N, directed at 45° to the horizontal.",
+    "max_points": 10
+  },
+  {
+    "text": "A uniform cube sits on an inclined plane. At what angle of inclination does it topple? At what angle does it slide? The friction coefficient is μ = 0.6. Which happens first — toppling or sliding?",
+    "difficulty": "hard",
+    "topic": "Statics",
+    "rubric": "Toppling: when center of mass is above the edge. For a cube of side a: tan α_topple = a/a = 1 → α_topple = 45°. Sliding: tan α_slide = μ = 0.6 → α_slide ≈ 31°. Sliding occurs first (31° < 45°). Toppling first requires μ > 1 (for a cube).",
+    "model_answer": "Toppling occurs when the vertical projection of the center of mass passes beyond the lower edge of the base. For a cube of side a, the center of mass is at height a/2 and distance a/2 from the lower edge. Toppling angle: tan α = (a/2)/(a/2) = 1 → α_topple = 45°. Sliding occurs when: mg·sin α > μmg·cos α → tan α > μ = 0.6 → α_slide = arctan(0.6) ≈ 31°. Since α_slide (31°) < α_topple (45°), the cube slides before it can topple. For toppling to occur first, we would need μ > 1, which is possible (e.g., rubber on concrete) but uncommon.",
+    "max_points": 15
+  },
+  {
+    "text": "An L-shaped structure is welded from two uniform rods: a horizontal one (3 m, 6 kg) and a vertical one (4 m, 8 kg). The vertical rod is attached to the left end of the horizontal rod. Find the center of mass of the structure.",
+    "difficulty": "hard",
+    "topic": "Statics",
+    "rubric": "Choose origin at base of vertical rod. Horizontal rod center: (1.5, 4). Vertical rod center: (0, 2). System CM: x_cm = (6×1.5 + 8×0)/(6+8) = 9/14 ≈ 0.64 m; y_cm = (6×4 + 8×2)/14 = 40/14 ≈ 2.86 m.",
+    "model_answer": "Choose the origin at the base of the vertical rod (bottom-left corner). The horizontal rod runs from (0, 4) to (3, 4); its center of mass is at (1.5, 4). The vertical rod runs from (0, 0) to (0, 4); its center of mass is at (0, 2). System center of mass: x_cm = (6×1.5 + 8×0)/(6 + 8) = 9/14 ≈ 0.64 m. y_cm = (6×4 + 8×2)/(6 + 8) = (24 + 16)/14 = 40/14 ≈ 2.86 m. The center of mass is located approximately 0.64 m to the right of the vertical rod and 2.86 m above the base — inside the angle of the L-shape, closer to the heavier vertical rod.",
+    "max_points": 15
+  }
+]
