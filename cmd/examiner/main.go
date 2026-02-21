@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -26,7 +28,7 @@ func init() {
 	// Define flags with shorthands where useful.
 	flag.StringP("addr", "a", ":8080", "HTTP listen address")
 	flag.String("db", "examiner.db", "SQLite database path")
-	flag.StringP("questions", "q", "questions.json", "Path to questions JSON file")
+	flag.StringSliceP("questions", "q", []string{"questions.json"}, "Paths to questions JSON files (repeatable)")
 	flag.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
 	flag.String("llm-key", "ollama", "API key for LLM")
 	flag.String("llm-model", "llama3.2", "LLM model name")
@@ -35,7 +37,9 @@ func init() {
 	flag.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
 	flag.StringP("topic", "t", "", "Filter questions by topic")
 	flag.Int("max-followups", 3, "Maximum follow-up questions per answer")
-	flag.Bool("shuffle", false, "Randomize question order")
+	flag.Bool("shuffle", true, "Randomize question order")
+	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
+	flag.String("log-format", "text", "Log format (text, json)")
 }
 
 func main() {
@@ -52,9 +56,31 @@ func main() {
 	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
 	viper.AutomaticEnv()
 
+	// Set up structured logging.
+	var logLevel slog.Level
+	switch strings.ToLower(viper.GetString("log-level")) {
+	case "debug":
+		logLevel = slog.LevelDebug
+	case "warn":
+		logLevel = slog.LevelWarn
+	case "error":
+		logLevel = slog.LevelError
+	default:
+		logLevel = slog.LevelInfo
+	}
+	handlerOpts := &slog.HandlerOptions{Level: logLevel}
+	var logHandler slog.Handler
+	if strings.ToLower(viper.GetString("log-format")) == "json" {
+		logHandler = slog.NewJSONHandler(os.Stderr, handlerOpts)
+	} else {
+		logHandler = slog.NewTextHandler(os.Stderr, handlerOpts)
+	}
+	slog.SetDefault(slog.New(logHandler))
+
 	// Config file support: examiner.yaml, examiner.toml, etc.
+	// Note: do NOT call SetConfigType here — it would cause viper to
+	// try parsing any examiner.* file (e.g. examiner.db) as YAML.
 	viper.SetConfigName("examiner")
-	viper.SetConfigType("yaml")
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("$HOME/.config/examiner")
 	viper.AddConfigPath("/etc/examiner")
@@ -67,10 +93,6 @@ func main() {
 		slog.Info("loaded config file", "path", viper.ConfigFileUsed())
 	}
 
-	// Set up structured logging.
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	slog.SetDefault(logger)
-
 	// Open database.
 	db, err := store.New(viper.GetString("db"))
 	if err != nil {
@@ -79,8 +101,8 @@ func main() {
 	}
 	defer db.Close()
 
-	// Load questions if the database is empty.
-	if err := loadQuestions(db, viper.GetString("questions"), viper.GetInt("max-followups")); err != nil {
+	// Load questions from all specified files (skips already-imported files).
+	if err := loadQuestions(db, viper.GetStringSlice("questions"), viper.GetInt("max-followups")); err != nil {
 		slog.Error("failed to load questions", "error", err)
 		os.Exit(1)
 	}
@@ -140,52 +162,76 @@ func main() {
 	}
 }
 
-func loadQuestions(db *store.Store, path string, maxFollowups int) error {
+func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
+	// Ensure a default blueprint exists.
 	count, err := db.QuestionCount()
 	if err != nil {
 		return err
 	}
-	if count > 0 {
-		slog.Info("questions already loaded", "count", count)
-		return nil
-	}
-
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-
-	var questions []model.QuestionImport
-	if err := json.Unmarshal(data, &questions); err != nil {
-		return err
-	}
-
-	// Create a default blueprint.
-	_, err = db.CreateBlueprint(model.ExamBlueprint{
-		CourseID:     1,
-		Name:         "Exam",
-		TimeLimit:    0,
-		MaxFollowups: maxFollowups,
-	})
-	if err != nil {
-		return err
-	}
-
-	for _, qi := range questions {
-		_, err := db.InsertQuestion(model.Question{
-			CourseID:    1,
-			Text:        qi.Text,
-			Difficulty:  qi.Difficulty,
-			Topic:       qi.Topic,
-			Rubric:      qi.Rubric,
-			ModelAnswer: qi.ModelAnswer,
-			MaxPoints:   qi.MaxPoints,
+	if count == 0 {
+		_, err = db.CreateBlueprint(model.ExamBlueprint{
+			CourseID:     1,
+			Name:         "Exam",
+			TimeLimit:    0,
+			MaxFollowups: maxFollowups,
 		})
 		if err != nil {
 			return err
 		}
 	}
 
-	slog.Info("loaded questions", "count", len(questions))
+	for _, path := range paths {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", path, err)
+		}
+
+		hash := sha256sum(data)
+		storedHash, err := db.GetImportedFileHash(path)
+		if err != nil {
+			return fmt.Errorf("check import status for %s: %w", path, err)
+		}
+
+		if storedHash == hash {
+			slog.Info("questions file unchanged, skipping", "path", path)
+			continue
+		}
+		if storedHash != "" {
+			slog.Warn("questions file changed since last import, skipping to avoid breaking existing sessions",
+				"path", path)
+			continue
+		}
+
+		var questions []model.QuestionImport
+		if err := json.Unmarshal(data, &questions); err != nil {
+			return fmt.Errorf("parse %s: %w", path, err)
+		}
+
+		for _, qi := range questions {
+			_, err := db.InsertQuestion(model.Question{
+				CourseID:    1,
+				Text:        qi.Text,
+				Difficulty:  qi.Difficulty,
+				Topic:       qi.Topic,
+				Rubric:      qi.Rubric,
+				ModelAnswer: qi.ModelAnswer,
+				MaxPoints:   qi.MaxPoints,
+			})
+			if err != nil {
+				return fmt.Errorf("insert question from %s: %w", path, err)
+			}
+		}
+
+		if err := db.SetImportedFileHash(path, hash); err != nil {
+			return fmt.Errorf("record import for %s: %w", path, err)
+		}
+		slog.Info("imported questions", "path", path, "count", len(questions))
+	}
+
 	return nil
+}
+
+func sha256sum(data []byte) string {
+	h := sha256.Sum256(data)
+	return hex.EncodeToString(h[:])
 }

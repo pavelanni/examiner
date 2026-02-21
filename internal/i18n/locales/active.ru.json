@@ -56,5 +56,6 @@
   {"id": "FinalGradePercent", "other": "Итоговая оценка (%)"},
   {"id": "FinalizeGradeBtn", "other": "Утвердить"},
   {"id": "ExamTitle", "other": "Экзамен — Сессия {{.ID}}"},
-  {"id": "ReviewTitle", "other": "Проверка — Сессия {{.ID}}"}
+  {"id": "ReviewTitle", "other": "Проверка — Сессия {{.ID}}"},
+  {"id": "SelectTopic", "other": "Выберите тему экзамена"}
 ]

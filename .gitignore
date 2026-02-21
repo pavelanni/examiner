@@ -1,6 +1,29 @@
+# Build output
 /examiner
+
+# Database
 /examiner.db
+
+# Environment
 *.env
 !*.env.example
+
+# Task runner
 .task/
+
+# Templ generated files
 *_templ.go
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test output
+coverage.out
+coverage.html
