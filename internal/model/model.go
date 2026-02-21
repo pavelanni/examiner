@@ -1,6 +1,48 @@
 package model
 
-import "time"
+import (
+	"context"
+	"time"
+)
+
+// UserRole represents a user's access level (distinct from Role which is chat message roles).
+type UserRole string
+
+const (
+	UserRoleStudent UserRole = "student"
+	UserRoleTeacher UserRole = "teacher"
+	UserRoleAdmin   UserRole = "admin"
+)
+
+type User struct {
+	ID           int64
+	Username     string
+	DisplayName  string
+	PasswordHash string
+	Role         UserRole
+	Active       bool
+	CreatedAt    time.Time
+}
+
+type AuthSession struct {
+	ID        string
+	UserID    int64
+	CreatedAt time.Time
+	ExpiresAt time.Time
+}
+
+type userCtxKey struct{}
+
+// ContextWithUser stores a user in the request context.
+func ContextWithUser(ctx context.Context, u *User) context.Context {
+	return context.WithValue(ctx, userCtxKey{}, u)
+}
+
+// UserFromContext retrieves the authenticated user from context, or nil.
+func UserFromContext(ctx context.Context) *User {
+	u, _ := ctx.Value(userCtxKey{}).(*User)
+	return u
+}
 
 type Role string
 

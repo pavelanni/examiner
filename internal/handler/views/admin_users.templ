@@ -1,0 +1,93 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ AdminUsersPage(users []model.User, flashMsg string) {
+	@Layout(t(ctx, "AdminUsers")) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "Admin")},
+			{Label: t(ctx, "AdminUsers")},
+		})
+		<h1>{ t(ctx, "AdminUsers") }</h1>
+		if flashMsg != "" {
+			<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
+		}
+		<section>
+			<h2>{ t(ctx, "CreateUser") }</h2>
+			<form method="POST" action="/admin/users">
+				<div class="grid">
+					<div>
+						<label for="username">{ t(ctx, "Username") }</label>
+						<input type="text" id="username" name="username" required/>
+					</div>
+					<div>
+						<label for="display_name">{ t(ctx, "DisplayName") }</label>
+						<input type="text" id="display_name" name="display_name"/>
+					</div>
+				</div>
+				<div class="grid">
+					<div>
+						<label for="password">{ t(ctx, "Password") }</label>
+						<input type="password" id="password" name="password" required/>
+					</div>
+					<div>
+						<label for="role">{ t(ctx, "Role") }</label>
+						<select id="role" name="role">
+							<option value="student">student</option>
+							<option value="teacher">teacher</option>
+							<option value="admin">admin</option>
+						</select>
+					</div>
+				</div>
+				<button type="submit">{ t(ctx, "CreateUserBtn") }</button>
+			</form>
+		</section>
+		if len(users) > 0 {
+			<section>
+				<table>
+					<thead>
+						<tr>
+							<th>{ t(ctx, "ColID") }</th>
+							<th>{ t(ctx, "ColUsername") }</th>
+							<th>{ t(ctx, "ColDisplayName") }</th>
+							<th>{ t(ctx, "ColRole") }</th>
+							<th>{ t(ctx, "ColActive") }</th>
+							<th>{ t(ctx, "ColCreated") }</th>
+							<th>{ t(ctx, "ColAction") }</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, u := range users {
+							<tr>
+								<td>{ fmt.Sprint(u.ID) }</td>
+								<td>{ u.Username }</td>
+								<td>{ u.DisplayName }</td>
+								<td>{ string(u.Role) }</td>
+								<td>
+									if u.Active {
+										{ t(ctx, "Yes") }
+									} else {
+										{ t(ctx, "No") }
+									}
+								</td>
+								<td>{ u.CreatedAt.Format("2006-01-02 15:04") }</td>
+								<td>
+									<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/admin/users/%d/toggle", u.ID)) } style="display:inline;">
+										<button type="submit" class="outline secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+											{ t(ctx, "ToggleActive") }
+										</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		}
+	}
+}

@@ -1,11 +1,17 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
+
+func isStudentOnly(ctx context.Context) bool {
+	u := model.UserFromContext(ctx)
+	return u != nil && u.Role == model.UserRoleStudent
+}
 
 templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int, config model.ExamConfig, topics []string) {
 	@Layout(t(ctx, "AppTitle")) {
@@ -100,9 +106,11 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 				</table>
 			</section>
 		}
-		<section>
-			<h2>{ t(ctx, "TeacherReview") }</h2>
-			<a href="/review" role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
-		</section>
+		if !isStudentOnly(ctx) {
+			<section>
+				<h2>{ t(ctx, "TeacherReview") }</h2>
+				<a href="/review" role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
+			</section>
+		}
 	}
 }

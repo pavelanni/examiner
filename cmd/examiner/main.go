@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	flag "github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pavelanni/examiner/internal/handler"
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
@@ -39,6 +41,7 @@ func init() {
 	flag.StringP("topic", "t", "", "Filter questions by topic")
 	flag.Int("max-followups", 3, "Maximum follow-up questions per answer")
 	flag.Bool("shuffle", true, "Randomize question order")
+	flag.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.String("log-format", "text", "Log format (text, json)")
 }
@@ -105,6 +108,12 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close()
+
+	// Seed default admin user if no users exist.
+	if err := seedAdmin(db, viper.GetString("admin-password")); err != nil {
+		slog.Error("failed to seed admin user", "error", err)
+		os.Exit(1)
+	}
 
 	// Load questions from all specified files (skips already-imported files).
 	if err := loadQuestions(db, viper.GetStringSlice("questions"), viper.GetInt("max-followups")); err != nil {
@@ -244,4 +253,52 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
 func sha256sum(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+func seedAdmin(db *store.Store, password string) error {
+	count, err := db.UserCount()
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+
+	if password == "" {
+		password = generateRandomPassword(16)
+		fmt.Fprintf(os.Stderr, "\n========================================\n")
+		fmt.Fprintf(os.Stderr, "  Generated admin password: %s\n", password)
+		fmt.Fprintf(os.Stderr, "========================================\n\n")
+	}
+
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash admin password: %w", err)
+	}
+
+	_, err = db.CreateUser(model.User{
+		Username:     "admin",
+		DisplayName:  "Administrator",
+		PasswordHash: string(hash),
+		Role:         model.UserRoleAdmin,
+		Active:       true,
+	})
+	if err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	slog.Info("seeded default admin user", "username", "admin")
+	return nil
+}
+
+func generateRandomPassword(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+	for i := range b {
+		b[i] = charset[int(b[i])%len(charset)]
+	}
+	return string(b)
 }

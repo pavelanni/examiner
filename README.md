@@ -44,7 +44,9 @@ go build -o examiner ./cmd/examiner/
   --questions questions.json
 ```
 
-Open `http://localhost:8080` in a browser.
+On first run, note the generated admin password printed to stderr
+(or set one with `--admin-password`).
+Open `http://localhost:8080` and log in as `admin`.
 
 ### Configuration
 
@@ -67,6 +69,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per answer |
 | `--shuffle` | | `false` | Randomize question order |
+| `--admin-password` | | (generated) | Initial admin password (first run only) |
 
 #### Environment variables
 
@@ -80,6 +83,7 @@ export EXAMINER_LLM_MODEL=gpt-4o
 export EXAMINER_LANG=ru
 export EXAMINER_NUM_QUESTIONS=10
 export EXAMINER_SHUFFLE=true
+export EXAMINER_ADMIN_PASSWORD=changeme
 ```
 
 #### Config file
@@ -110,6 +114,63 @@ max-followups: 3
 # Only "Mechanics" topic, 5 questions
 ./examiner -t "Законы Ньютона" -n 5 --shuffle
 ```
+
+## Authentication and user management
+
+The application requires login. On first run it creates a default
+**admin** user.
+
+### Setting the admin password
+
+Provide a password via the `--admin-password` flag or the
+`EXAMINER_ADMIN_PASSWORD` environment variable:
+
+```bash
+# Via flag
+./examiner --admin-password secret123 --questions questions.json
+
+# Via environment variable
+EXAMINER_ADMIN_PASSWORD=secret123 ./examiner --questions questions.json
+```
+
+If neither is set, the server generates a random 16-character password
+and prints it to stderr on first startup:
+
+```text
+========================================
+  Generated admin password: aB3xK9mPqR7wZ2nL
+========================================
+```
+
+The admin user is only created once (when the `users` table is empty).
+Changing the flag or variable on subsequent runs has no effect.
+
+### Adding users
+
+Only admins can create users. Log in as `admin`, then navigate to
+**Admin → User management** (`/admin/users`). The form lets you set:
+
+- **Username** — used for login
+- **Display name** — shown in the UI (defaults to username if empty)
+- **Password** — bcrypt-hashed, stored in the database
+- **Role** — `student`, `teacher`, or `admin`
+
+From the same page you can toggle a user's active status (deactivated
+users cannot log in).
+
+### Roles
+
+| Role | Permissions |
+| ---- | ----------- |
+| `student` | Take exams, view own sessions and results |
+| `teacher` | Everything students can do, plus review and grade any exam |
+| `admin` | Everything teachers can do, plus manage users and upload questions |
+
+### Uploading questions via the admin UI
+
+Admins can upload question JSON files at **Admin → Question upload**
+(`/admin/questions`). The file format is the same as the `--questions`
+flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
 
 ## Question format
 
@@ -226,6 +287,7 @@ podman run --rm -it \
   -e EXAMINER_QUESTIONS=/data/questions.json \
   -e EXAMINER_LLM_URL=http://host.containers.internal:11434/v1 \
   -e EXAMINER_LANG=ru \
+  -e EXAMINER_ADMIN_PASSWORD=changeme \
   examiner:latest
 
 # Run with a remote API (e.g. OpenAI).

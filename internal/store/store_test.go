@@ -170,7 +170,7 @@ func TestSessionLifecycle(t *testing.T) {
 	q1 := insertTestQuestion(t, s, "Q1", "easy", "t1")
 	q2 := insertTestQuestion(t, s, "Q2", "easy", "t2")
 
-	sessID, err := s.CreateSession(bpID, []int64{q1, q2})
+	sessID, err := s.CreateSession(bpID, 1, []int64{q1, q2})
 	if err != nil {
 		t.Fatalf("CreateSession: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestThreadsAndMessages(t *testing.T) {
 	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
 	q1 := insertTestQuestion(t, s, "Q1", "easy", "t")
 	q2 := insertTestQuestion(t, s, "Q2", "easy", "t")
-	sessID, _ := s.CreateSession(bpID, []int64{q1, q2})
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q1, q2})
 
 	threads, err := s.GetThreadsForSession(sessID)
 	if err != nil {
@@ -288,7 +288,7 @@ func TestScores(t *testing.T) {
 
 	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
 	qID := insertTestQuestion(t, s, "Q1", "easy", "t")
-	sessID, _ := s.CreateSession(bpID, []int64{qID})
+	sessID, _ := s.CreateSession(bpID, 1, []int64{qID})
 	threads, _ := s.GetThreadsForSession(sessID)
 	threadID := threads[0].ID
 
@@ -355,7 +355,7 @@ func TestGrades(t *testing.T) {
 
 	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
 	qID := insertTestQuestion(t, s, "Q1", "easy", "t")
-	sessID, _ := s.CreateSession(bpID, []int64{qID})
+	sessID, _ := s.CreateSession(bpID, 1, []int64{qID})
 
 	// No grade yet.
 	grade, err := s.GetGrade(sessID)
@@ -394,7 +394,7 @@ func TestGrades(t *testing.T) {
 	}
 
 	// FinalizeGrade
-	err = s.FinalizeGrade(sessID, 88.0)
+	err = s.FinalizeGrade(sessID, 88.0, 1)
 	if err != nil {
 		t.Fatalf("FinalizeGrade: %v", err)
 	}
@@ -412,7 +412,7 @@ func TestGetSessionView(t *testing.T) {
 
 	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "Final"})
 	q1 := insertTestQuestion(t, s, "Q1", "easy", "t1")
-	sessID, _ := s.CreateSession(bpID, []int64{q1})
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q1})
 	threads, _ := s.GetThreadsForSession(sessID)
 	threadID := threads[0].ID
 
