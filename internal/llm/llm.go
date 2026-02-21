@@ -39,6 +39,15 @@ func New(baseURL, apiKey, modelName string) *Client {
 	}
 }
 
+// Ping checks that the LLM endpoint is reachable by listing available models.
+func (c *Client) Ping(ctx context.Context) error {
+	_, err := c.api.ListModels(ctx)
+	if err != nil {
+		return fmt.Errorf("LLM endpoint unreachable: %w", err)
+	}
+	return nil
+}
+
 // EvaluateAnswer sends the student's answer (and any prior conversation) to the LLM
 // for evaluation. It returns the LLM's response which may include a follow-up question.
 func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int) (*GradeResult, string, error) {

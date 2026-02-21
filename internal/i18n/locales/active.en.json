@@ -56,5 +56,6 @@
   {"id": "FinalGradePercent", "other": "Final grade (%)"},
   {"id": "FinalizeGradeBtn", "other": "Finalize Grade"},
   {"id": "ExamTitle", "other": "Exam - Session {{.ID}}"},
-  {"id": "ReviewTitle", "other": "Review - Session {{.ID}}"}
+  {"id": "ReviewTitle", "other": "Review - Session {{.ID}}"},
+  {"id": "SelectTopic", "other": "Select exam topic"}
 ]

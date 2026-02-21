@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Examiner — LLM-Based Student Assessment</title>
+
+    <!-- Fonts: Cormorant Garamond for headings, DM Sans for body -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400;1,600&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+    <style>
+        /* ===========================================
+           CSS CUSTOM PROPERTIES — PAPER & INK THEME
+           Light, literary, academic aesthetic
+           =========================================== */
+        :root {
+            /* Colors — warm paper tones */
+            --bg-primary: #faf8f4;
+            --bg-secondary: #f0ece4;
+            --bg-card: #ffffff;
+            --text-primary: #1a1a1a;
+            --text-secondary: #5a5a5a;
+            --text-dim: #8a8a8a;
+            --accent: #c0392b;
+            --accent-light: rgba(192, 57, 43, 0.08);
+            --accent-medium: rgba(192, 57, 43, 0.15);
+            --border: #e0dcd4;
+            --border-light: #ece8e0;
+
+            /* Typography — MUST use clamp() */
+            --font-display: 'Cormorant Garamond', Georgia, serif;
+            --font-body: 'DM Sans', system-ui, sans-serif;
+            --font-mono: 'JetBrains Mono', monospace;
+            --title-size: clamp(2rem, 6vw, 4.5rem);
+            --h2-size: clamp(1.4rem, 3.5vw, 2.5rem);
+            --h3-size: clamp(1rem, 2vw, 1.4rem);
+            --body-size: clamp(0.8rem, 1.4vw, 1.1rem);
+            --small-size: clamp(0.65rem, 1vw, 0.85rem);
+            --label-size: clamp(0.6rem, 0.9vw, 0.75rem);
+
+            /* Spacing */
+            --slide-padding: clamp(1.5rem, 5vw, 5rem);
+            --content-gap: clamp(0.8rem, 2vw, 2rem);
+            --element-gap: clamp(0.3rem, 1vw, 0.8rem);
+
+            /* Animation */
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --duration: 0.7s;
+        }
+
+        /* ===========================================
+           BASE STYLES
+           =========================================== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            scroll-behavior: smooth;
+            scroll-snap-type: y mandatory;
+            height: 100%;
+            overflow-x: hidden;
+        }
+
+        body {
+            font-family: var(--font-body);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100%;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        /* ===========================================
+           SLIDE CONTAINER
+           Each slide = exact viewport height
+           =========================================== */
+        .slide {
+            width: 100vw;
+            height: 100vh;
+            height: 100dvh;
+            overflow: hidden;
+            scroll-snap-align: start;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .slide-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            max-height: 100%;
+            overflow: hidden;
+            padding: var(--slide-padding);
+        }
+
+        /* ===========================================
+           PAPER TEXTURE OVERLAY
+           Subtle noise for a printed-paper feel
+           =========================================== */
+        .slide::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            opacity: 0.03;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+            background-size: 200px 200px;
+        }
+
+        /* ===========================================
+           TYPOGRAPHY
+           =========================================== */
+        h1 {
+            font-family: var(--font-display);
+            font-size: var(--title-size);
+            font-weight: 700;
+            line-height: 1.1;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+        }
+
+        h2 {
+            font-family: var(--font-display);
+            font-size: var(--h2-size);
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.01em;
+            color: var(--text-primary);
+            margin-bottom: var(--content-gap);
+        }
+
+        h3 {
+            font-family: var(--font-display);
+            font-size: var(--h3-size);
+            font-weight: 600;
+            line-height: 1.2;
+        }
+
+        p, li {
+            font-size: var(--body-size);
+            line-height: 1.6;
+            color: var(--text-secondary);
+        }
+
+        /* ===========================================
+           DECORATIVE ELEMENTS
+           =========================================== */
+
+        /* Thin horizontal rule */
+        .rule {
+            width: 50px;
+            height: 1px;
+            background: var(--accent);
+            margin: var(--element-gap) 0;
+        }
+
+        /* Section number */
+        .section-num {
+            font-family: var(--font-display);
+            font-size: var(--small-size);
+            font-weight: 600;
+            color: var(--accent);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        /* Label tag */
+        .label {
+            display: inline-block;
+            font-family: var(--font-mono);
+            font-size: var(--label-size);
+            color: var(--accent);
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            padding: 0.25em 0.8em;
+            border: 1px solid var(--accent-medium);
+            border-radius: 3px;
+            background: var(--accent-light);
+        }
+
+        /* ===========================================
+           ANIMATIONS
+           =========================================== */
+        .reveal {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity var(--duration) var(--ease-out-expo),
+                        transform var(--duration) var(--ease-out-expo);
+        }
+
+        .reveal-left {
+            opacity: 0;
+            transform: translateX(-30px);
+            transition: opacity var(--duration) var(--ease-out-expo),
+                        transform var(--duration) var(--ease-out-expo);
+        }
+
+        .reveal-scale {
+            opacity: 0;
+            transform: scale(0.95);
+            transition: opacity var(--duration) var(--ease-out-expo),
+                        transform var(--duration) var(--ease-out-expo);
+        }
+
+        .slide.visible .reveal,
+        .slide.visible .reveal-left,
+        .slide.visible .reveal-scale {
+            opacity: 1;
+            transform: translateY(0) translateX(0) scale(1);
+        }
+
+        .reveal:nth-child(1) { transition-delay: 0.05s; }
+        .reveal:nth-child(2) { transition-delay: 0.12s; }
+        .reveal:nth-child(3) { transition-delay: 0.2s; }
+        .reveal:nth-child(4) { transition-delay: 0.28s; }
+        .reveal:nth-child(5) { transition-delay: 0.36s; }
+        .reveal:nth-child(6) { transition-delay: 0.44s; }
+
+        .reveal-left:nth-child(1) { transition-delay: 0.05s; }
+        .reveal-left:nth-child(2) { transition-delay: 0.15s; }
+        .reveal-left:nth-child(3) { transition-delay: 0.25s; }
+        .reveal-left:nth-child(4) { transition-delay: 0.35s; }
+
+        /* ===========================================
+           SLIDE 1: TITLE
+           =========================================== */
+        .title-slide .slide-content {
+            align-items: center;
+            text-align: center;
+        }
+
+        .title-slide h1 {
+            margin-bottom: clamp(0.3rem, 1vh, 0.8rem);
+        }
+
+        .title-slide .subtitle {
+            font-family: var(--font-display);
+            font-size: clamp(1rem, 2.2vw, 1.5rem);
+            font-style: italic;
+            font-weight: 400;
+            color: var(--text-dim);
+            max-width: 600px;
+        }
+
+        .title-slide .author {
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            margin-top: var(--content-gap);
+            letter-spacing: 0.05em;
+        }
+
+        /* Decorative corner marks */
+        .corner-mark {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            border-color: var(--border);
+            border-style: solid;
+            opacity: 0.5;
+        }
+        .corner-mark.tl { top: 30px; left: 30px; border-width: 1px 0 0 1px; }
+        .corner-mark.tr { top: 30px; right: 30px; border-width: 1px 1px 0 0; }
+        .corner-mark.bl { bottom: 30px; left: 30px; border-width: 0 0 1px 1px; }
+        .corner-mark.br { bottom: 30px; right: 30px; border-width: 0 1px 1px 0; }
+
+        /* ===========================================
+           SLIDE 2: PROBLEM
+           =========================================== */
+        .problem-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: var(--element-gap);
+            max-width: 700px;
+        }
+
+        .problem-list li {
+            display: flex;
+            align-items: baseline;
+            gap: clamp(0.5rem, 1.5vw, 1rem);
+        }
+
+        .problem-list .marker {
+            font-family: var(--font-display);
+            font-size: clamp(1.2rem, 2vw, 1.6rem);
+            font-weight: 700;
+            color: var(--accent);
+            flex-shrink: 0;
+            line-height: 1;
+        }
+
+        /* ===========================================
+           SLIDE 3: SOLUTION
+           =========================================== */
+        .solution-slide .slide-content {
+            align-items: center;
+            text-align: center;
+        }
+
+        .solution-quote {
+            font-family: var(--font-display);
+            font-size: clamp(1.2rem, 3vw, 2rem);
+            font-style: italic;
+            font-weight: 400;
+            color: var(--text-primary);
+            max-width: 700px;
+            line-height: 1.4;
+            position: relative;
+            padding: 0 clamp(1rem, 3vw, 2rem);
+        }
+
+        .solution-quote::before {
+            content: '\201C';
+            font-family: var(--font-display);
+            font-size: clamp(3rem, 6vw, 5rem);
+            color: var(--accent);
+            opacity: 0.3;
+            position: absolute;
+            top: -0.3em;
+            left: -0.1em;
+            line-height: 1;
+        }
+
+        .solution-desc {
+            max-width: 550px;
+            text-align: center;
+            margin-top: var(--content-gap);
+        }
+
+        /* ===========================================
+           SLIDE 4: FEATURES
+           =========================================== */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+            gap: clamp(0.6rem, 1.5vw, 1.2rem);
+            max-width: 900px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            padding: clamp(0.8rem, 2vw, 1.5rem);
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .feature-card:hover {
+            border-color: var(--accent-medium);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.04);
+        }
+
+        .feature-card .icon {
+            font-size: clamp(1.2rem, 2vw, 1.6rem);
+            margin-bottom: clamp(0.3rem, 0.8vh, 0.6rem);
+        }
+
+        .feature-card h3 {
+            margin-bottom: clamp(0.2rem, 0.5vh, 0.4rem);
+        }
+
+        .feature-card p {
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        /* ===========================================
+           SLIDE 5: HOW IT WORKS
+           =========================================== */
+        .flow {
+            display: flex;
+            align-items: flex-start;
+            gap: clamp(0.3rem, 1vw, 0.8rem);
+            max-width: 900px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .flow-step {
+            flex: 1;
+            min-width: min(100%, 140px);
+            max-width: 200px;
+            text-align: center;
+        }
+
+        .flow-step .step-num {
+            font-family: var(--font-display);
+            font-size: clamp(1.5rem, 3vw, 2.5rem);
+            font-weight: 700;
+            color: var(--accent);
+            line-height: 1;
+            margin-bottom: clamp(0.2rem, 0.5vh, 0.5rem);
+        }
+
+        .flow-step h3 {
+            font-size: clamp(0.85rem, 1.5vw, 1.1rem);
+            margin-bottom: clamp(0.15rem, 0.4vh, 0.3rem);
+        }
+
+        .flow-step p {
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            line-height: 1.4;
+        }
+
+        .flow-arrow {
+            font-size: clamp(1rem, 2vw, 1.5rem);
+            color: var(--border);
+            align-self: center;
+            margin-top: -0.5em;
+            flex-shrink: 0;
+        }
+
+        /* ===========================================
+           SLIDE 6: FLEXIBILITY / TECH
+           =========================================== */
+        .two-col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: clamp(1rem, 3vw, 3rem);
+            max-width: 800px;
+        }
+
+        .col-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: var(--element-gap);
+        }
+
+        .col-list li {
+            display: flex;
+            align-items: baseline;
+            gap: clamp(0.4rem, 0.8vw, 0.6rem);
+            font-size: var(--body-size);
+        }
+
+        .col-list .dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--accent);
+            flex-shrink: 0;
+            margin-top: 0.55em;
+        }
+
+        .col h3 {
+            margin-bottom: clamp(0.3rem, 1vh, 0.8rem);
+            padding-bottom: clamp(0.2rem, 0.5vh, 0.4rem);
+            border-bottom: 1px solid var(--border-light);
+        }
+
+        @media (max-width: 600px) {
+            .two-col {
+                grid-template-columns: 1fr;
+                gap: clamp(0.8rem, 2vw, 1.5rem);
+            }
+        }
+
+        /* ===========================================
+           SLIDE 7: CTA / CLOSING
+           =========================================== */
+        .cta-slide .slide-content {
+            align-items: center;
+            text-align: center;
+        }
+
+        .cta-slide h2 {
+            font-size: clamp(1.6rem, 4vw, 3rem);
+        }
+
+        .cta-points {
+            list-style: none;
+            display: flex;
+            gap: clamp(0.8rem, 2vw, 2rem);
+            margin-top: var(--content-gap);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .cta-points li {
+            font-size: var(--body-size);
+            color: var(--text-secondary);
+            padding: clamp(0.4rem, 1vw, 0.6rem) clamp(0.8rem, 2vw, 1.2rem);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-card);
+        }
+
+        .cta-url {
+            font-family: var(--font-mono);
+            font-size: var(--small-size);
+            color: var(--accent);
+            margin-top: var(--content-gap);
+            letter-spacing: 0.02em;
+        }
+
+        /* ===========================================
+           PROGRESS BAR
+           =========================================== */
+        .progress-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 2px;
+            background: var(--accent);
+            z-index: 100;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        /* ===========================================
+           NAV DOTS
+           =========================================== */
+        .nav-dots {
+            position: fixed;
+            right: clamp(12px, 2vw, 24px);
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            z-index: 100;
+        }
+
+        .nav-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            border: 1px solid var(--text-dim);
+            background: transparent;
+            cursor: pointer;
+            transition: all 0.3s;
+            padding: 0;
+        }
+
+        .nav-dot.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            transform: scale(1.3);
+        }
+
+        .nav-dot:hover {
+            border-color: var(--accent);
+        }
+
+        /* ===========================================
+           KEYBOARD HINT
+           =========================================== */
+        .keyboard-hint {
+            position: fixed;
+            bottom: clamp(10px, 2vh, 20px);
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            opacity: 0.5;
+            display: flex;
+            align-items: center;
+            gap: 0.5em;
+            z-index: 100;
+            transition: opacity 0.5s;
+        }
+
+        .keyboard-hint kbd {
+            font-family: var(--font-mono);
+            font-size: 0.85em;
+            padding: 0.15em 0.4em;
+            border: 1px solid var(--border);
+            border-radius: 3px;
+            background: var(--bg-card);
+        }
+
+        /* ===========================================
+           SLIDE NUMBER
+           =========================================== */
+        .slide-number {
+            position: absolute;
+            bottom: clamp(10px, 2vh, 20px);
+            right: clamp(15px, 3vw, 30px);
+            font-family: var(--font-mono);
+            font-size: var(--small-size);
+            color: var(--text-dim);
+            opacity: 0.4;
+        }
+
+        /* ===========================================
+           RESPONSIVE BREAKPOINTS
+           =========================================== */
+        @media (max-height: 700px) {
+            :root {
+                --slide-padding: clamp(1rem, 3vw, 2.5rem);
+                --content-gap: clamp(0.5rem, 1.5vw, 1rem);
+                --title-size: clamp(1.6rem, 5vw, 3rem);
+                --h2-size: clamp(1.2rem, 3vw, 2rem);
+            }
+        }
+
+        @media (max-height: 600px) {
+            :root {
+                --slide-padding: clamp(0.75rem, 2.5vw, 1.5rem);
+                --content-gap: clamp(0.4rem, 1vw, 0.8rem);
+                --title-size: clamp(1.3rem, 4.5vw, 2.2rem);
+                --body-size: clamp(0.7rem, 1.2vw, 0.95rem);
+            }
+            .nav-dots, .keyboard-hint { display: none; }
+        }
+
+        @media (max-height: 500px) {
+            :root {
+                --slide-padding: clamp(0.5rem, 2vw, 1rem);
+                --title-size: clamp(1.1rem, 4vw, 1.8rem);
+                --h2-size: clamp(0.95rem, 2.5vw, 1.3rem);
+                --body-size: clamp(0.65rem, 1vw, 0.85rem);
+            }
+            .corner-mark { display: none; }
+        }
+
+        @media (max-width: 600px) {
+            :root {
+                --title-size: clamp(1.5rem, 8vw, 3rem);
+            }
+            .flow {
+                flex-direction: column;
+                align-items: center;
+            }
+            .flow-arrow {
+                transform: rotate(90deg);
+            }
+            .flow-step {
+                max-width: 280px;
+            }
+        }
+
+        /* ===========================================
+           REDUCED MOTION
+           =========================================== */
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after {
+                animation-duration: 0.01ms !important;
+                transition-duration: 0.2s !important;
+            }
+            html { scroll-behavior: auto; }
+            .reveal, .reveal-left, .reveal-scale {
+                opacity: 1;
+                transform: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Progress bar -->
+    <div class="progress-bar" id="progressBar"></div>
+
+    <!-- Navigation dots -->
+    <nav class="nav-dots" id="navDots"></nav>
+
+    <!-- Keyboard hint -->
+    <div class="keyboard-hint" id="keyHint">
+        <kbd>&larr;</kbd> <kbd>&rarr;</kbd> or scroll
+    </div>
+
+    <!-- =========================================
+         SLIDE 1: TITLE
+         ========================================= -->
+    <section class="slide title-slide" data-slide="0">
+        <div class="corner-mark tl"></div>
+        <div class="corner-mark tr"></div>
+        <div class="corner-mark bl"></div>
+        <div class="corner-mark br"></div>
+        <div class="slide-content">
+            <span class="label reveal">MEPhI</span>
+            <div class="rule reveal" style="margin: clamp(0.6rem, 1.5vh, 1rem) auto;"></div>
+            <h1 class="reveal">Examiner</h1>
+            <p class="subtitle reveal">LLM-based conversational assessment system</p>
+            <p class="author reveal">Open-source &middot; Go &middot; Any LLM backend</p>
+        </div>
+        <div class="slide-number">1 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 2: THE PROBLEM
+         ========================================= -->
+    <section class="slide" data-slide="1">
+        <div class="slide-content">
+            <span class="section-num reveal">The problem</span>
+            <h2 class="reveal">Traditional exams fall short</h2>
+            <ul class="problem-list">
+                <li class="reveal-left">
+                    <span class="marker">&mdash;</span>
+                    <span>Written tests only capture <strong>surface-level recall</strong>, not true understanding</span>
+                </li>
+                <li class="reveal-left">
+                    <span class="marker">&mdash;</span>
+                    <span>Oral exams are powerful but <strong>don't scale</strong> &mdash; one professor, many students</span>
+                </li>
+                <li class="reveal-left">
+                    <span class="marker">&mdash;</span>
+                    <span>No opportunity for <strong>follow-up questions</strong> that probe deeper comprehension</span>
+                </li>
+                <li class="reveal-left">
+                    <span class="marker">&mdash;</span>
+                    <span>Grading open-ended answers is <strong>time-consuming and inconsistent</strong></span>
+                </li>
+            </ul>
+        </div>
+        <div class="slide-number">2 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 3: THE SOLUTION
+         ========================================= -->
+    <section class="slide solution-slide" data-slide="2">
+        <div class="slide-content">
+            <span class="section-num reveal">The idea</span>
+            <div class="rule reveal"></div>
+            <p class="solution-quote reveal">
+                What if every student could have a one-on-one oral exam &mdash; with an AI that asks follow-up questions?
+            </p>
+            <p class="solution-desc reveal">
+                Examiner combines the depth of oral exams with the scalability of automated testing. The LLM probes understanding through conversation, then grades against a rubric.
+            </p>
+        </div>
+        <div class="slide-number">3 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 4: KEY FEATURES
+         ========================================= -->
+    <section class="slide" data-slide="3">
+        <div class="slide-content">
+            <span class="section-num reveal">Key features</span>
+            <h2 class="reveal">What it does</h2>
+            <div class="features-grid">
+                <div class="feature-card reveal-scale">
+                    <div class="icon">&#x1f4ac;</div>
+                    <h3>Conversational flow</h3>
+                    <p>LLM asks follow-up questions to probe deeper understanding (configurable limit per question)</p>
+                </div>
+                <div class="feature-card reveal-scale">
+                    <div class="icon">&#x2696;</div>
+                    <h3>Automated grading</h3>
+                    <p>Scores each answer against a rubric and model answer, produces an overall grade</p>
+                </div>
+                <div class="feature-card reveal-scale">
+                    <div class="icon">&#x1f9d1;&#x200d;&#x1f3eb;</div>
+                    <h3>Teacher review</h3>
+                    <p>Faculty can adjust per-question scores, add comments, and finalize the grade</p>
+                </div>
+                <div class="feature-card reveal-scale">
+                    <div class="icon">&#x1f310;</div>
+                    <h3>Multilingual</h3>
+                    <p>UI in English and Russian; adding a new language requires only a JSON file</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">4 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 5: HOW IT WORKS
+         ========================================= -->
+    <section class="slide" data-slide="4">
+        <div class="slide-content" style="align-items: center;">
+            <span class="section-num reveal">How it works</span>
+            <h2 class="reveal">The exam flow</h2>
+            <div class="flow">
+                <div class="flow-step reveal">
+                    <div class="step-num">1</div>
+                    <h3>Student answers</h3>
+                    <p>Open-ended questions in a browser</p>
+                </div>
+                <div class="flow-arrow reveal">&rarr;</div>
+                <div class="flow-step reveal">
+                    <div class="step-num">2</div>
+                    <h3>LLM probes</h3>
+                    <p>Follow-up questions based on the response</p>
+                </div>
+                <div class="flow-arrow reveal">&rarr;</div>
+                <div class="flow-step reveal">
+                    <div class="step-num">3</div>
+                    <h3>Auto-grade</h3>
+                    <p>Scored against rubric and model answer</p>
+                </div>
+                <div class="flow-arrow reveal">&rarr;</div>
+                <div class="flow-step reveal">
+                    <div class="step-num">4</div>
+                    <h3>Teacher reviews</h3>
+                    <p>Adjust scores, add comments, finalize</p>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">5 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 6: FLEXIBILITY & TECH
+         ========================================= -->
+    <section class="slide" data-slide="5">
+        <div class="slide-content">
+            <span class="section-num reveal">Under the hood</span>
+            <h2 class="reveal">Flexible by design</h2>
+            <div class="two-col">
+                <div class="col reveal">
+                    <h3>LLM flexibility</h3>
+                    <ul class="col-list">
+                        <li><span class="dot"></span><span>Any OpenAI-compatible endpoint</span></li>
+                        <li><span class="dot"></span><span>Ollama, vLLM, OpenAI API</span></li>
+                        <li><span class="dot"></span><span>Self-hosted or cloud &mdash; your choice</span></li>
+                    </ul>
+                </div>
+                <div class="col reveal">
+                    <h3>Tech stack</h3>
+                    <ul class="col-list">
+                        <li><span class="dot"></span><span>Go, SQLite &mdash; single binary</span></li>
+                        <li><span class="dot"></span><span>htmx + Pico CSS &mdash; no SPA</span></li>
+                        <li><span class="dot"></span><span>Container-ready (Podman/Docker)</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="slide-number">6 / 7</div>
+    </section>
+
+    <!-- =========================================
+         SLIDE 7: CALL TO ACTION
+         ========================================= -->
+    <section class="slide cta-slide" data-slide="6">
+        <div class="corner-mark tl"></div>
+        <div class="corner-mark tr"></div>
+        <div class="corner-mark bl"></div>
+        <div class="corner-mark br"></div>
+        <div class="slide-content">
+            <span class="section-num reveal">Next steps</span>
+            <div class="rule reveal" style="margin-left: auto; margin-right: auto;"></div>
+            <h2 class="reveal">We'd love your feedback</h2>
+            <ul class="cta-points">
+                <li class="reveal">Try it with your course questions</li>
+                <li class="reveal">Suggest rubric improvements</li>
+                <li class="reveal">Help shape the grading model</li>
+            </ul>
+            <p class="cta-url reveal">github.com/pavelanni/examiner</p>
+        </div>
+        <div class="slide-number">7 / 7</div>
+    </section>
+
+    <!-- ===========================================
+         JAVASCRIPT: SLIDE CONTROLLER
+         =========================================== -->
+    <script>
+        class SlidePresentation {
+            constructor() {
+                this.slides = document.querySelectorAll('.slide');
+                this.currentSlide = 0;
+                this.totalSlides = this.slides.length;
+                this.isScrolling = false;
+                this.scrollTimeout = null;
+
+                this.createNavDots();
+                this.setupIntersectionObserver();
+                this.setupKeyboardNav();
+                this.setupScrollNav();
+                this.setupTouchNav();
+                this.updateProgress();
+
+                // Hide keyboard hint after first navigation
+                this.hintShown = true;
+            }
+
+            /* -------------------------------------------
+               Navigation dots on the right side
+               ------------------------------------------- */
+            createNavDots() {
+                const nav = document.getElementById('navDots');
+                for (let i = 0; i < this.totalSlides; i++) {
+                    const dot = document.createElement('button');
+                    dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+                    dot.setAttribute('aria-label', `Go to slide ${i + 1}`);
+                    dot.addEventListener('click', () => this.goToSlide(i));
+                    nav.appendChild(dot);
+                }
+                this.dots = nav.querySelectorAll('.nav-dot');
+            }
+
+            /* -------------------------------------------
+               Intersection Observer for scroll-triggered
+               animations. Adds .visible when in view.
+               ------------------------------------------- */
+            setupIntersectionObserver() {
+                const observer = new IntersectionObserver((entries) => {
+                    entries.forEach(entry => {
+                        if (entry.isIntersecting) {
+                            entry.target.classList.add('visible');
+                            const idx = parseInt(entry.target.dataset.slide);
+                            this.currentSlide = idx;
+                            this.updateDots();
+                            this.updateProgress();
+                        }
+                    });
+                }, { threshold: 0.5 });
+
+                this.slides.forEach(slide => observer.observe(slide));
+            }
+
+            /* -------------------------------------------
+               Keyboard navigation: arrows, space, etc.
+               ------------------------------------------- */
+            setupKeyboardNav() {
+                document.addEventListener('keydown', (e) => {
+                    this.hideHint();
+                    switch(e.key) {
+                        case 'ArrowDown':
+                        case 'ArrowRight':
+                        case ' ':
+                            e.preventDefault();
+                            this.nextSlide();
+                            break;
+                        case 'ArrowUp':
+                        case 'ArrowLeft':
+                            e.preventDefault();
+                            this.prevSlide();
+                            break;
+                        case 'Home':
+                            e.preventDefault();
+                            this.goToSlide(0);
+                            break;
+                        case 'End':
+                            e.preventDefault();
+                            this.goToSlide(this.totalSlides - 1);
+                            break;
+                    }
+                });
+            }
+
+            /* -------------------------------------------
+               Mouse wheel navigation with debounce
+               ------------------------------------------- */
+            setupScrollNav() {
+                document.addEventListener('wheel', (e) => {
+                    this.hideHint();
+                }, { passive: true });
+            }
+
+            /* -------------------------------------------
+               Touch/swipe navigation for mobile
+               ------------------------------------------- */
+            setupTouchNav() {
+                let startY = 0;
+                let startX = 0;
+
+                document.addEventListener('touchstart', (e) => {
+                    startY = e.touches[0].clientY;
+                    startX = e.touches[0].clientX;
+                }, { passive: true });
+
+                document.addEventListener('touchend', (e) => {
+                    const deltaY = startY - e.changedTouches[0].clientY;
+                    const deltaX = startX - e.changedTouches[0].clientX;
+
+                    // Only handle vertical swipes
+                    if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 50) {
+                        this.hideHint();
+                        if (deltaY > 0) this.nextSlide();
+                        else this.prevSlide();
+                    }
+                }, { passive: true });
+            }
+
+            nextSlide() {
+                if (this.currentSlide < this.totalSlides - 1) {
+                    this.goToSlide(this.currentSlide + 1);
+                }
+            }
+
+            prevSlide() {
+                if (this.currentSlide > 0) {
+                    this.goToSlide(this.currentSlide - 1);
+                }
+            }
+
+            goToSlide(index) {
+                this.slides[index].scrollIntoView({ behavior: 'smooth' });
+                this.currentSlide = index;
+                this.updateDots();
+                this.updateProgress();
+            }
+
+            updateDots() {
+                this.dots.forEach((dot, i) => {
+                    dot.classList.toggle('active', i === this.currentSlide);
+                });
+            }
+
+            updateProgress() {
+                const progress = ((this.currentSlide + 1) / this.totalSlides) * 100;
+                document.getElementById('progressBar').style.width = progress + '%';
+            }
+
+            hideHint() {
+                if (this.hintShown) {
+                    document.getElementById('keyHint').style.opacity = '0';
+                    this.hintShown = false;
+                }
+            }
+        }
+
+        // Initialize when DOM is ready
+        document.addEventListener('DOMContentLoaded', () => {
+            new SlidePresentation();
+        });
+    </script>
+</body>
+</html>

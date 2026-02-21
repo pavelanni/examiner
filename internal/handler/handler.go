@@ -43,13 +43,36 @@ func (h *Handler) Routes(r chi.Router) {
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	sessions, err := h.store.ListSessions()
 	if err != nil {
+		slog.Error("failed to list sessions", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Get available topics for the dropdown.
+	allTopics, err := h.store.ListDistinctTopics()
+	if err != nil {
+		slog.Error("failed to list topics", "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If --topic is set, restrict topics to only that value.
+	var topics []string
+	if h.config.Topic != "" {
+		for _, t := range allTopics {
+			if t == h.config.Topic {
+				topics = append(topics, t)
+				break
+			}
+		}
+	} else {
+		topics = allTopics
 	}
 
 	// Count questions matching the configured filters.
 	filtered, err := h.store.ListQuestionsFiltered(h.config.Difficulty, h.config.Topic)
 	if err != nil {
+		slog.Error("failed to list filtered questions", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -60,14 +83,21 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.IndexPage(sessions, availableCount, examCount, h.config).Render(r.Context(), w); err != nil {
+	if err := views.IndexPage(sessions, availableCount, examCount, h.config, topics).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
 
 func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
-	questions, err := h.store.ListQuestionsFiltered(h.config.Difficulty, h.config.Topic)
+	// Use topic from form (dropdown) if provided, otherwise fall back to CLI flag.
+	topic := r.FormValue("topic")
+	if topic == "" {
+		topic = h.config.Topic
+	}
+
+	questions, err := h.store.ListQuestionsFiltered(h.config.Difficulty, topic)
 	if err != nil {
+		slog.Error("failed to list questions for exam", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -93,6 +123,7 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 
 	sessionID, err := h.store.CreateSession(1, questionIDs)
 	if err != nil {
+		slog.Error("failed to create session", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -109,6 +140,7 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
+		slog.Error("failed to get session view", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -131,6 +163,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.store.GetSession(sessionID)
 	if err != nil {
+		slog.Error("failed to get session", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -145,28 +178,33 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		Content:  answer,
 	})
 	if err != nil {
+		slog.Error("failed to add student message", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	thread, err := h.store.GetThread(threadID)
 	if err != nil {
+		slog.Error("failed to get thread", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	question, err := h.store.GetQuestion(thread.QuestionID)
 	if err != nil {
+		slog.Error("failed to get question", "question_id", thread.QuestionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	messages, err := h.store.GetMessages(threadID)
 	if err != nil {
+		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	bp, err := h.store.GetBlueprint(sess.BlueprintID)
 	if err != nil {
+		slog.Error("failed to get blueprint", "blueprint_id", sess.BlueprintID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -189,6 +227,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		Content:  llmText,
 	})
 	if err != nil {
+		slog.Error("failed to add LLM message", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -197,12 +236,23 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	if !result.NeedFollowup {
 		newStatus = model.ThreadCompleted
 	}
-	_ = h.store.UpdateThreadStatus(threadID, newStatus)
+	if err := h.store.UpdateThreadStatus(threadID, newStatus); err != nil {
+		slog.Warn("failed to update thread status", "thread_id", threadID, "status", newStatus, "error", err)
+	}
 
-	updatedMessages, _ := h.store.GetMessages(threadID)
-	updatedThread, _ := h.store.GetThread(threadID)
+	updatedMessages, err := h.store.GetMessages(threadID)
+	if err != nil {
+		slog.Warn("failed to get updated messages", "thread_id", threadID, "error", err)
+	}
+	updatedThread, err := h.store.GetThread(threadID)
+	if err != nil {
+		slog.Warn("failed to get updated thread", "thread_id", threadID, "error", err)
+	}
 
-	allThreads, _ := h.store.GetThreadsForSession(sessionID)
+	allThreads, err := h.store.GetThreadsForSession(sessionID)
+	if err != nil {
+		slog.Warn("failed to get threads for session", "session_id", sessionID, "error", err)
+	}
 	threadIndex := 0
 	for i, t := range allThreads {
 		if t.ID == threadID {
@@ -221,16 +271,19 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
 
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusSubmitted); err != nil {
+		slog.Error("failed to update session to submitted", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGrading); err != nil {
+		slog.Error("failed to update session to grading", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	threads, err := h.store.GetThreadsForSession(sessionID)
 	if err != nil {
+		slog.Error("failed to get threads for grading", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -245,11 +298,13 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		}
 		messages, err := h.store.GetMessages(t.ID)
 		if err != nil || len(messages) == 0 {
-			_ = h.store.UpsertScore(model.QuestionScore{
+			if err := h.store.UpsertScore(model.QuestionScore{
 				ThreadID:    t.ID,
 				LLMScore:    0,
 				LLMFeedback: "No answer provided.",
-			})
+			}); err != nil {
+				slog.Warn("failed to upsert zero score", "thread_id", t.ID, "error", err)
+			}
 			totalMaxPoints += question.MaxPoints
 			continue
 		}
@@ -257,21 +312,27 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		result, err := h.llm.GradeThread(context.Background(), question, messages)
 		if err != nil {
 			slog.Error("grading failed", "thread_id", t.ID, "error", err)
-			_ = h.store.UpsertScore(model.QuestionScore{
+			if err := h.store.UpsertScore(model.QuestionScore{
 				ThreadID:    t.ID,
 				LLMScore:    0,
 				LLMFeedback: "Grading error: " + err.Error(),
-			})
+			}); err != nil {
+				slog.Warn("failed to upsert error score", "thread_id", t.ID, "error", err)
+			}
 			totalMaxPoints += question.MaxPoints
 			continue
 		}
 
-		_ = h.store.UpsertScore(model.QuestionScore{
+		if err := h.store.UpsertScore(model.QuestionScore{
 			ThreadID:    t.ID,
 			LLMScore:    result.Score,
 			LLMFeedback: result.Feedback,
-		})
-		_ = h.store.UpdateThreadStatus(t.ID, model.ThreadCompleted)
+		}); err != nil {
+			slog.Warn("failed to upsert score", "thread_id", t.ID, "error", err)
+		}
+		if err := h.store.UpdateThreadStatus(t.ID, model.ThreadCompleted); err != nil {
+			slog.Warn("failed to update thread to completed", "thread_id", t.ID, "error", err)
+		}
 
 		totalScore += result.Score
 		totalMaxPoints += question.MaxPoints
@@ -282,11 +343,15 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		overallGrade = (totalScore / float64(totalMaxPoints)) * 100
 	}
 
-	_ = h.store.UpsertGrade(model.Grade{
+	if err := h.store.UpsertGrade(model.Grade{
 		SessionID: sessionID,
 		LLMGrade:  overallGrade,
-	})
-	_ = h.store.UpdateSessionStatus(sessionID, model.StatusGraded)
+	}); err != nil {
+		slog.Warn("failed to upsert grade", "session_id", sessionID, "error", err)
+	}
+	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGraded); err != nil {
+		slog.Warn("failed to update session to graded", "session_id", sessionID, "error", err)
+	}
 
 	http.Redirect(w, r, fmt.Sprintf("/review/%d", sessionID), http.StatusSeeOther)
 }
@@ -294,6 +359,7 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 	sessions, err := h.store.ListSessions()
 	if err != nil {
+		slog.Error("failed to list sessions for review", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -316,6 +382,7 @@ func (h *Handler) handleReviewPage(w http.ResponseWriter, r *http.Request) {
 
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
+		slog.Error("failed to get session view for review", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -340,6 +407,7 @@ func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.UpdateTeacherScore(threadID, score, comment); err != nil {
+		slog.Error("failed to update teacher score", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -358,10 +426,12 @@ func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.FinalizeGrade(sessionID, finalGrade); err != nil {
+		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusReviewed); err != nil {
+		slog.Error("failed to update session to reviewed", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}

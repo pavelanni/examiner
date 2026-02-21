@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -102,6 +103,12 @@ func (s *Store) migrate() error {
 		reviewed_at DATETIME,
 		FOREIGN KEY (session_id) REFERENCES exam_sessions(id)
 	);
+
+	CREATE TABLE IF NOT EXISTS imported_files (
+		path TEXT PRIMARY KEY,
+		hash TEXT NOT NULL,
+		imported_at DATETIME NOT NULL
+	);
 	`
 	_, err := s.db.Exec(schema)
 	return err
@@ -115,9 +122,15 @@ func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 		q.CourseID, q.Text, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints,
 	)
 	if err != nil {
+		slog.Error("failed to insert question", "error", err)
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	slog.Debug("inserted question", "id", id, "topic", q.Topic, "difficulty", q.Difficulty)
+	return id, nil
 }
 
 // ListQuestions returns all questions.
@@ -183,9 +196,15 @@ func (s *Store) CreateBlueprint(bp model.ExamBlueprint) (int64, error) {
 		bp.CourseID, bp.Name, bp.TimeLimit, bp.MaxFollowups,
 	)
 	if err != nil {
+		slog.Error("failed to create blueprint", "error", err)
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	slog.Debug("created blueprint", "id", id, "name", bp.Name)
+	return id, nil
 }
 
 // GetBlueprint returns a blueprint by ID.
@@ -203,7 +222,7 @@ func (s *Store) CreateSession(blueprintID int64, questionIDs []int64) (int64, er
 	if err != nil {
 		return 0, err
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.Exec(
 		`INSERT INTO exam_sessions (blueprint_id, student_id, status, started_at) VALUES (?, 1, 'in_progress', ?)`,
@@ -227,7 +246,11 @@ func (s *Store) CreateSession(blueprintID int64, questionIDs []int64) (int64, er
 		}
 	}
 
-	return sessionID, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	slog.Debug("created session", "id", sessionID, "questions", len(questionIDs))
+	return sessionID, nil
 }
 
 // GetSession returns a session by ID.
@@ -249,7 +272,12 @@ func (s *Store) UpdateSessionStatus(id int64, status model.SessionStatus) error 
 		args = []any{status, now, id}
 	}
 	_, err := s.db.Exec(query, args...)
-	return err
+	if err != nil {
+		slog.Error("failed to update session status", "id", id, "status", status, "error", err)
+		return err
+	}
+	slog.Info("updated session status", "id", id, "status", status)
+	return nil
 }
 
 // GetThreadsForSession returns all threads for a session.
@@ -294,9 +322,15 @@ func (s *Store) AddMessage(msg model.Message) (int64, error) {
 		msg.ThreadID, msg.Role, msg.Content, time.Now(), msg.TokenCount,
 	)
 	if err != nil {
+		slog.Error("failed to add message", "thread_id", msg.ThreadID, "role", msg.Role, "error", err)
 		return 0, err
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	slog.Debug("added message", "id", id, "thread_id", msg.ThreadID, "role", msg.Role)
+	return id, nil
 }
 
 // GetMessages returns all messages for a thread.
@@ -336,7 +370,12 @@ func (s *Store) UpsertScore(score model.QuestionScore) error {
 		 ON CONFLICT(thread_id) DO UPDATE SET llm_score = ?, llm_feedback = ?`,
 		score.ThreadID, score.LLMScore, score.LLMFeedback, score.LLMScore, score.LLMFeedback,
 	)
-	return err
+	if err != nil {
+		slog.Error("failed to upsert score", "thread_id", score.ThreadID, "error", err)
+		return err
+	}
+	slog.Debug("upserted score", "thread_id", score.ThreadID, "score", score.LLMScore)
+	return nil
 }
 
 // GetScore returns the score for a thread.
@@ -369,7 +408,12 @@ func (s *Store) UpsertGrade(g model.Grade) error {
 		 ON CONFLICT(session_id) DO UPDATE SET llm_grade = ?`,
 		g.SessionID, g.LLMGrade, g.LLMGrade,
 	)
-	return err
+	if err != nil {
+		slog.Error("failed to upsert grade", "session_id", g.SessionID, "error", err)
+		return err
+	}
+	slog.Debug("upserted grade", "session_id", g.SessionID, "grade", g.LLMGrade)
+	return nil
 }
 
 // GetGrade returns the grade for a session.
@@ -392,7 +436,12 @@ func (s *Store) FinalizeGrade(sessionID int64, finalGrade float64) error {
 		`UPDATE grades SET final_grade = ?, reviewed_by = 1, reviewed_at = ? WHERE session_id = ?`,
 		finalGrade, now, sessionID,
 	)
-	return err
+	if err != nil {
+		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
+		return err
+	}
+	slog.Info("finalized grade", "session_id", sessionID, "final_grade", finalGrade)
+	return nil
 }
 
 // GetSessionView builds a full view of a session with all threads, messages, and scores.
@@ -468,4 +517,48 @@ func (s *Store) QuestionCount() (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM questions`).Scan(&count)
 	return count, err
+}
+
+// GetImportedFileHash returns the stored SHA-256 hash for a previously imported file.
+// Returns empty string and nil error if the file has not been imported.
+func (s *Store) GetImportedFileHash(path string) (string, error) {
+	var hash string
+	err := s.db.QueryRow(`SELECT hash FROM imported_files WHERE path = ?`, path).Scan(&hash)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return hash, err
+}
+
+// SetImportedFileHash records the SHA-256 hash for an imported file.
+func (s *Store) SetImportedFileHash(path, hash string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO imported_files (path, hash, imported_at) VALUES (?, ?, ?)
+		 ON CONFLICT(path) DO UPDATE SET hash = ?, imported_at = ?`,
+		path, hash, time.Now(), hash, time.Now(),
+	)
+	if err != nil {
+		slog.Error("failed to set imported file hash", "path", path, "error", err)
+		return err
+	}
+	slog.Debug("set imported file hash", "path", path)
+	return nil
+}
+
+// ListDistinctTopics returns all unique topic values from the questions table.
+func (s *Store) ListDistinctTopics() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT topic FROM questions ORDER BY topic`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var topics []string
+	for rows.Next() {
+		var t string
+		if err := rows.Scan(&t); err != nil {
+			return nil, err
+		}
+		topics = append(topics, t)
+	}
+	return topics, rows.Err()
 }
