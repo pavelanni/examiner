@@ -6,7 +6,7 @@ templ LoginPage(errorMsg string) {
 		if errorMsg != "" {
 			<p style="color: var(--pico-del-color);">{ errorMsg }</p>
 		}
-		<form method="POST" action="/login">
+		<form method="POST" action={ templ.SafeURL(p(ctx, "/login")) }>
 			<label for="username">{ t(ctx, "Username") }</label>
 			<input type="text" id="username" name="username" required autofocus/>
 			<label for="password">{ t(ctx, "Password") }</label>

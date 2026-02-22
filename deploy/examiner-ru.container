@@ -8,11 +8,12 @@ Image=ghcr.io/pavelanni/examiner:latest
 PublishPort=127.0.0.1:8081:8080
 Volume=examiner-ru-data.volume:/data/db:Z
 Volume=%h/examiner/questions-ru.json:/data/questions.json:ro,Z
+Volume=%h/examiner/examiner-ru.yaml:/data/examiner.yaml:ro,Z
 
-# Configuration via environment.
+# Secrets via environment file (LLM key, admin password).
 EnvironmentFile=%h/examiner/examiner-ru.env
 
-# Override defaults for container paths.
+# Container-specific paths (not in YAML because they reflect the container filesystem).
 Environment=EXAMINER_DB=/data/db/examiner.db
 Environment=EXAMINER_QUESTIONS=/data/questions.json
 Environment=EXAMINER_ADDR=0.0.0.0:8080

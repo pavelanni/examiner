@@ -44,8 +44,8 @@ go build -o examiner ./cmd/examiner/
   --questions questions/physics_en.json
 ```
 
-On first run, note the generated admin password printed to stderr
-(or set one with `--admin-password`).
+On first run, set an admin password with `--admin-password`
+(or the `EXAMINER_ADMIN_PASSWORD` env var).
 Open `http://localhost:8080` and log in as `admin`.
 
 ### Configuration
@@ -70,6 +70,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--max-followups` | | `3` | Max follow-up questions per answer |
 | `--shuffle` | | `false` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
+| `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 
 #### Environment variables
 
@@ -84,12 +85,14 @@ export EXAMINER_LANG=ru
 export EXAMINER_NUM_QUESTIONS=10
 export EXAMINER_SHUFFLE=true
 export EXAMINER_ADMIN_PASSWORD=changeme
+export EXAMINER_BASE_PATH=/ru
 ```
 
 #### Config file
 
 Place an `examiner.yaml` (or `.toml`, `.json`) in the working
-directory, `~/.config/examiner/`, or `/etc/examiner/`:
+directory, `~/.config/examiner/`, `/etc/examiner/`, or `/data/`
+(used inside containers):
 
 ```yaml
 addr: ":8080"
@@ -103,6 +106,7 @@ num-questions: 10
 difficulty: medium
 shuffle: true
 max-followups: 3
+base-path: /ru
 ```
 
 #### Examples
@@ -207,10 +211,15 @@ internal/
   model/               Domain types (Question, Session, Thread, etc.)
   store/               SQLite storage layer with auto-migration
 deploy/
-  examiner.container   Podman Quadlet unit
-  examiner-data.volume Quadlet named volume
-  examiner.env.example Environment file template
-  Caddyfile            Caddy reverse proxy config
+  examiner-en.container   English instance Quadlet unit (port 8080)
+  examiner-ru.container   Russian instance Quadlet unit (port 8081)
+  examiner-en-data.volume English database volume
+  examiner-ru-data.volume Russian database volume
+  examiner-en.yaml        English YAML config (non-secret settings)
+  examiner-ru.yaml        Russian YAML config (base-path: /ru)
+  examiner-en.env.example English env template (secrets only)
+  examiner-ru.env.example Russian env template (secrets only)
+  Caddyfile               Caddy reverse proxy with path routing
 docs/
   architecture.md      System design, data flow, database schema
   development/
@@ -335,13 +344,14 @@ On the target server (one-time):
 ```bash
 # Prepare directories and config.
 mkdir -p ~/examiner
-cp questions/physics_en.json ~/examiner/
-cp deploy/examiner.env.example ~/examiner/examiner.env
-# Edit examiner.env with your LLM API key.
+cp questions/physics_en.json ~/examiner/questions-en.json
+cp deploy/examiner-en.yaml ~/examiner/examiner-en.yaml
+cp deploy/examiner-en.env.example ~/examiner/examiner-en.env
+# Edit examiner-en.yaml with LLM settings, examiner-en.env with secrets.
 
 # Install Quadlet units.
 mkdir -p ~/.config/containers/systemd
-cp deploy/examiner.container deploy/examiner-data.volume \
+cp deploy/examiner-en.container deploy/examiner-en-data.volume \
    ~/.config/containers/systemd/
 
 # Reload and start.
@@ -402,6 +412,25 @@ sudo systemctl reload caddy
 ```
 
 Caddy automatically provisions TLS certificates via Let's Encrypt.
+
+### Sub-path deployments
+
+To serve multiple instances under one domain (e.g. `/` for English
+and `/ru/` for Russian), use the `--base-path` flag on the sub-path
+instance. This ensures all links, form actions, redirects, and cookies
+use the correct prefix.
+
+```bash
+# English instance (no base path needed)
+./examiner --lang en --questions questions/physics_en.json
+
+# Russian instance under /ru
+./examiner --lang ru --base-path /ru --questions questions/physics_ru.json
+```
+
+The Caddyfile in `deploy/` routes `/ru/*` to the Russian instance
+and everything else to the English instance. See
+`deploy/examiner-ru.container` for the container configuration.
 
 ## Tech stack
 

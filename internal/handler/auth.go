@@ -65,12 +65,13 @@ func requireRole(allowed ...model.UserRole) func(http.Handler) http.Handler {
 }
 
 func (h *Handler) redirectToLogin(w http.ResponseWriter, r *http.Request) {
+	loginPath := h.path("/login")
 	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Redirect", "/login")
+		w.Header().Set("HX-Redirect", loginPath)
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, loginPath, http.StatusSeeOther)
 }
 
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
@@ -107,14 +108,18 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	cookiePath := "/"
+	if h.config.BasePath != "" {
+		cookiePath = h.config.BasePath + "/"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    token,
-		Path:     "/",
+		Path:     cookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 	})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	http.Redirect(w, r, h.path("/"), http.StatusSeeOther)
 }
 
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -123,14 +128,18 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		_ = h.store.DeleteAuthSession(cookie.Value)
 	}
 
+	logoutCookiePath := "/"
+	if h.config.BasePath != "" {
+		logoutCookiePath = h.config.BasePath + "/"
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    "",
-		Path:     "/",
+		Path:     logoutCookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
 	})
-	http.Redirect(w, r, "/login", http.StatusSeeOther)
+	http.Redirect(w, r, h.path("/login"), http.StatusSeeOther)
 }
 
 func (h *Handler) renderLoginError(w http.ResponseWriter, r *http.Request) {

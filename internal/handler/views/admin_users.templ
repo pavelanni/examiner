@@ -9,7 +9,7 @@ import (
 templ AdminUsersPage(users []model.User, flashMsg string) {
 	@Layout(t(ctx, "AdminUsers")) {
 		@Nav([]NavItem{
-			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: t(ctx, "Admin")},
 			{Label: t(ctx, "AdminUsers")},
 		})
@@ -19,7 +19,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 		}
 		<section>
 			<h2>{ t(ctx, "CreateUser") }</h2>
-			<form method="POST" action="/admin/users">
+			<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/users")) }>
 				<div class="grid">
 					<div>
 						<label for="username">{ t(ctx, "Username") }</label>
@@ -77,7 +77,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 								</td>
 								<td>{ u.CreatedAt.Format("2006-01-02 15:04") }</td>
 								<td>
-									<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/admin/users/%d/toggle", u.ID)) } style="display:inline;">
+									<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/admin/users/%d/toggle", u.ID))) } style="display:inline;">
 										<button type="submit" class="outline secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
 											{ t(ctx, "ToggleActive") }
 										</button>

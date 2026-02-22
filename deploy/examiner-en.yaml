@@ -1,0 +1,5 @@
+llm-url: https://api.deepseek.com/v1
+llm-model: deepseek-chat
+lang: en
+num-questions: 3
+shuffle: true

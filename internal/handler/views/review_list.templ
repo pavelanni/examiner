@@ -9,7 +9,7 @@ import (
 templ ReviewListPage(sessions []model.ExamSession) {
 	@Layout(t(ctx, "ReviewDashboard")) {
 		@Nav([]NavItem{
-			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: t(ctx, "TeacherReview")},
 		})
 		<h1>{ t(ctx, "ReviewDashboard") }</h1>
@@ -35,7 +35,7 @@ templ ReviewListPage(sessions []model.ExamSession) {
 									-
 								}
 							</td>
-							<td><a href={ templ.SafeURL(fmt.Sprintf("/review/%d", s.ID)) }>{ t(ctx, "Review") }</a></td>
+							<td><a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a></td>
 						</tr>
 					}
 				</tbody>

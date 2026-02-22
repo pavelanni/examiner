@@ -4,7 +4,7 @@
 examiner.example.com {
 	redir /ru /ru/ permanent
 
-	handle_path /ru/* {
+	handle /ru/* {
 		reverse_proxy localhost:8081
 	}
 

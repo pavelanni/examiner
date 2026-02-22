@@ -44,6 +44,19 @@ func UserFromContext(ctx context.Context) *User {
 	return u
 }
 
+type basePathCtxKey struct{}
+
+// ContextWithBasePath stores the base path prefix in context.
+func ContextWithBasePath(ctx context.Context, basePath string) context.Context {
+	return context.WithValue(ctx, basePathCtxKey{}, basePath)
+}
+
+// BasePathFromContext retrieves the base path from context (empty string if not set).
+func BasePathFromContext(ctx context.Context) string {
+	bp, _ := ctx.Value(basePathCtxKey{}).(string)
+	return bp
+}
+
 type Role string
 
 const (
@@ -148,6 +161,7 @@ type ExamConfig struct {
 	Topic        string // empty means all topics
 	MaxFollowups int
 	Shuffle      bool
+	BasePath     string // URL prefix for sub-path deployments (e.g. "/ru")
 }
 
 // QuestionImport is used for loading questions from JSON.

@@ -27,6 +27,19 @@ func New(s *store.Store, l *llm.Client, cfg model.ExamConfig) (*Handler, error) 
 	return &Handler{store: s, llm: l, config: cfg}, nil
 }
 
+// BasePathMiddleware injects the base path into the request context.
+func (h *Handler) BasePathMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := model.ContextWithBasePath(r.Context(), h.config.BasePath)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+// path prepends the base path to the given path.
+func (h *Handler) path(p string) string {
+	return h.config.BasePath + p
+}
+
 // Routes registers all HTTP routes.
 func (h *Handler) Routes(r chi.Router) {
 	// Public routes.
@@ -162,7 +175,7 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/exam/%d", sessionID), http.StatusSeeOther)
+	http.Redirect(w, r, h.path(fmt.Sprintf("/exam/%d", sessionID)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
@@ -400,7 +413,7 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("failed to update session to graded", "session_id", sessionID, "error", err)
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/review/%d", sessionID), http.StatusSeeOther)
+	http.Redirect(w, r, h.path(fmt.Sprintf("/review/%d", sessionID)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
@@ -459,7 +472,7 @@ func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/review/%d", sessionID), http.StatusSeeOther)
+	http.Redirect(w, r, h.path(fmt.Sprintf("/review/%d", sessionID)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
@@ -484,5 +497,5 @@ func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, fmt.Sprintf("/review/%d", sessionID), http.StatusSeeOther)
+	http.Redirect(w, r, h.path(fmt.Sprintf("/review/%d", sessionID)), http.StatusSeeOther)
 }

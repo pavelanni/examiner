@@ -65,7 +65,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	http.Redirect(w, r, h.path("/admin/users"), http.StatusSeeOther)
 }
 
 func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request) {
@@ -82,7 +82,7 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+	http.Redirect(w, r, h.path("/admin/users"), http.StatusSeeOther)
 }
 
 func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Request) {

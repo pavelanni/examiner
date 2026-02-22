@@ -36,7 +36,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 	if session.Status == model.StatusInProgress {
 		if thread.Status != model.ThreadCompleted {
 			<form
-				hx-post={ fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID) }
+				hx-post={ p(ctx, fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID)) }
 				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
 				hx-swap="innerHTML"
 			>

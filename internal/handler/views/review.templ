@@ -10,8 +10,8 @@ import (
 templ ReviewPage(view model.SessionView) {
 	@Layout(td(ctx, "ReviewTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
-			{Label: t(ctx, "Home"), URL: "/"},
-			{Label: t(ctx, "ReviewList"), URL: "/review"},
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
+			{Label: t(ctx, "ReviewList"), URL: p(ctx, "/review")},
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ td(ctx, "ReviewSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
@@ -61,7 +61,7 @@ templ ReviewPage(view model.SessionView) {
 						if view.Session.Status != model.StatusReviewed {
 							<details>
 								<summary>{ t(ctx, "AdjustScore") }</summary>
-								<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/review/%d/score/%d", view.Session.ID, tv.Thread.ID)) }>
+								<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/score/%d", view.Session.ID, tv.Thread.ID))) }>
 									<label>
 										{ td(ctx, "TeacherScoreLabel", map[string]any{"Max": strconv.Itoa(tv.Question.MaxPoints)}) }
 										<input
@@ -92,7 +92,7 @@ templ ReviewPage(view model.SessionView) {
 		if view.Grade != nil && view.Session.Status != model.StatusReviewed {
 			<hr/>
 			<h2>{ t(ctx, "FinalizeGrade") }</h2>
-			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/review/%d/finalize", view.Session.ID)) }>
+			<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/finalize", view.Session.ID))) }>
 				<label>
 					{ t(ctx, "FinalGradePercent") }
 					<input

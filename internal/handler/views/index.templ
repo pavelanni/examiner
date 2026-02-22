@@ -50,7 +50,7 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 						<p><small>{ t(ctx, "Shuffled") }</small></p>
 					}
 				}
-				<form method="POST" action="/exam/start">
+				<form method="POST" action={ templ.SafeURL(p(ctx, "/exam/start")) }>
 					if len(topics) > 1 {
 						<label for="topic">{ t(ctx, "SelectTopic") }</label>
 						<select id="topic" name="topic" required>
@@ -95,9 +95,9 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 								<td>{ s.StartedAt.Format("2006-01-02 15:04") }</td>
 								<td>
 									if s.Status == model.StatusInProgress {
-										<a href={ templ.SafeURL(fmt.Sprintf("/exam/%d", s.ID)) }>{ t(ctx, "Continue") }</a>
+										<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/exam/%d", s.ID))) }>{ t(ctx, "Continue") }</a>
 									} else {
-										<a href={ templ.SafeURL(fmt.Sprintf("/review/%d", s.ID)) }>{ t(ctx, "Review") }</a>
+										<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
 									}
 								</td>
 							</tr>
@@ -109,7 +109,7 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 		if !isStudentOnly(ctx) {
 			<section>
 				<h2>{ t(ctx, "TeacherReview") }</h2>
-				<a href="/review" role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
+				<a href={ templ.SafeURL(p(ctx, "/review")) } role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
 			</section>
 		}
 	}

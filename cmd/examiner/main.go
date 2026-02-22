@@ -40,6 +40,7 @@ func init() {
 	flag.StringP("topic", "t", "", "Filter questions by topic")
 	flag.Int("max-followups", 3, "Maximum follow-up questions per answer")
 	flag.Bool("shuffle", true, "Randomize question order")
+	flag.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	flag.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.String("log-format", "text", "Log format (text, json)")
@@ -91,6 +92,7 @@ func main() {
 	viper.AddConfigPath(".")
 	viper.AddConfigPath("$HOME/.config/examiner")
 	viper.AddConfigPath("/etc/examiner")
+	viper.AddConfigPath("/data")
 	if err := viper.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
 			fmt.Fprintf(os.Stderr, "error reading config file: %v\n", err)
@@ -139,6 +141,12 @@ func main() {
 	}
 	slog.Info("LLM endpoint OK", "url", viper.GetString("llm-url"), "model", viper.GetString("llm-model"))
 
+	// Normalize base path: must start with / and not end with /, or be empty.
+	basePath := strings.TrimRight(viper.GetString("base-path"), "/")
+	if basePath != "" && !strings.HasPrefix(basePath, "/") {
+		basePath = "/" + basePath
+	}
+
 	// Build exam config.
 	examCfg := model.ExamConfig{
 		NumQuestions: viper.GetInt("num-questions"),
@@ -146,6 +154,7 @@ func main() {
 		Topic:        viper.GetString("topic"),
 		MaxFollowups: viper.GetInt("max-followups"),
 		Shuffle:      viper.GetBool("shuffle"),
+		BasePath:     basePath,
 	}
 
 	// Create handler.
@@ -160,7 +169,20 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(appI18n.Middleware(lang))
-	h.Routes(r)
+
+	if basePath != "" {
+		r.Route(basePath, func(sub chi.Router) {
+			sub.Use(h.BasePathMiddleware)
+			h.Routes(sub)
+		})
+		// Redirect bare base path without trailing slash.
+		r.Get(basePath, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, basePath+"/", http.StatusMovedPermanently)
+		})
+	} else {
+		r.Use(h.BasePathMiddleware)
+		h.Routes(r)
+	}
 
 	addr := viper.GetString("addr")
 	slog.Info("starting server",
@@ -173,6 +195,7 @@ func main() {
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,
 		"shuffle", examCfg.Shuffle,
+		"base_path", basePath,
 	)
 	if err := http.ListenAndServe(addr, r); err != nil {
 		slog.Error("server error", "error", err)

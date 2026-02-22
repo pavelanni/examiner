@@ -20,7 +20,7 @@ templ submitForm(action string, confirmMsg string, buttonText string) {
 templ ExamPage(view model.SessionView) {
 	@Layout(td(ctx, "ExamTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
-			{Label: t(ctx, "Home"), URL: "/"},
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ t(ctx, "Exam") }</h1>
@@ -35,7 +35,7 @@ templ ExamPage(view model.SessionView) {
 			</div>
 		}
 		if view.Session.Status == model.StatusInProgress {
-			@submitForm(fmt.Sprintf("/exam/%d/submit", view.Session.ID), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"))
+			@submitForm(p(ctx, fmt.Sprintf("/exam/%d/submit", view.Session.ID)), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"))
 		}
 	}
 }

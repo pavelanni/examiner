@@ -22,9 +22,11 @@
 Two container instances run behind Caddy with path-based routing:
 
 - `/` and `/*` -> English instance (port 8080)
-- `/ru/` and `/ru/*` -> Russian instance (port 8081)
+- `/ru/` and `/ru/*` -> Russian instance (port 8081, `--base-path /ru`)
 
 Each instance has its own database, questions file, and env config.
+The Russian instance uses `EXAMINER_BASE_PATH=/ru` so that all links,
+redirects, and cookies include the `/ru` prefix.
 
 ### Deploy workflow
 
@@ -63,6 +65,10 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
   `systemctl --user daemon-reload` before restarting.
 - **Questions files on host.** Each instance mounts a separate questions
   file: `~/examiner/questions-en.json` and `~/examiner/questions-ru.json`.
+- **YAML config on host.** Each instance mounts a YAML config at
+  `/data/examiner.yaml` inside the container. Non-secret settings
+  (lang, LLM URL/model, num-questions, shuffle, base-path) go in YAML.
+  Secrets (LLM key, admin password) stay in the `.env` file.
 
 ### Key deployment files
 
@@ -72,8 +78,10 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 | `deploy/examiner-ru.container` | Russian instance Quadlet unit (port 8081) |
 | `deploy/examiner-en-data.volume` | English database volume |
 | `deploy/examiner-ru-data.volume` | Russian database volume |
-| `deploy/examiner-en.env.example` | English env template |
-| `deploy/examiner-ru.env.example` | Russian env template |
+| `deploy/examiner-en.yaml` | English YAML config (non-secret settings) |
+| `deploy/examiner-ru.yaml` | Russian YAML config (non-secret settings) |
+| `deploy/examiner-en.env.example` | English env template (secrets only) |
+| `deploy/examiner-ru.env.example` | Russian env template (secrets only) |
 | `deploy/Caddyfile` | Caddy reverse proxy with path routing |
 
 ## Project structure

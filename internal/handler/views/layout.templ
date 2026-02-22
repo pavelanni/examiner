@@ -67,18 +67,18 @@ templ userNav() {
 	if user := model.UserFromContext(ctx); user != nil {
 		<nav>
 			<ul>
-				<li><a href="/">{ t(ctx, "Home") }</a></li>
+				<li><a href={ templ.SafeURL(p(ctx, "/")) }>{ t(ctx, "Home") }</a></li>
 				if user.Role == model.UserRoleAdmin {
-					<li><a href="/admin/users">{ t(ctx, "Admin") }</a></li>
+					<li><a href={ templ.SafeURL(p(ctx, "/admin/users")) }>{ t(ctx, "Admin") }</a></li>
 				}
 				if user.Role == model.UserRoleTeacher || user.Role == model.UserRoleAdmin {
-					<li><a href="/review">{ t(ctx, "TeacherReview") }</a></li>
+					<li><a href={ templ.SafeURL(p(ctx, "/review")) }>{ t(ctx, "TeacherReview") }</a></li>
 				}
 			</ul>
 			<ul>
 				<li>{ user.DisplayName } <small>({ string(user.Role) })</small></li>
 				<li>
-					<form method="POST" action="/logout" style="margin:0;">
+					<form method="POST" action={ templ.SafeURL(p(ctx, "/logout")) } style="margin:0;">
 						<button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.85rem;">
 							{ t(ctx, "Logout") }
 						</button>
@@ -87,6 +87,11 @@ templ userNav() {
 			</ul>
 		</nav>
 	}
+}
+
+// p prepends the base path to a URL path for sub-path deployments.
+func p(ctx context.Context, path string) string {
+	return model.BasePathFromContext(ctx) + path
 }
 
 // Convenience: get i18n.T via shorter alias usable in templ files.
