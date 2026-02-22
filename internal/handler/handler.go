@@ -56,6 +56,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/exam/{sessionID}", h.handleExamPage)
 		r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
 		r.Post("/exam/{sessionID}/submit", h.handleSubmit)
+		r.Get("/results/{sessionID}", h.handleStudentResults)
 
 		// Teacher + admin routes.
 		r.Group(func(r chi.Router) {
@@ -413,7 +414,33 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("failed to update session to graded", "session_id", sessionID, "error", err)
 	}
 
-	http.Redirect(w, r, h.path(fmt.Sprintf("/review/%d", sessionID)), http.StatusSeeOther)
+	http.Redirect(w, r, h.path(fmt.Sprintf("/results/%d", sessionID)), http.StatusSeeOther)
+}
+
+func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
+	sessionID, err := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid session ID", http.StatusBadRequest)
+		return
+	}
+
+	view, err := h.store.GetSessionView(sessionID)
+	if err != nil {
+		slog.Error("failed to get session view", "session_id", sessionID, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	user := model.UserFromContext(r.Context())
+	if view.Session.StudentID != user.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.ResultsPage(*view).Render(r.Context(), w); err != nil {
+		slog.Error("render error", "error", err)
+	}
 }
 
 func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {

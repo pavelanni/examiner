@@ -96,6 +96,8 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 								<td>
 									if s.Status == model.StatusInProgress {
 										<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/exam/%d", s.ID))) }>{ t(ctx, "Continue") }</a>
+									} else if isStudentOnly(ctx) {
+										<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/results/%d", s.ID))) }>{ t(ctx, "ViewResults") }</a>
 									} else {
 										<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
 									}
