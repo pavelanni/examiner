@@ -177,3 +177,4 @@ and alternatives considered.
 | 2026-02-17 | Podman Quadlet over docker-compose | Systemd integration, rootless containers, matches RHEL/OpenShift workflow |
 | 2026-02-17 | Caddy over Nginx | Automatic HTTPS, simpler config, good enough for this scale |
 | 2026-02-17 | SQLite for initial phases | Zero-ops, single binary, sufficient for PoC scale (50 users) |
+| 2026-02-22 | Sequential int64 IDs over UUIDs | Single-instance SQLite — no distributed ID generation needed. Auth checks prevent enumeration. Readable in logs (session_id=3 vs a UUID). Revisit only if multi-instance writes or cross-database merging become a requirement |

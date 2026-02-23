@@ -50,7 +50,7 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // EvaluateAnswer sends the student's answer (and any prior conversation) to the LLM
 // for evaluation. It returns the LLM's response which may include a follow-up question.
-func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int) (*GradeResult, string, error) {
+func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*GradeResult, string, error) {
 	followupsUsed := countFollowups(messages)
 	canFollowup := followupsUsed < maxFollowups
 
@@ -83,6 +83,16 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		return nil, "", fmt.Errorf("LLM API call: %w", err)
 	}
 
+	slog.Info("LLM token usage",
+		"op", "evaluate",
+		"model", c.model,
+		"session_id", sessionID,
+		"thread_id", threadID,
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"completion_tokens", resp.Usage.CompletionTokens,
+		"total_tokens", resp.Usage.TotalTokens,
+	)
+
 	if len(resp.Choices) == 0 {
 		return nil, "", fmt.Errorf("LLM returned no choices")
 	}
@@ -99,7 +109,7 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 }
 
 // GradeThread produces a final score for an entire question thread.
-func (c *Client) GradeThread(ctx context.Context, question model.Question, messages []model.Message) (*GradeResult, error) {
+func (c *Client) GradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64) (*GradeResult, error) {
 	systemPrompt := buildGradingSystemPrompt(question)
 
 	chatMsgs := []openai.ChatCompletionMessage{
@@ -128,6 +138,16 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 	if err != nil {
 		return nil, fmt.Errorf("LLM grading API call: %w", err)
 	}
+
+	slog.Info("LLM token usage",
+		"op", "grade",
+		"model", c.model,
+		"session_id", sessionID,
+		"thread_id", threadID,
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"completion_tokens", resp.Usage.CompletionTokens,
+		"total_tokens", resp.Usage.TotalTokens,
+	)
 
 	if len(resp.Choices) == 0 {
 		return nil, fmt.Errorf("LLM returned no choices for grading")
