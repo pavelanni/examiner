@@ -7,6 +7,30 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// adjustedGrade computes the total grade using TeacherScore where available,
+// falling back to LLMScore. Returns (grade, hasOverrides).
+func adjustedGrade(view model.SessionView) (float64, bool) {
+	var totalScore float64
+	var totalMax int
+	hasOverrides := false
+	for _, tv := range view.Threads {
+		if tv.Score == nil {
+			continue
+		}
+		if tv.Score.TeacherScore != nil {
+			totalScore += *tv.Score.TeacherScore
+			hasOverrides = true
+		} else {
+			totalScore += tv.Score.LLMScore
+		}
+		totalMax += tv.Question.MaxPoints
+	}
+	if totalMax == 0 {
+		return 0, false
+	}
+	return totalScore / float64(totalMax) * 100, hasOverrides
+}
+
 templ ReviewPage(view model.SessionView) {
 	@Layout(td(ctx, "ReviewTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
@@ -19,6 +43,9 @@ templ ReviewPage(view model.SessionView) {
 		if view.Grade != nil {
 			<div class="score-box">
 				<p>{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }</p>
+				if adjusted, ok := adjustedGrade(view); ok {
+					<p><strong>{ td(ctx, "AdjustedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", adjusted)}) }</strong></p>
+				}
 				if view.Grade.FinalGrade != nil {
 					<p>{ td(ctx, "FinalGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", *view.Grade.FinalGrade)}) }</p>
 				}
@@ -101,7 +128,11 @@ templ ReviewPage(view model.SessionView) {
 						step="0.5"
 						min="0"
 						max="100"
-						value={ fmt.Sprintf("%.1f", view.Grade.LLMGrade) }
+							if adjusted, ok := adjustedGrade(view); ok {
+							value={ fmt.Sprintf("%.1f", adjusted) }
+						} else {
+							value={ fmt.Sprintf("%.1f", view.Grade.LLMGrade) }
+						}
 					/>
 				</label>
 				<button type="submit">{ t(ctx, "FinalizeGradeBtn") }</button>
