@@ -5,20 +5,27 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pavelanni/examiner/internal/model"
 
 	openai "github.com/sashabaranov/go-openai"
 )
 
+const (
+	maxFeedbackLen = 5000
+	maxFollowupLen = 5000
+)
+
 // GradeResult holds the LLM's assessment of a single answer thread.
 type GradeResult struct {
-	Score       float64 `json:"score"`
-	MaxPoints   int     `json:"max_points"`
-	Feedback    string  `json:"feedback"`
-	NeedFollowup bool   `json:"need_followup"`
-	FollowupQ   string  `json:"followup_question"`
+	Score        float64 `json:"score"`
+	MaxPoints    int     `json:"max_points"`
+	Feedback     string  `json:"feedback"`
+	NeedFollowup bool    `json:"need_followup"`
+	FollowupQ    string  `json:"followup_question"`
 }
 
 // Client wraps an OpenAI-compatible API client.
@@ -105,6 +112,8 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		return nil, raw, fmt.Errorf("parse LLM response: %w (raw: %s)", err, raw)
 	}
 
+	validateGradeResult(&result, question.MaxPoints)
+
 	return &result, raw, nil
 }
 
@@ -159,7 +168,8 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 		return nil, fmt.Errorf("parse grading response: %w (raw: %s)", err, raw)
 	}
 
-	result.MaxPoints = question.MaxPoints
+	validateGradeResult(&result, question.MaxPoints)
+
 	return &result, nil
 }
 
@@ -223,4 +233,44 @@ func countFollowups(messages []model.Message) int {
 		}
 	}
 	return count
+}
+
+func validateGradeResult(result *GradeResult, maxPoints int) {
+	originalScore := result.Score
+	result.Score = math.Max(0, math.Min(float64(maxPoints), result.Score))
+	if result.Score != originalScore {
+		var msg string
+		if result.Score == 0 {
+			msg = "LLM score clamped to lower bound (0) - possible prompt injection"
+		} else if result.Score == float64(maxPoints) {
+			msg = "LLM score clamped to upper bound (maxPoints) - possible prompt injection"
+		} else {
+			msg = "LLM score clamped - possible prompt injection"
+		}
+		slog.Warn(msg,
+			"original_score", originalScore,
+			"max_points", maxPoints,
+			"clamped_score", result.Score,
+		)
+	}
+
+	if result.MaxPoints != maxPoints {
+		slog.Warn("LLM returned mismatched MaxPoints - overriding",
+			"llm_max_points", result.MaxPoints,
+			"actual_max_points", maxPoints,
+		)
+		result.MaxPoints = maxPoints
+	}
+
+	if utf8.RuneCountInString(result.Feedback) > maxFeedbackLen {
+		runes := []rune(result.Feedback)
+		result.Feedback = string(runes[:maxFeedbackLen])
+		slog.Warn("LLM feedback truncated", "max_len", maxFeedbackLen)
+	}
+
+	if utf8.RuneCountInString(result.FollowupQ) > maxFollowupLen {
+		runes := []rune(result.FollowupQ)
+		result.FollowupQ = string(runes[:maxFollowupLen])
+		slog.Warn("LLM followup question truncated", "max_len", maxFollowupLen)
+	}
 }
