@@ -233,6 +233,18 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	thread, err := h.store.GetThread(threadID)
+	if err != nil {
+		slog.Error("failed to get thread", "thread_id", threadID, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if thread.SessionID != sessionID {
+		http.Error(w, "thread does not belong to session", http.StatusForbidden)
+		return
+	}
+
 	_, err = h.store.AddMessage(model.Message{
 		ThreadID: threadID,
 		Role:     model.RoleStudent,
@@ -244,12 +256,6 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	thread, err := h.store.GetThread(threadID)
-	if err != nil {
-		slog.Error("failed to get thread", "thread_id", threadID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	question, err := h.store.GetQuestion(thread.QuestionID)
 	if err != nil {
 		slog.Error("failed to get question", "question_id", thread.QuestionID, "error", err)
@@ -330,6 +336,24 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
+
+	sess, err := h.store.GetSession(sessionID)
+	if err != nil {
+		slog.Error("failed to get session", "session_id", sessionID, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	user := model.UserFromContext(r.Context())
+	if user.Role == model.UserRoleStudent && sess.StudentID != user.ID {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+
+	if sess.Status != model.StatusInProgress {
+		http.Error(w, "exam already submitted", http.StatusConflict)
+		return
+	}
 
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusSubmitted); err != nil {
 		slog.Error("failed to update session to submitted", "session_id", sessionID, "error", err)
