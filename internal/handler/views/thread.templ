@@ -12,11 +12,11 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 		{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(index + 1)}) }
 		<span class={ "status-badge", "status-" + string(thread.Status) }>{ string(thread.Status) }</span>
 	</h3>
-	<p>
+	<p class="question-meta">
 		<strong>{ question.Topic }</strong>
 		({ string(question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(question.MaxPoints)}) })
 	</p>
-	<p>{ question.Text }</p>
+	<p class="question-text">{ question.Text }</p>
 	if len(messages) > 0 {
 		<div class="messages">
 			for _, m := range messages {
@@ -41,6 +41,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 				hx-swap="innerHTML"
 			>
 				<textarea
+					class="answer-input"
 					name="answer"
 					rows="4"
 					if len(messages) > 0 {
@@ -50,7 +51,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 					}
 					required
 				></textarea>
-				<button type="submit">
+				<button class="answer-submit" type="submit">
 					if len(messages) > 0 {
 						{ t(ctx, "Reply") }
 					} else {

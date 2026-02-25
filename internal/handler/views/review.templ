@@ -58,7 +58,7 @@ templ ReviewPage(view model.SessionView) {
 					<strong>{ tv.Question.Topic }</strong>
 					({ string(tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
 				</p>
-				<p>{ tv.Question.Text }</p>
+				<p class="question-text">{ tv.Question.Text }</p>
 				if len(tv.Messages) > 0 {
 					<div class="messages">
 						for _, m := range tv.Messages {
