@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"strings"
 	"unicode/utf8"
 
+	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
 
 	openai "github.com/sashabaranov/go-openai"
@@ -30,20 +30,32 @@ type GradeResult struct {
 
 // Client wraps an OpenAI-compatible API client.
 type Client struct {
-	api   *openai.Client
-	model string
+	api           *openai.Client
+	model         string
+	promptVariant prompts.PromptVariant
 }
 
 // New creates a new LLM client.
-func New(baseURL, apiKey, modelName string) *Client {
+func New(baseURL, apiKey, modelName string, variant string) (*Client, error) {
+	v := prompts.PromptVariant(variant)
+	if !prompts.IsValidVariant(string(v)) {
+		v = prompts.PromptStandard
+		slog.Warn("invalid prompt variant, using standard", "variant", variant)
+	}
+
+	if err := prompts.Load(promptsFS); err != nil {
+		return nil, fmt.Errorf("failed to load prompts: %w", err)
+	}
+
 	config := openai.DefaultConfig(apiKey)
 	if baseURL != "" {
 		config.BaseURL = baseURL
 	}
 	return &Client{
-		api:   openai.NewClientWithConfig(config),
-		model: modelName,
-	}
+		api:           openai.NewClientWithConfig(config),
+		model:         modelName,
+		promptVariant: v,
+	}, nil
 }
 
 // Ping checks that the LLM endpoint is reachable by listing available models.
@@ -58,10 +70,10 @@ func (c *Client) Ping(ctx context.Context) error {
 // EvaluateAnswer sends the student's answer (and any prior conversation) to the LLM
 // for evaluation. It returns the LLM's response which may include a follow-up question.
 func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*GradeResult, string, error) {
-	followupsUsed := countFollowups(messages)
-	canFollowup := followupsUsed < maxFollowups
-
-	systemPrompt := buildEvalSystemPrompt(question, canFollowup)
+	systemPrompt, err := prompts.BuildEvalPrompt(c.promptVariant, question, messages, maxFollowups)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to build eval prompt: %w", err)
+	}
 
 	chatMsgs := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
@@ -119,7 +131,10 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 
 // GradeThread produces a final score for an entire question thread.
 func (c *Client) GradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64) (*GradeResult, error) {
-	systemPrompt := buildGradingSystemPrompt(question)
+	systemPrompt, err := prompts.BuildGradePrompt(c.promptVariant, question, messages)
+	if err != nil {
+		return nil, fmt.Errorf("failed to build grade prompt: %w", err)
+	}
 
 	chatMsgs := []openai.ChatCompletionMessage{
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
@@ -171,68 +186,6 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 	validateGradeResult(&result, question.MaxPoints)
 
 	return &result, nil
-}
-
-func buildEvalSystemPrompt(q model.Question, canFollowup bool) string {
-	var sb strings.Builder
-	sb.WriteString("You are an exam evaluator. A student is answering the following question:\n\n")
-	sb.WriteString("QUESTION: " + q.Text + "\n\n")
-	sb.WriteString(fmt.Sprintf("MAX POINTS: %d\n\n", q.MaxPoints))
-
-	if q.Rubric != "" {
-		sb.WriteString("GRADING RUBRIC:\n" + q.Rubric + "\n\n")
-	}
-	if q.ModelAnswer != "" {
-		sb.WriteString("MODEL ANSWER (not shown to student):\n" + q.ModelAnswer + "\n\n")
-	}
-
-	sb.WriteString("INSTRUCTIONS:\n")
-	sb.WriteString("- Evaluate the student's answer for correctness, completeness, and understanding.\n")
-	if canFollowup {
-		sb.WriteString("- If the answer is incomplete, vague, or partially correct, you MAY ask ONE follow-up question to probe deeper understanding.\n")
-		sb.WriteString("- Only ask a follow-up if it would meaningfully help assess the student's knowledge.\n")
-		sb.WriteString("- If the answer is clearly correct and complete, or clearly wrong with no ambiguity, do NOT ask a follow-up.\n")
-	} else {
-		sb.WriteString("- Maximum follow-up questions reached. Do NOT ask any more follow-ups. Set need_followup to false.\n")
-	}
-	sb.WriteString("\nRespond ONLY with a JSON object with these fields:\n")
-	sb.WriteString(`{"score": <number 0 to max_points>, "max_points": <max_points>, "feedback": "<brief feedback>", "need_followup": <true/false>, "followup_question": "<question or empty string>"}`)
-	sb.WriteString("\n")
-
-	return sb.String()
-}
-
-func buildGradingSystemPrompt(q model.Question) string {
-	var sb strings.Builder
-	sb.WriteString("You are a final exam grader. Review the entire conversation thread below ")
-	sb.WriteString("and produce a FINAL score for the student's performance on this question.\n\n")
-	sb.WriteString("QUESTION: " + q.Text + "\n\n")
-	sb.WriteString(fmt.Sprintf("MAX POINTS: %d\n\n", q.MaxPoints))
-
-	if q.Rubric != "" {
-		sb.WriteString("GRADING RUBRIC:\n" + q.Rubric + "\n\n")
-	}
-	if q.ModelAnswer != "" {
-		sb.WriteString("MODEL ANSWER:\n" + q.ModelAnswer + "\n\n")
-	}
-
-	sb.WriteString("Consider the initial answer AND all follow-up responses.\n")
-	sb.WriteString("Provide a comprehensive final assessment.\n\n")
-	sb.WriteString("Respond ONLY with a JSON object:\n")
-	sb.WriteString(`{"score": <number 0 to max_points>, "max_points": <max_points>, "feedback": "<comprehensive feedback>", "need_followup": false, "followup_question": ""}`)
-	sb.WriteString("\n")
-
-	return sb.String()
-}
-
-func countFollowups(messages []model.Message) int {
-	count := 0
-	for _, m := range messages {
-		if m.Role == model.RoleLLM {
-			count++
-		}
-	}
-	return count
 }
 
 func validateGradeResult(result *GradeResult, maxPoints int) {

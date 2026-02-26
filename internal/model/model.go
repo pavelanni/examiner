@@ -176,6 +176,7 @@ type ExamConfig struct {
 	Shuffle       bool
 	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
 	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
+	PromptVariant string // Grading prompt variant (strict, standard, lenient)
 }
 
 // QuestionImport is used for loading questions from JSON.

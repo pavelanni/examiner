@@ -1,11 +1,22 @@
 package llm
 
 import (
+	"fmt"
+	"os"
 	"strings"
 	"testing"
 
+	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
 )
+
+func TestMain(m *testing.M) {
+	if err := prompts.Load(promptsFS); err != nil {
+		fmt.Fprintf(os.Stderr, "prompts.Load failed: %v\n", err)
+		os.Exit(1)
+	}
+	os.Exit(m.Run())
+}
 
 func TestCountFollowups(t *testing.T) {
 	tests := []struct {
@@ -32,7 +43,7 @@ func TestCountFollowups(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := countFollowups(tt.messages)
+			got := prompts.CountFollowups(tt.messages)
 			if got != tt.want {
 				t.Errorf("countFollowups() = %d, want %d", got, tt.want)
 			}
@@ -49,7 +60,12 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 	}
 
 	t.Run("can followup", func(t *testing.T) {
-		prompt := buildEvalSystemPrompt(q, true)
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, []model.Message{
+			{Role: model.RoleStudent, Content: "answer"},
+		}, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
+		}
 		if !strings.Contains(prompt, q.Text) {
 			t.Error("prompt should contain question text")
 		}
@@ -68,7 +84,18 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 	})
 
 	t.Run("cannot followup", func(t *testing.T) {
-		prompt := buildEvalSystemPrompt(q, false)
+		messages := []model.Message{
+			{Role: model.RoleStudent, Content: "a1"},
+			{Role: model.RoleLLM, Content: "q1"},
+			{Role: model.RoleStudent, Content: "a2"},
+			{Role: model.RoleLLM, Content: "q2"},
+			{Role: model.RoleStudent, Content: "a3"},
+			{Role: model.RoleLLM, Content: "q3"},
+		}
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, messages, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
+		}
 		if !strings.Contains(prompt, "Do NOT ask any more follow-ups") {
 			t.Error("prompt should prohibit follow-ups")
 		}
@@ -79,12 +106,17 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 
 	t.Run("empty rubric and model answer", func(t *testing.T) {
 		q2 := model.Question{Text: "Simple?", MaxPoints: 5}
-		prompt := buildEvalSystemPrompt(q2, true)
-		if strings.Contains(prompt, "GRADING RUBRIC") {
-			t.Error("prompt should not contain rubric section when empty")
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q2, []model.Message{
+			{Role: model.RoleStudent, Content: "answer"},
+		}, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
 		}
-		if strings.Contains(prompt, "MODEL ANSWER") {
-			t.Error("prompt should not contain model answer section when empty")
+		if strings.Contains(prompt, "Must mention") {
+			t.Error("prompt should not contain rubric content when empty")
+		}
+		if strings.Contains(prompt, "lightweight thread") {
+			t.Error("prompt should not contain model answer content when empty")
 		}
 	})
 }
@@ -97,7 +129,16 @@ func TestBuildGradingSystemPrompt(t *testing.T) {
 		MaxPoints:   10,
 	}
 
-	prompt := buildGradingSystemPrompt(q)
+	messages := []model.Message{
+		{Role: model.RoleStudent, Content: "answer"},
+		{Role: model.RoleLLM, Content: "followup"},
+		{Role: model.RoleStudent, Content: "response"},
+	}
+
+	prompt, err := prompts.BuildGradePrompt(prompts.PromptStandard, q, messages)
+	if err != nil {
+		t.Fatalf("failed to build prompt: %v", err)
+	}
 	if !strings.Contains(prompt, q.Text) {
 		t.Error("prompt should contain question text")
 	}
