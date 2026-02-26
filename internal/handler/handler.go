@@ -42,18 +42,22 @@ func (h *Handler) path(p string) string {
 
 // Routes registers all HTTP routes.
 func (h *Handler) Routes(r chi.Router) {
-	// Public routes.
-	r.Get("/login", h.handleLoginPage)
-	r.Post("/login", h.handleLogin)
+	// Public routes (login).
+	r.Group(func(r chi.Router) {
+		r.Use(h.csrfMiddleware)
+		r.Get("/login", h.handleLoginPage)
+		r.Post("/login", h.handleLogin)
+	})
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireAuth)
+		r.Use(h.csrfMiddleware)
 
 		r.Post("/logout", h.handleLogout)
 		r.Get("/", h.handleIndex)
-		r.Post("/exam/start", h.handleStartExam)
 		r.Get("/exam/{sessionID}", h.handleExamPage)
+		r.Post("/exam/start", h.handleStartExam)
 		r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
 		r.Post("/exam/{sessionID}/submit", h.handleSubmit)
 		r.Get("/results/{sessionID}", h.handleStudentResults)

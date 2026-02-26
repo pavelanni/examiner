@@ -6,13 +6,14 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ submitForm(action string, confirmMsg string, buttonText string, gradingMsg string) {
+templ submitForm(action string, confirmMsg string, buttonText string, gradingMsg string, csrfToken string) {
 	<form
 		method="POST"
 		action={ templ.SafeURL(action) }
 		data-confirm={ confirmMsg }
 		onsubmit="if(!confirm(this.dataset.confirm))return false;this.querySelector('button').disabled=true;document.getElementById('grading-banner').style.display='block';return true;"
 	>
+		<input type="hidden" name="csrf_token" value={ csrfToken }/>
 		<button type="submit" class="contrast">{ buttonText }</button>
 	</form>
 	<div id="grading-banner" role="alert" style="display:none;background:var(--pico-primary-background);padding:1rem;border-radius:6px;margin-top:1rem;text-align:center;">
@@ -38,7 +39,7 @@ templ ExamPage(view model.SessionView) {
 			</div>
 		}
 		if view.Session.Status == model.StatusInProgress {
-			@submitForm(p(ctx, fmt.Sprintf("/exam/%d/submit", view.Session.ID)), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"), t(ctx, "GradingInProgress"))
+			@submitForm(p(ctx, fmt.Sprintf("/exam/%d/submit", view.Session.ID)), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"), t(ctx, "GradingInProgress"), csrf(ctx))
 		}
 	}
 }

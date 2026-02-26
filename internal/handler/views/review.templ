@@ -89,6 +89,7 @@ templ ReviewPage(view model.SessionView) {
 							<details>
 								<summary>{ t(ctx, "AdjustScore") }</summary>
 								<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/score/%d", view.Session.ID, tv.Thread.ID))) }>
+									<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 									<label>
 										{ td(ctx, "TeacherScoreLabel", map[string]any{"Max": strconv.Itoa(tv.Question.MaxPoints)}) }
 										<input
@@ -120,6 +121,7 @@ templ ReviewPage(view model.SessionView) {
 			<hr/>
 			<h2>{ t(ctx, "FinalizeGrade") }</h2>
 			<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/finalize", view.Session.ID))) }>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<label>
 					{ t(ctx, "FinalGradePercent") }
 					<input

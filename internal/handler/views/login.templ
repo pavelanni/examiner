@@ -7,6 +7,7 @@ templ LoginPage(errorMsg string) {
 			<p style="color: var(--pico-del-color);">{ errorMsg }</p>
 		}
 		<form method="POST" action={ templ.SafeURL(p(ctx, "/login")) }>
+			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="username">{ t(ctx, "Username") }</label>
 			<input type="text" id="username" name="username" required autofocus/>
 			<label for="password">{ t(ctx, "Password") }</label>

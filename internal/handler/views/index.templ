@@ -51,6 +51,7 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 					}
 				}
 				<form method="POST" action={ templ.SafeURL(p(ctx, "/exam/start")) }>
+					<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 					if len(topics) > 1 {
 						<label for="topic">{ t(ctx, "SelectTopic") }</label>
 						<select id="topic" name="topic" required>

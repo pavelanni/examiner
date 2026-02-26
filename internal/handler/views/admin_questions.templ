@@ -16,6 +16,7 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool) {
 			}
 		}
 		<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/questions")) } enctype="multipart/form-data">
+			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
 			<button type="submit">{ t(ctx, "UploadBtn") }</button>

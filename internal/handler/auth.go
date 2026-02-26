@@ -1,6 +1,9 @@
 package handler
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"log/slog"
 	"net/http"
 
@@ -11,7 +14,88 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-const sessionCookieName = "session"
+const (
+	sessionCookieName = "session"
+	csrfCookieName    = "csrf_token"
+)
+
+func generateCSRFToken() (string, error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.URLEncoding.EncodeToString(b), nil
+}
+
+func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "GET" || r.Method == "HEAD" {
+			token, err := generateCSRFToken()
+			if err != nil {
+				slog.Error("failed to generate CSRF token", "error", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			cookiePath := "/"
+			if h.config.BasePath != "" {
+				cookiePath = h.config.BasePath + "/"
+			}
+			http.SetCookie(w, &http.Cookie{
+				Name:     csrfCookieName,
+				Value:    token,
+				Path:     cookiePath,
+				HttpOnly: false,
+				Secure:   h.config.SecureCookies,
+				SameSite: http.SameSiteLaxMode,
+			})
+			ctx := model.ContextWithCSRFToken(r.Context(), token)
+			next.ServeHTTP(w, r.WithContext(ctx))
+			return
+		}
+
+		cookie, err := r.Cookie(csrfCookieName)
+		if err != nil || cookie.Value == "" {
+			slog.Warn("CSRF cookie missing")
+			http.Error(w, "csrf token missing", http.StatusForbidden)
+			return
+		}
+
+		formToken := r.FormValue("csrf_token")
+		if formToken == "" {
+			slog.Warn("CSRF form token missing")
+			http.Error(w, "csrf token missing", http.StatusForbidden)
+			return
+		}
+
+		if len(formToken) != len(cookie.Value) || subtle.ConstantTimeCompare([]byte(formToken), []byte(cookie.Value)) != 1 {
+			slog.Warn("CSRF token mismatch")
+			http.Error(w, "invalid csrf token", http.StatusForbidden)
+			return
+		}
+
+		token, err := generateCSRFToken()
+		if err != nil {
+			slog.Error("failed to generate CSRF token", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		cookiePath := "/"
+		if h.config.BasePath != "" {
+			cookiePath = h.config.BasePath + "/"
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     csrfCookieName,
+			Value:    token,
+			Path:     cookiePath,
+			HttpOnly: false,
+			Secure:   h.config.SecureCookies,
+			SameSite: http.SameSiteLaxMode,
+		})
+
+		ctx := model.ContextWithCSRFToken(r.Context(), token)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
 
 // requireAuth is middleware that checks for a valid session cookie.
 func (h *Handler) requireAuth(next http.Handler) http.Handler {
@@ -118,6 +202,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Path:     cookiePath,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
+		Secure:   h.config.SecureCookies,
 	})
 	http.Redirect(w, r, h.path("/"), http.StatusSeeOther)
 }
@@ -138,6 +223,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     logoutCookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.config.SecureCookies,
 	})
 	http.Redirect(w, r, h.path("/login"), http.StatusSeeOther)
 }
