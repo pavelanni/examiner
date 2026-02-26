@@ -20,6 +20,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 		<section>
 			<h2>{ t(ctx, "CreateUser") }</h2>
 			<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/users")) }>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<div class="grid">
 					<div>
 						<label for="username">{ t(ctx, "Username") }</label>
@@ -78,6 +79,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 								<td>{ u.CreatedAt.Format("2006-01-02 15:04") }</td>
 								<td>
 									<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/admin/users/%d/toggle", u.ID))) } style="display:inline;">
+										<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 										<button type="submit" class="outline secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
 											{ t(ctx, "ToggleActive") }
 										</button>

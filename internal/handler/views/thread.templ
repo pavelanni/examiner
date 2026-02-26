@@ -40,6 +40,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
 				hx-swap="innerHTML"
 			>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<textarea
 					class="answer-input"
 					name="answer"

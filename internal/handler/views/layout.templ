@@ -79,6 +79,7 @@ templ userNav() {
 				<li>{ user.DisplayName } <small>({ string(user.Role) })</small></li>
 				<li>
 					<form method="POST" action={ templ.SafeURL(p(ctx, "/logout")) } style="margin:0;">
+						<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 						<button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.85rem;">
 							{ t(ctx, "Logout") }
 						</button>
@@ -92,6 +93,10 @@ templ userNav() {
 // p prepends the base path to a URL path for sub-path deployments.
 func p(ctx context.Context, path string) string {
 	return model.BasePathFromContext(ctx) + path
+}
+
+func csrf(ctx context.Context) string {
+	return model.CSRFTokenFromContext(ctx)
 }
 
 // Convenience: get i18n.T via shorter alias usable in templ files.

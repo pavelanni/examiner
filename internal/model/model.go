@@ -57,6 +57,19 @@ func BasePathFromContext(ctx context.Context) string {
 	return bp
 }
 
+type csrfCtxKey struct{}
+
+// ContextWithCSRFToken stores the CSRF token in context.
+func ContextWithCSRFToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, csrfCtxKey{}, token)
+}
+
+// CSRFTokenFromContext retrieves the CSRF token from context.
+func CSRFTokenFromContext(ctx context.Context) string {
+	t, _ := ctx.Value(csrfCtxKey{}).(string)
+	return t
+}
+
 type Role string
 
 const (
@@ -137,31 +150,32 @@ type Message struct {
 }
 
 type QuestionScore struct {
-	ID             int64   `json:"id"`
-	ThreadID       int64   `json:"thread_id"`
-	LLMScore       float64 `json:"llm_score"`
-	LLMFeedback    string  `json:"llm_feedback"`
+	ID             int64    `json:"id"`
+	ThreadID       int64    `json:"thread_id"`
+	LLMScore       float64  `json:"llm_score"`
+	LLMFeedback    string   `json:"llm_feedback"`
 	TeacherScore   *float64 `json:"teacher_score,omitempty"`
-	TeacherComment string  `json:"teacher_comment,omitempty"`
+	TeacherComment string   `json:"teacher_comment,omitempty"`
 }
 
 type Grade struct {
-	ID         int64    `json:"id"`
-	SessionID  int64    `json:"session_id"`
-	LLMGrade   float64  `json:"llm_grade"`
-	FinalGrade *float64 `json:"final_grade,omitempty"`
-	ReviewedBy *int64   `json:"reviewed_by,omitempty"`
+	ID         int64      `json:"id"`
+	SessionID  int64      `json:"session_id"`
+	LLMGrade   float64    `json:"llm_grade"`
+	FinalGrade *float64   `json:"final_grade,omitempty"`
+	ReviewedBy *int64     `json:"reviewed_by,omitempty"`
 	ReviewedAt *time.Time `json:"reviewed_at,omitempty"`
 }
 
 // ExamConfig holds runtime exam parameters set via CLI flags.
 type ExamConfig struct {
-	NumQuestions int    // 0 means all available
-	Difficulty   string // empty means all difficulties
-	Topic        string // empty means all topics
-	MaxFollowups int
-	Shuffle      bool
-	BasePath     string // URL prefix for sub-path deployments (e.g. "/ru")
+	NumQuestions  int    // 0 means all available
+	Difficulty    string // empty means all difficulties
+	Topic         string // empty means all topics
+	MaxFollowups  int
+	Shuffle       bool
+	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
+	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
 }
 
 // QuestionImport is used for loading questions from JSON.
@@ -184,8 +198,8 @@ type ThreadView struct {
 
 // SessionView combines session data with threads for display.
 type SessionView struct {
-	Session  ExamSession
+	Session   ExamSession
 	Blueprint ExamBlueprint
-	Threads  []ThreadView
-	Grade    *Grade
+	Threads   []ThreadView
+	Grade     *Grade
 }

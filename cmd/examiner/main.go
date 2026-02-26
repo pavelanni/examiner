@@ -41,6 +41,7 @@ func init() {
 	flag.Int("max-followups", 3, "Maximum follow-up questions per answer")
 	flag.Bool("shuffle", true, "Randomize question order")
 	flag.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
+	flag.Bool("secure-cookies", true, "Set Secure flag on session cookies")
 	flag.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.String("log-format", "text", "Log format (text, json)")
@@ -149,12 +150,13 @@ func main() {
 
 	// Build exam config.
 	examCfg := model.ExamConfig{
-		NumQuestions: viper.GetInt("num-questions"),
-		Difficulty:   viper.GetString("difficulty"),
-		Topic:        viper.GetString("topic"),
-		MaxFollowups: viper.GetInt("max-followups"),
-		Shuffle:      viper.GetBool("shuffle"),
-		BasePath:     basePath,
+		NumQuestions:  viper.GetInt("num-questions"),
+		Difficulty:    viper.GetString("difficulty"),
+		Topic:         viper.GetString("topic"),
+		MaxFollowups:  viper.GetInt("max-followups"),
+		Shuffle:       viper.GetBool("shuffle"),
+		BasePath:      viper.GetString("base-path"),
+		SecureCookies: viper.GetBool("secure-cookies"),
 	}
 
 	// Create handler.
