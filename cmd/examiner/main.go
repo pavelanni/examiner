@@ -20,6 +20,7 @@ import (
 	"github.com/pavelanni/examiner/internal/handler"
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/llm"
+	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
 )
@@ -42,6 +43,7 @@ func init() {
 	flag.Bool("shuffle", true, "Randomize question order")
 	flag.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	flag.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	flag.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
 	flag.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
 	flag.String("log-format", "text", "Log format (text, json)")
@@ -131,11 +133,21 @@ func main() {
 	}
 
 	// Create LLM client and verify connectivity.
-	llmClient := llm.New(
+	promptVariant := strings.ToLower(strings.TrimSpace(viper.GetString("prompt-variant")))
+	if !prompts.IsValidVariant(promptVariant) {
+		slog.Warn("invalid prompt-variant, using standard", "variant", promptVariant)
+		promptVariant = string(prompts.PromptStandard)
+	}
+	llmClient, err := llm.New(
 		viper.GetString("llm-url"),
 		viper.GetString("llm-key"),
 		viper.GetString("llm-model"),
+		promptVariant,
 	)
+	if err != nil {
+		slog.Error("failed to create LLM client", "error", err)
+		os.Exit(1)
+	}
 	if err := llmClient.Ping(context.Background()); err != nil {
 		slog.Error("LLM health check failed", "url", viper.GetString("llm-url"), "error", err)
 		os.Exit(1)
@@ -157,6 +169,7 @@ func main() {
 		Shuffle:       viper.GetBool("shuffle"),
 		BasePath:      viper.GetString("base-path"),
 		SecureCookies: viper.GetBool("secure-cookies"),
+		PromptVariant: promptVariant,
 	}
 
 	// Create handler.
