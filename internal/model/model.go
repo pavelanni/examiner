@@ -9,11 +9,15 @@ import (
 type UserRole string
 
 const (
+	// UserRoleStudent is a student user role.
 	UserRoleStudent UserRole = "student"
+	// UserRoleTeacher is a teacher user role.
 	UserRoleTeacher UserRole = "teacher"
-	UserRoleAdmin   UserRole = "admin"
+	// UserRoleAdmin is an admin user role.
+	UserRoleAdmin UserRole = "admin"
 )
 
+// User represents a system user.
 type User struct {
 	ID           int64
 	Username     string
@@ -24,6 +28,7 @@ type User struct {
 	CreatedAt    time.Time
 }
 
+// AuthSession represents an authentication session.
 type AuthSession struct {
 	ID        string
 	UserID    int64
@@ -70,6 +75,7 @@ func CSRFTokenFromContext(ctx context.Context) string {
 	return t
 }
 
+// Role represents a chat message role.
 type Role string
 
 const (
@@ -79,6 +85,7 @@ const (
 	RoleLLM     Role = "assistant"
 )
 
+// SessionStatus represents the status of an exam session.
 type SessionStatus string
 
 const (
@@ -89,6 +96,7 @@ const (
 	StatusReviewed   SessionStatus = "reviewed"
 )
 
+// ThreadStatus represents the status of a question thread.
 type ThreadStatus string
 
 const (
@@ -97,6 +105,7 @@ const (
 	ThreadCompleted ThreadStatus = "completed"
 )
 
+// Difficulty represents question difficulty level.
 type Difficulty string
 
 const (
@@ -105,6 +114,7 @@ const (
 	DifficultyHard   Difficulty = "hard"
 )
 
+// Question represents an exam question.
 type Question struct {
 	ID          int64      `json:"id"`
 	CourseID    int64      `json:"course_id"`
@@ -116,6 +126,7 @@ type Question struct {
 	MaxPoints   int        `json:"max_points"`
 }
 
+// ExamBlueprint defines the structure of an exam.
 type ExamBlueprint struct {
 	ID           int64  `json:"id"`
 	CourseID     int64  `json:"course_id"`
@@ -124,6 +135,7 @@ type ExamBlueprint struct {
 	MaxFollowups int    `json:"max_followups"`
 }
 
+// ExamSession represents a student's exam session.
 type ExamSession struct {
 	ID          int64         `json:"id"`
 	BlueprintID int64         `json:"blueprint_id"`
@@ -133,6 +145,7 @@ type ExamSession struct {
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
 }
 
+// QuestionThread represents a thread for a single question in an exam session.
 type QuestionThread struct {
 	ID         int64        `json:"id"`
 	SessionID  int64        `json:"session_id"`
@@ -140,6 +153,7 @@ type QuestionThread struct {
 	Status     ThreadStatus `json:"status"`
 }
 
+// Message represents a chat message in a question thread.
 type Message struct {
 	ID         int64     `json:"id"`
 	ThreadID   int64     `json:"thread_id"`
@@ -149,6 +163,7 @@ type Message struct {
 	TokenCount int       `json:"token_count"`
 }
 
+// QuestionScore holds the score for a question thread.
 type QuestionScore struct {
 	ID             int64    `json:"id"`
 	ThreadID       int64    `json:"thread_id"`
@@ -158,6 +173,7 @@ type QuestionScore struct {
 	TeacherComment string   `json:"teacher_comment,omitempty"`
 }
 
+// Grade holds the final grade for an exam session.
 type Grade struct {
 	ID         int64      `json:"id"`
 	SessionID  int64      `json:"session_id"`

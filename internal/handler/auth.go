@@ -19,6 +19,7 @@ const (
 	csrfCookieName    = "csrf_token"
 )
 
+// generateCSRFToken generates a new CSRF token.
 func generateCSRFToken() (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
@@ -148,6 +149,7 @@ func requireRole(allowed ...model.UserRole) func(http.Handler) http.Handler {
 	}
 }
 
+// redirectToLogin redirects the user to the login page.
 func (h *Handler) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	loginPath := h.path("/login")
 	if r.Header.Get("HX-Request") == "true" {
@@ -158,6 +160,7 @@ func (h *Handler) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loginPath, http.StatusSeeOther)
 }
 
+// handleLoginPage serves the login page.
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.LoginPage("").Render(r.Context(), w); err != nil {
@@ -165,6 +168,7 @@ func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleLogin processes login form submission.
 func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	password := r.FormValue("password")
@@ -207,6 +211,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.path("/"), http.StatusSeeOther)
 }
 
+// handleLogout processes logout request.
 func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(sessionCookieName)
 	if err == nil && cookie.Value != "" {
@@ -228,6 +233,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.path("/login"), http.StatusSeeOther)
 }
 
+// renderLoginError renders the login page with an error message.
 func (h *Handler) renderLoginError(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)

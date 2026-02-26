@@ -17,6 +17,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// handleAdminUsersPage serves the admin users management page.
 func (h *Handler) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	users, err := h.store.ListUsers()
 	if err != nil {
@@ -30,6 +31,7 @@ func (h *Handler) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// handleCreateUser processes the user creation form.
 func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
 	displayName := r.FormValue("display_name")
@@ -68,6 +70,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, h.path("/admin/users"), http.StatusSeeOther)
 }
 
+// handleToggleUserActive toggles a user's active status.
 func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "userID")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -85,6 +88,7 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 	http.Redirect(w, r, h.path("/admin/users"), http.StatusSeeOther)
 }
 
+// handleAdminQuestionsPage serves the admin questions management page.
 func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := views.AdminQuestionsPage("", false).Render(r.Context(), w); err != nil {
@@ -92,6 +96,7 @@ func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// handleUploadQuestions handles question file upload.
 func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, "file too large", http.StatusBadRequest)
