@@ -11,8 +11,15 @@ then grades the entire exam. A teacher can review and override scores.
   to probe deeper understanding (configurable limit per question)
 - **Automated grading** — LLM scores each answer against a rubric
   and model answer, then produces an overall grade
+- **Configurable grading strictness** — choose between `strict`,
+  `standard`, and `lenient` prompt variants to control how the LLM
+  evaluates answers
 - **Teacher review** — teachers can adjust per-question scores,
-  add comments, and finalize the grade
+  add comments, and finalize the grade; students see a read-only
+  results page with an AI disclaimer
+- **Security hardened** — CSRF protection on all forms, prompt
+  injection defenses (input sanitization, tagged delimiters),
+  LLM score clamping, and session ownership checks
 - **i18n support** — UI available in English and Russian;
   adding a new language requires only a JSON file
 - **Any OpenAI-compatible LLM** — works with Ollama, vLLM,
@@ -71,6 +78,8 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--shuffle` | | `false` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
+| `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
+| `--secure-cookies` | | `true` | Set `Secure` flag on cookies (disable for local HTTP dev) |
 
 #### Environment variables
 
@@ -86,13 +95,16 @@ export EXAMINER_NUM_QUESTIONS=10
 export EXAMINER_SHUFFLE=true
 export EXAMINER_ADMIN_PASSWORD=changeme
 export EXAMINER_BASE_PATH=/ru
+export EXAMINER_PROMPT_VARIANT=lenient
+export EXAMINER_SECURE_COOKIES=false  # for local HTTP dev
 ```
 
 #### Config file
 
 Place an `examiner.yaml` (or `.toml`, `.json`) in the working
 directory, `~/.config/examiner/`, `/etc/examiner/`, or `/data/`
-(used inside containers):
+(used inside containers). Keep secrets (`llm-key`, `admin-password`)
+in a `.env` file instead — see `deploy/examiner-en.env.example`.
 
 ```yaml
 addr: ":8080"
@@ -100,13 +112,14 @@ db: examiner.db
 questions: questions/physics_ru.json
 lang: ru
 llm-url: https://api.openai.com/v1
-llm-key: sk-...
 llm-model: gpt-4o
 num-questions: 10
 difficulty: medium
 shuffle: true
 max-followups: 3
 base-path: /ru
+prompt-variant: standard
+secure-cookies: true
 ```
 
 #### Examples
@@ -169,6 +182,27 @@ Admins can upload question JSON files at **Admin → Question upload**
 (`/admin/questions`). The file format is the same as the `--questions`
 flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
 
+## Security
+
+The application includes several layers of protection:
+
+- **CSRF tokens** — all POST forms include a hidden token validated
+  with constant-time comparison; tokens rotate on every request
+- **Secure cookies** — session and CSRF cookies set the `Secure` flag
+  by default (requires HTTPS); disable with `--secure-cookies=false`
+  for local development
+- **Prompt injection hardening** — student answers are sanitized
+  (XML-like tags stripped) and wrapped in `<student-answer>` delimiters;
+  the LLM system prompt explicitly instructs the model to ignore
+  any instructions found inside student content
+- **Score validation** — LLM-returned scores are clamped to
+  `[0, MaxPoints]` and `MaxPoints` mismatches are overridden;
+  feedback and follow-up text are truncated to prevent
+  excessively long outputs
+- **Session ownership** — students can only submit answers to their
+  own exam sessions; thread-session relationships are verified
+  before any mutation
+
 ## Question format
 
 Questions are loaded from a JSON file on first startup
@@ -208,6 +242,7 @@ internal/
   i18n/                Internationalization (go-i18n v2)
     locales/           Translation files (active.en.json, active.ru.json)
   llm/                 OpenAI-compatible LLM client
+    prompts/           Embedded grading prompt templates (strict/standard/lenient)
   model/               Domain types (Question, Session, Thread, etc.)
   store/               SQLite storage layer with auto-migration
 deploy/
