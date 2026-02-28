@@ -103,7 +103,8 @@ export EXAMINER_SECURE_COOKIES=false  # for local HTTP dev
 
 Place an `examiner.yaml` (or `.toml`, `.json`) in the working
 directory, `~/.config/examiner/`, `/etc/examiner/`, or `/data/`
-(used inside containers):
+(used inside containers). Keep secrets (`llm-key`, `admin-password`)
+in a `.env` file instead — see `deploy/examiner-en.env.example`.
 
 ```yaml
 addr: ":8080"
@@ -111,7 +112,6 @@ db: examiner.db
 questions: questions/physics_ru.json
 lang: ru
 llm-url: https://api.openai.com/v1
-llm-key: sk-...
 llm-model: gpt-4o
 num-questions: 10
 difficulty: medium
