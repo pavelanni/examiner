@@ -19,12 +19,16 @@ var (
 	systemInstructionsRegex = regexp.MustCompile(`(?i)</?\s*system-instructions\b[^>]*>`)
 )
 
+// PromptVariant represents a grading prompt variant.
 type PromptVariant string
 
 const (
-	PromptStrict   PromptVariant = "strict"
+	// PromptStrict is a strict grading variant for majors.
+	PromptStrict PromptVariant = "strict"
+	// PromptStandard is the default grading variant.
 	PromptStandard PromptVariant = "standard"
-	PromptLenient  PromptVariant = "lenient"
+	// PromptLenient is a lenient grading variant for electives.
+	PromptLenient PromptVariant = "lenient"
 )
 
 var validVariants = map[PromptVariant]bool{
@@ -40,10 +44,12 @@ var (
 	gradeTemplates map[PromptVariant]*template.Template
 )
 
+// IsValidVariant checks if a prompt variant name is valid.
 func IsValidVariant(v string) bool {
 	return validVariants[PromptVariant(v)]
 }
 
+// EvalData holds template data for evaluation prompts.
 type EvalData struct {
 	QuestionText string
 	MaxPoints    int
@@ -53,6 +59,7 @@ type EvalData struct {
 	CanFollowup  bool
 }
 
+// GradeData holds template data for grading prompts.
 type GradeData struct {
 	QuestionText string
 	MaxPoints    int
@@ -61,6 +68,8 @@ type GradeData struct {
 	Answer       string
 }
 
+// Load loads prompt templates from the embedded filesystem.
+// It uses sync.Once to ensure templates are loaded only once.
 func Load(fsys fs.FS) error {
 	loadOnce.Do(func() {
 		evalTemplates = make(map[PromptVariant]*template.Template)
@@ -102,6 +111,7 @@ func Load(fsys fs.FS) error {
 	return loadErr
 }
 
+// BuildEvalPrompt builds an evaluation prompt using the specified variant.
 func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []model.Message, maxFollowups int) (string, error) {
 	if evalTemplates == nil {
 		return "", errors.New("templates not initialized: call Load first")
@@ -134,6 +144,7 @@ func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []
 	return buf.String(), nil
 }
 
+// BuildGradePrompt builds a final grading prompt using the specified variant.
 func BuildGradePrompt(variant PromptVariant, question model.Question, messages []model.Message) (string, error) {
 	if gradeTemplates == nil {
 		return "", errors.New("templates not initialized: call Load first")

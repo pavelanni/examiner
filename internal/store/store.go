@@ -11,10 +11,12 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+// Store provides database access to the application.
 type Store struct {
 	db *sql.DB
 }
 
+// New creates a new Store with the given database path.
 func New(dbPath string) (*Store, error) {
 	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
@@ -30,6 +32,7 @@ func New(dbPath string) (*Store, error) {
 	return s, nil
 }
 
+// Close closes the database connection.
 func (s *Store) Close() error {
 	return s.db.Close()
 }
