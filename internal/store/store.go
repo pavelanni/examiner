@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -116,6 +117,7 @@ func (s *Store) migrate() error {
 	CREATE TABLE IF NOT EXISTS users (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		username      TEXT NOT NULL UNIQUE,
+		external_id   TEXT NOT NULL DEFAULT '',
 		display_name  TEXT NOT NULL DEFAULT '',
 		password_hash TEXT NOT NULL,
 		role          TEXT NOT NULL DEFAULT 'student',
@@ -134,7 +136,22 @@ func (s *Store) migrate() error {
 		ON auth_sessions(expires_at);
 	`
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add external_id column to existing users tables (no-op if column already exists).
+	_, err = s.db.Exec(`ALTER TABLE users ADD COLUMN external_id TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+
+	return nil
+}
+
+// isAlterDuplicate returns true if the error indicates the column already exists.
+func isAlterDuplicate(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
 // InsertQuestion stores a question.

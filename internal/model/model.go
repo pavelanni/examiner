@@ -21,6 +21,7 @@ const (
 type User struct {
 	ID           int64
 	Username     string
+	ExternalID   string
 	DisplayName  string
 	PasswordHash string
 	Role         UserRole
