@@ -1,0 +1,10 @@
+exam_id: phys-2026-spring-g1
+subject: Physics
+date: 2026-03-15
+lang: en
+prompt_variant: standard
+num_questions: 5
+max_followups: 3
+shuffle: true
+questions: ../questions/physics_en.json
+roster: sample-roster.csv

@@ -9,6 +9,7 @@ require (
 	github.com/sashabaranov/go-openai v1.41.2
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
+	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.48.0
 	golang.org/x/text v0.34.0
 	modernc.org/sqlite v1.46.0
@@ -30,7 +31,6 @@ require (
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20251023183803-a4bb9ffd2546 // indirect
 	golang.org/x/sys v0.41.0 // indirect
 	modernc.org/libc v1.67.6 // indirect

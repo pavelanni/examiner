@@ -2,20 +2,26 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"go.yaml.in/yaml/v3"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/pavelanni/examiner/internal/handler"
@@ -41,7 +47,7 @@ func rootCmd() *cobra.Command {
 	}
 
 	serve := serveCmd()
-	root.AddCommand(serve, exportCmd())
+	root.AddCommand(serve, exportCmd(), prepCmd())
 
 	// Make "serve" the default when no subcommand is given.
 	root.RunE = serve.RunE
@@ -88,17 +94,30 @@ func exportCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.String("db", "examiner.db", "SQLite database path")
-	f.String("exam-id", "", "Exam identifier for output (required)")
-	f.String("subject", "", "Subject name for output (required)")
-	f.String("date", "", "Exam date in YYYY-MM-DD format (required)")
-	f.String("prompt-variant", "standard", "Prompt variant included in export metadata")
+	f.String("exam-id", "", "Exam identifier (read from DB if omitted)")
+	f.String("subject", "", "Subject name (read from DB if omitted)")
+	f.String("date", "", "Exam date in YYYY-MM-DD format (read from DB if omitted)")
+	f.String("prompt-variant", "", "Prompt variant (read from DB if omitted)")
 	f.StringP("output", "o", "-", "Output file path (- for stdout)")
 	f.String("log-level", "info", "Log level (debug, info, warn, error)")
 	f.String("log-format", "text", "Log format (text, json)")
 
-	_ = cmd.MarkFlagRequired("exam-id")
-	_ = cmd.MarkFlagRequired("subject")
-	_ = cmd.MarkFlagRequired("date")
+	return cmd
+}
+
+func prepCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prep",
+		Short: "Prepare exam database from manifest and roster",
+		RunE:  runPrep,
+	}
+	f := cmd.Flags()
+	f.StringP("manifest", "m", "", "Path to manifest YAML (required)")
+	f.StringP("output-dir", "o", ".", "Directory for output files")
+	f.String("log-level", "info", "Log level (debug, info, warn, error)")
+	f.String("log-format", "text", "Log format (text, json)")
+
+	_ = cmd.MarkFlagRequired("manifest")
 
 	return cmd
 }
@@ -266,22 +285,59 @@ func runExport(cmd *cobra.Command, _ []string) error {
 	}
 	defer db.Close()
 
+	// Read metadata from DB as defaults; CLI flags override.
+	info, err := db.GetExamInfo()
+	if err != nil {
+		return fmt.Errorf("read exam metadata: %w", err)
+	}
+
+	examID := v.GetString("exam-id")
+	if examID == "" {
+		examID = info.ExamID
+	}
+	subject := v.GetString("subject")
+	if subject == "" {
+		subject = info.Subject
+	}
+	date := v.GetString("date")
+	if date == "" {
+		date = info.Date
+	}
+	promptVariant := v.GetString("prompt-variant")
+	if promptVariant == "" {
+		promptVariant = info.PromptVariant
+	}
+	if promptVariant == "" {
+		promptVariant = "standard"
+	}
+
+	// Validate required fields after merging DB + flags.
+	if examID == "" {
+		return fmt.Errorf("exam-id is required (set via --exam-id flag or store metadata)")
+	}
+	if subject == "" {
+		return fmt.Errorf("subject is required (set via --subject flag or store metadata)")
+	}
+	if date == "" {
+		return fmt.Errorf("date is required (set via --date flag or store metadata)")
+	}
+
 	results, err := db.ExportAllSessions()
 	if err != nil {
 		return fmt.Errorf("export sessions: %w", err)
 	}
 
-	// Determine num_questions from the first result (all sessions share the same blueprint).
-	numQuestions := 0
-	if len(results) > 0 {
+	// Use DB metadata for num_questions; fall back to first result.
+	numQuestions := info.NumQuestions
+	if numQuestions == 0 && len(results) > 0 {
 		numQuestions = len(results[0].Questions)
 	}
 
 	export := model.ExamExport{
-		ExamID:        v.GetString("exam-id"),
-		Subject:       v.GetString("subject"),
-		Date:          v.GetString("date"),
-		PromptVariant: v.GetString("prompt-variant"),
+		ExamID:        examID,
+		Subject:       subject,
+		Date:          date,
+		PromptVariant: promptVariant,
 		NumQuestions:  numQuestions,
 		Results:       results,
 	}
@@ -385,6 +441,290 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
 func sha256sum(data []byte) string {
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+func runPrep(cmd *cobra.Command, _ []string) error {
+	setupLogging(cmd)
+	v := viperForCmd(cmd)
+
+	manifestPath := v.GetString("manifest")
+	outputDir := v.GetString("output-dir")
+
+	// Parse manifest YAML.
+	manifestData, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return fmt.Errorf("read manifest: %w", err)
+	}
+	var manifest model.ExamManifest
+	if err := yaml.Unmarshal(manifestData, &manifest); err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	// Validate manifest fields.
+	if manifest.ExamID == "" {
+		return fmt.Errorf("manifest: exam_id is required")
+	}
+	if manifest.Subject == "" {
+		return fmt.Errorf("manifest: subject is required")
+	}
+	if manifest.Date == "" {
+		return fmt.Errorf("manifest: date is required")
+	}
+	if _, err := time.Parse("2006-01-02", manifest.Date); err != nil {
+		return fmt.Errorf("manifest: date must be YYYY-MM-DD: %w", err)
+	}
+	if manifest.PromptVariant == "" {
+		manifest.PromptVariant = string(prompts.PromptStandard)
+	}
+	if !prompts.IsValidVariant(manifest.PromptVariant) {
+		return fmt.Errorf("manifest: invalid prompt_variant %q", manifest.PromptVariant)
+	}
+	if manifest.Questions == "" {
+		return fmt.Errorf("manifest: questions file path is required")
+	}
+	if manifest.Roster == "" {
+		return fmt.Errorf("manifest: roster file path is required")
+	}
+
+	// Resolve questions path relative to manifest directory.
+	manifestDir := filepath.Dir(manifestPath)
+	questionsPath := manifest.Questions
+	if !filepath.IsAbs(questionsPath) {
+		questionsPath = filepath.Join(manifestDir, questionsPath)
+	}
+	if _, err := os.Stat(questionsPath); err != nil {
+		return fmt.Errorf("questions file: %w", err)
+	}
+
+	// Resolve roster path relative to manifest directory.
+	rosterPath := manifest.Roster
+	if !filepath.IsAbs(rosterPath) {
+		rosterPath = filepath.Join(manifestDir, rosterPath)
+	}
+
+	// Parse roster CSV.
+	rosterFile, err := os.Open(rosterPath)
+	if err != nil {
+		return fmt.Errorf("open roster: %w", err)
+	}
+	defer rosterFile.Close()
+
+	reader := csv.NewReader(rosterFile)
+	rosterRecords, err := reader.ReadAll()
+	if err != nil {
+		return fmt.Errorf("parse roster CSV: %w", err)
+	}
+	if len(rosterRecords) < 2 {
+		return fmt.Errorf("roster CSV must have a header row and at least one student")
+	}
+
+	// Find column indices.
+	header := rosterRecords[0]
+	idCol, nameCol := -1, -1
+	for i, h := range header {
+		switch strings.TrimSpace(strings.ToLower(h)) {
+		case "student_id":
+			idCol = i
+		case "display_name":
+			nameCol = i
+		}
+	}
+	if idCol < 0 {
+		return fmt.Errorf("roster CSV: missing student_id column")
+	}
+	if nameCol < 0 {
+		return fmt.Errorf("roster CSV: missing display_name column")
+	}
+
+	// Create database.
+	dbPath := filepath.Join(outputDir, manifest.ExamID+".db")
+	db, err := store.New(dbPath)
+	if err != nil {
+		return fmt.Errorf("create database: %w", err)
+	}
+	defer db.Close()
+
+	// Store exam metadata.
+	if err := db.SetExamInfo(model.ExamInfo{
+		ExamID:        manifest.ExamID,
+		Subject:       manifest.Subject,
+		Date:          manifest.Date,
+		PromptVariant: manifest.PromptVariant,
+		NumQuestions:  manifest.NumQuestions,
+	}); err != nil {
+		return fmt.Errorf("store exam metadata: %w", err)
+	}
+
+	// Create admin user with random password.
+	adminPassword, err := randomPassword("admin", 8)
+	if err != nil {
+		return fmt.Errorf("generate admin password: %w", err)
+	}
+	adminHash, err := bcrypt.GenerateFromPassword([]byte(adminPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash admin password: %w", err)
+	}
+	_, err = db.CreateUser(model.User{
+		Username:     "admin",
+		DisplayName:  "Administrator",
+		PasswordHash: string(adminHash),
+		Role:         model.UserRoleAdmin,
+		Active:       true,
+	})
+	if err != nil {
+		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	// Load questions.
+	maxFollowups := manifest.MaxFollowups
+	if maxFollowups == 0 {
+		maxFollowups = 3
+	}
+	if err := loadQuestions(db, []string{questionsPath}, maxFollowups); err != nil {
+		return fmt.Errorf("load questions: %w", err)
+	}
+
+	// Build credentials list (admin first).
+	type credential struct {
+		studentID   string
+		displayName string
+		username    string
+		password    string
+	}
+	creds := []credential{
+		{studentID: "", displayName: "Administrator", username: "admin", password: adminPassword},
+	}
+
+	// Subject prefix for passwords (first 4 lowercase chars).
+	prefix := strings.ToLower(manifest.Subject)
+	if len(prefix) > 4 {
+		prefix = prefix[:4]
+	}
+
+	// Create student users.
+	usedUsernames := map[string]bool{"admin": true}
+	for _, row := range rosterRecords[1:] {
+		studentID := strings.TrimSpace(row[idCol])
+		displayName := strings.TrimSpace(row[nameCol])
+		if studentID == "" {
+			continue
+		}
+
+		// Username: first letter of first name + last name, truncated to 8 chars.
+		// Duplicates get last char replaced with 2, 3, etc.
+		username := deduplicateUsername(usernameFromDisplayName(displayName), usedUsernames)
+		usedUsernames[username] = true
+
+		password, err := randomPassword(prefix, 5)
+		if err != nil {
+			return fmt.Errorf("generate password for %s: %w", studentID, err)
+		}
+
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("hash password for %s: %w", studentID, err)
+		}
+
+		_, err = db.CreateUser(model.User{
+			Username:     username,
+			ExternalID:   studentID,
+			DisplayName:  displayName,
+			PasswordHash: string(hash),
+			Role:         model.UserRoleStudent,
+			Active:       true,
+		})
+		if err != nil {
+			return fmt.Errorf("create user %s: %w", studentID, err)
+		}
+
+		creds = append(creds, credential{
+			studentID:   studentID,
+			displayName: displayName,
+			username:    username,
+			password:    password,
+		})
+	}
+
+	// Write credentials CSV.
+	credsPath := filepath.Join(outputDir, manifest.ExamID+"-creds.csv")
+	credsFile, err := os.Create(credsPath)
+	if err != nil {
+		return fmt.Errorf("create credentials file: %w", err)
+	}
+	defer credsFile.Close()
+
+	csvWriter := csv.NewWriter(credsFile)
+	_ = csvWriter.Write([]string{"student_id", "display_name", "username", "password"})
+	for _, c := range creds {
+		_ = csvWriter.Write([]string{c.studentID, c.displayName, c.username, c.password})
+	}
+	csvWriter.Flush()
+	if err := csvWriter.Error(); err != nil {
+		return fmt.Errorf("write credentials CSV: %w", err)
+	}
+
+	slog.Info("exam prepared",
+		"db", dbPath,
+		"credentials", credsPath,
+		"students", len(creds)-1,
+	)
+	fmt.Printf("Database:    %s\n", dbPath)
+	fmt.Printf("Credentials: %s\n", credsPath)
+
+	return nil
+}
+
+// randomPassword generates a password like "prefix-XXXXX" with random alphanumeric chars.
+func randomPassword(prefix string, length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[n.Int64()]
+	}
+	return prefix + "-" + string(b), nil
+}
+
+// usernameFromDisplayName builds a username from "First Last" as first letter
+// of the first name + last name, lowercased and truncated to 8 characters.
+// For example, "Alice Johnson" becomes "ajohnson", "Bob Smith" becomes "bsmith".
+func usernameFromDisplayName(displayName string) string {
+	parts := strings.Fields(displayName)
+	if len(parts) == 0 {
+		return "user"
+	}
+	first := strings.ToLower(parts[0])
+	if len(parts) == 1 {
+		if len(first) > 8 {
+			return first[:8]
+		}
+		return first
+	}
+	last := strings.ToLower(parts[len(parts)-1])
+	username := string(first[0]) + last
+	if len(username) > 8 {
+		username = username[:8]
+	}
+	return username
+}
+
+// deduplicateUsername ensures uniqueness by replacing the last character with
+// an incrementing digit (2, 3, ...) when a collision is found.
+func deduplicateUsername(base string, used map[string]bool) string {
+	if !used[base] {
+		return base
+	}
+	for n := 2; n <= 99; n++ {
+		suffix := fmt.Sprintf("%d", n)
+		candidate := base[:len(base)-len(suffix)] + suffix
+		if !used[candidate] {
+			return candidate
+		}
+	}
+	return base
 }
 
 func seedAdmin(db *store.Store, password string) error {

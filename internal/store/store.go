@@ -132,6 +132,11 @@ func (s *Store) migrate() error {
 		expires_at DATETIME NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS exam_metadata (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
 		ON auth_sessions(expires_at);
 	`

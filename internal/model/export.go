@@ -37,6 +37,29 @@ type QuestionResult struct {
 	LLMFeedback  string            `json:"llm_feedback"`
 }
 
+// ExamInfo holds exam metadata stored in the database.
+type ExamInfo struct {
+	ExamID        string
+	Subject       string
+	Date          string
+	PromptVariant string
+	NumQuestions  int
+}
+
+// ExamManifest describes an exam preparation manifest read from YAML.
+type ExamManifest struct {
+	ExamID        string `yaml:"exam_id"`
+	Subject       string `yaml:"subject"`
+	Date          string `yaml:"date"`
+	Lang          string `yaml:"lang"`
+	PromptVariant string `yaml:"prompt_variant"`
+	NumQuestions  int    `yaml:"num_questions"`
+	MaxFollowups  int    `yaml:"max_followups"`
+	Shuffle       bool   `yaml:"shuffle"`
+	Questions     string `yaml:"questions"`
+	Roster        string `yaml:"roster"`
+}
+
 // ConversationMsg is a single message in an exported conversation.
 type ConversationMsg struct {
 	Role    string    `json:"role"`
