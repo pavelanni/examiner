@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -13,7 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"golang.org/x/crypto/bcrypt"
 
@@ -27,45 +28,86 @@ import (
 
 //go:generate templ generate
 
-func init() {
-	// Define flags with shorthands where useful.
-	flag.StringP("addr", "a", ":8080", "HTTP listen address")
-	flag.String("db", "examiner.db", "SQLite database path")
-	flag.StringSliceP("questions", "q", []string{"questions/physics_en.json"}, "Paths to questions JSON files (repeatable)")
-	flag.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
-	flag.String("llm-key", "ollama", "API key for LLM")
-	flag.String("llm-model", "llama3.2", "LLM model name")
-	flag.StringP("lang", "l", "en", "UI language (en, ru)")
-	flag.IntP("num-questions", "n", 0, "Number of questions per exam (0 = all available)")
-	flag.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
-	flag.StringP("topic", "t", "", "Filter questions by topic")
-	flag.Int("max-followups", 3, "Maximum follow-up questions per answer")
-	flag.Bool("shuffle", true, "Randomize question order")
-	flag.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
-	flag.Bool("secure-cookies", true, "Set Secure flag on session cookies")
-	flag.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
-	flag.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
-	flag.String("log-level", "info", "Log level (debug, info, warn, error)")
-	flag.String("log-format", "text", "Log format (text, json)")
-}
-
 func main() {
-	flag.Parse()
-
-	// Bind pflags to Viper.
-	if err := viper.BindPFlags(flag.CommandLine); err != nil {
-		fmt.Fprintf(os.Stderr, "error binding flags: %v\n", err)
+	if err := rootCmd().Execute(); err != nil {
 		os.Exit(1)
 	}
+}
 
-	// Environment variables: EXAMINER_ADDR, EXAMINER_LLM_URL, etc.
-	viper.SetEnvPrefix("EXAMINER")
-	viper.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	viper.AutomaticEnv()
+func rootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:   "examiner",
+		Short: "Oral exam simulator powered by LLMs",
+	}
 
-	// Set up structured logging.
+	serve := serveCmd()
+	root.AddCommand(serve, exportCmd())
+
+	// Make "serve" the default when no subcommand is given.
+	root.RunE = serve.RunE
+
+	// Register serve flags on root so bare `examiner --addr ...` still works.
+	root.Flags().AddFlagSet(serve.Flags())
+
+	return root
+}
+
+func serveCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "serve",
+		Short: "Start the HTTP exam server",
+		RunE:  runServe,
+	}
+	f := cmd.Flags()
+	f.StringP("addr", "a", ":8080", "HTTP listen address")
+	f.String("db", "examiner.db", "SQLite database path")
+	f.StringSliceP("questions", "q", []string{"questions/physics_en.json"}, "Paths to questions JSON files (repeatable)")
+	f.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
+	f.String("llm-key", "ollama", "API key for LLM")
+	f.String("llm-model", "llama3.2", "LLM model name")
+	f.StringP("lang", "l", "en", "UI language (en, ru)")
+	f.IntP("num-questions", "n", 0, "Number of questions per exam (0 = all available)")
+	f.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
+	f.StringP("topic", "t", "", "Filter questions by topic")
+	f.Int("max-followups", 3, "Maximum follow-up questions per answer")
+	f.Bool("shuffle", true, "Randomize question order")
+	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
+	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
+	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
+	f.String("log-level", "info", "Log level (debug, info, warn, error)")
+	f.String("log-format", "text", "Log format (text, json)")
+	return cmd
+}
+
+func exportCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "export",
+		Short: "Export exam results as JSON",
+		RunE:  runExport,
+	}
+	f := cmd.Flags()
+	f.String("db", "examiner.db", "SQLite database path")
+	f.String("exam-id", "", "Exam identifier for output (required)")
+	f.String("subject", "", "Subject name for output (required)")
+	f.String("date", "", "Exam date in YYYY-MM-DD format (required)")
+	f.String("prompt-variant", "standard", "Prompt variant included in export metadata")
+	f.StringP("output", "o", "-", "Output file path (- for stdout)")
+	f.String("log-level", "info", "Log level (debug, info, warn, error)")
+	f.String("log-format", "text", "Log format (text, json)")
+
+	_ = cmd.MarkFlagRequired("exam-id")
+	_ = cmd.MarkFlagRequired("subject")
+	_ = cmd.MarkFlagRequired("date")
+
+	return cmd
+}
+
+func setupLogging(cmd *cobra.Command) {
+	v := viperForCmd(cmd)
+
 	var logLevel slog.Level
-	switch strings.ToLower(viper.GetString("log-level")) {
+	switch strings.ToLower(v.GetString("log-level")) {
 	case "debug":
 		logLevel = slog.LevelDebug
 	case "warn":
@@ -77,109 +119,109 @@ func main() {
 	}
 	handlerOpts := &slog.HandlerOptions{Level: logLevel}
 	var logHandler slog.Handler
-	switch strings.ToLower(viper.GetString("log-format")) {
-	case "text":
-		logHandler = slog.NewTextHandler(os.Stderr, handlerOpts)
+	switch strings.ToLower(v.GetString("log-format")) {
 	case "json":
 		logHandler = slog.NewJSONHandler(os.Stderr, handlerOpts)
 	default:
-		fmt.Fprintf(os.Stderr, "invalid --log-format %q: must be \"text\" or \"json\"\n", viper.GetString("log-format"))
-		os.Exit(1)
+		logHandler = slog.NewTextHandler(os.Stderr, handlerOpts)
 	}
 	slog.SetDefault(slog.New(logHandler))
+}
 
-	// Config file support: examiner.yaml, examiner.toml, etc.
-	// Note: do NOT call SetConfigType here — it would cause viper to
-	// try parsing any examiner.* file (e.g. examiner.db) as YAML.
-	viper.SetConfigName("examiner")
-	viper.AddConfigPath(".")
-	viper.AddConfigPath("$HOME/.config/examiner")
-	viper.AddConfigPath("/etc/examiner")
-	viper.AddConfigPath("/data")
-	if err := viper.ReadInConfig(); err != nil {
+// viperForCmd binds a command's flags and environment to a fresh viper instance.
+func viperForCmd(cmd *cobra.Command) *viper.Viper {
+	v := viper.New()
+	_ = v.BindPFlags(cmd.Flags())
+
+	v.SetEnvPrefix("EXAMINER")
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.AutomaticEnv()
+
+	v.SetConfigName("examiner")
+	v.AddConfigPath(".")
+	v.AddConfigPath("$HOME/.config/examiner")
+	v.AddConfigPath("/etc/examiner")
+	v.AddConfigPath("/data")
+	if err := v.ReadInConfig(); err != nil {
 		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			fmt.Fprintf(os.Stderr, "error reading config file: %v\n", err)
-			os.Exit(1)
+			slog.Warn("error reading config file", "error", err)
 		}
 	} else {
-		slog.Info("loaded config file", "path", viper.ConfigFileUsed())
+		slog.Info("loaded config file", "path", v.ConfigFileUsed())
 	}
 
+	return v
+}
+
+func runServe(cmd *cobra.Command, _ []string) error {
+	setupLogging(cmd)
+	v := viperForCmd(cmd)
+
 	// Open database.
-	db, err := store.New(viper.GetString("db"))
+	db, err := store.New(v.GetString("db"))
 	if err != nil {
-		slog.Error("failed to open database", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("open database: %w", err)
 	}
 	defer db.Close()
 
 	// Seed default admin user if no users exist.
-	if err := seedAdmin(db, viper.GetString("admin-password")); err != nil {
-		slog.Error("failed to seed admin user", "error", err)
-		os.Exit(1)
+	if err := seedAdmin(db, v.GetString("admin-password")); err != nil {
+		return fmt.Errorf("seed admin: %w", err)
 	}
 
-	// Load questions from all specified files (skips already-imported files).
-	if err := loadQuestions(db, viper.GetStringSlice("questions"), viper.GetInt("max-followups")); err != nil {
-		slog.Error("failed to load questions", "error", err)
-		os.Exit(1)
+	// Load questions from all specified files.
+	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups")); err != nil {
+		return fmt.Errorf("load questions: %w", err)
 	}
 
 	// Initialize i18n.
-	lang := viper.GetString("lang")
+	lang := v.GetString("lang")
 	if err := appI18n.Init(lang); err != nil {
-		slog.Error("failed to initialize i18n", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("init i18n: %w", err)
 	}
 
-	// Create LLM client and verify connectivity.
-	promptVariant := strings.ToLower(strings.TrimSpace(viper.GetString("prompt-variant")))
+	// Create LLM client.
+	promptVariant := strings.ToLower(strings.TrimSpace(v.GetString("prompt-variant")))
 	if !prompts.IsValidVariant(promptVariant) {
 		slog.Warn("invalid prompt-variant, using standard", "variant", promptVariant)
 		promptVariant = string(prompts.PromptStandard)
 	}
 	llmClient, err := llm.New(
-		viper.GetString("llm-url"),
-		viper.GetString("llm-key"),
-		viper.GetString("llm-model"),
+		v.GetString("llm-url"),
+		v.GetString("llm-key"),
+		v.GetString("llm-model"),
 		promptVariant,
 	)
 	if err != nil {
-		slog.Error("failed to create LLM client", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("create LLM client: %w", err)
 	}
 	if err := llmClient.Ping(context.Background()); err != nil {
-		slog.Error("LLM health check failed", "url", viper.GetString("llm-url"), "error", err)
-		os.Exit(1)
+		return fmt.Errorf("LLM health check: %w", err)
 	}
-	slog.Info("LLM endpoint OK", "url", viper.GetString("llm-url"), "model", viper.GetString("llm-model"))
+	slog.Info("LLM endpoint OK", "url", v.GetString("llm-url"), "model", v.GetString("llm-model"))
 
-	// Normalize base path: must start with / and not end with /, or be empty.
-	basePath := strings.TrimRight(viper.GetString("base-path"), "/")
+	// Normalize base path.
+	basePath := strings.TrimRight(v.GetString("base-path"), "/")
 	if basePath != "" && !strings.HasPrefix(basePath, "/") {
 		basePath = "/" + basePath
 	}
 
-	// Build exam config.
 	examCfg := model.ExamConfig{
-		NumQuestions:  viper.GetInt("num-questions"),
-		Difficulty:    viper.GetString("difficulty"),
-		Topic:         viper.GetString("topic"),
-		MaxFollowups:  viper.GetInt("max-followups"),
-		Shuffle:       viper.GetBool("shuffle"),
-		BasePath:      viper.GetString("base-path"),
-		SecureCookies: viper.GetBool("secure-cookies"),
+		NumQuestions:  v.GetInt("num-questions"),
+		Difficulty:    v.GetString("difficulty"),
+		Topic:         v.GetString("topic"),
+		MaxFollowups:  v.GetInt("max-followups"),
+		Shuffle:       v.GetBool("shuffle"),
+		BasePath:      v.GetString("base-path"),
+		SecureCookies: v.GetBool("secure-cookies"),
 		PromptVariant: promptVariant,
 	}
 
-	// Create handler.
 	h, err := handler.New(db, llmClient, examCfg)
 	if err != nil {
-		slog.Error("failed to create handler", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("create handler: %w", err)
 	}
 
-	// Set up router.
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
@@ -190,7 +232,6 @@ func main() {
 			sub.Use(h.BasePathMiddleware)
 			h.Routes(sub)
 		})
-		// Redirect bare base path without trailing slash.
 		r.Get(basePath, func(w http.ResponseWriter, r *http.Request) {
 			http.Redirect(w, r, basePath+"/", http.StatusMovedPermanently)
 		})
@@ -199,11 +240,11 @@ func main() {
 		h.Routes(r)
 	}
 
-	addr := viper.GetString("addr")
+	addr := v.GetString("addr")
 	slog.Info("starting server",
 		"addr", addr,
-		"model", viper.GetString("llm-model"),
-		"llm_url", viper.GetString("llm-url"),
+		"model", v.GetString("llm-model"),
+		"llm_url", v.GetString("llm-url"),
 		"lang", lang,
 		"num_questions", examCfg.NumQuestions,
 		"difficulty", examCfg.Difficulty,
@@ -212,14 +253,68 @@ func main() {
 		"shuffle", examCfg.Shuffle,
 		"base_path", basePath,
 	)
-	if err := http.ListenAndServe(addr, r); err != nil {
-		slog.Error("server error", "error", err)
-		os.Exit(1)
+	return http.ListenAndServe(addr, r)
+}
+
+func runExport(cmd *cobra.Command, _ []string) error {
+	setupLogging(cmd)
+	v := viperForCmd(cmd)
+
+	db, err := store.New(v.GetString("db"))
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
 	}
+	defer db.Close()
+
+	results, err := db.ExportAllSessions()
+	if err != nil {
+		return fmt.Errorf("export sessions: %w", err)
+	}
+
+	// Determine num_questions from the first result (all sessions share the same blueprint).
+	numQuestions := 0
+	if len(results) > 0 {
+		numQuestions = len(results[0].Questions)
+	}
+
+	export := model.ExamExport{
+		ExamID:        v.GetString("exam-id"),
+		Subject:       v.GetString("subject"),
+		Date:          v.GetString("date"),
+		PromptVariant: v.GetString("prompt-variant"),
+		NumQuestions:  numQuestions,
+		Results:       results,
+	}
+
+	data, err := json.MarshalIndent(export, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal JSON: %w", err)
+	}
+
+	outPath := v.GetString("output")
+	var w io.Writer
+	if outPath == "" || outPath == "-" {
+		w = os.Stdout
+	} else {
+		f, err := os.Create(outPath)
+		if err != nil {
+			return fmt.Errorf("create output file: %w", err)
+		}
+		defer f.Close()
+		w = f
+	}
+
+	_, err = w.Write(data)
+	if err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	// Ensure trailing newline.
+	_, _ = fmt.Fprintln(w)
+
+	return nil
 }
 
 func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
-	// Ensure a default blueprint exists.
 	count, err := db.QuestionCount()
 	if err != nil {
 		return err
