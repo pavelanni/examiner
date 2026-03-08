@@ -231,7 +231,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Topic:         v.GetString("topic"),
 		MaxFollowups:  v.GetInt("max-followups"),
 		Shuffle:       v.GetBool("shuffle"),
-		BasePath:      v.GetString("base-path"),
+		BasePath:      basePath,
 		SecureCookies: v.GetBool("secure-cookies"),
 		PromptVariant: promptVariant,
 	}
@@ -717,9 +717,14 @@ func deduplicateUsername(base string, used map[string]bool) string {
 	if !used[base] {
 		return base
 	}
+	runes := []rune(base)
 	for n := 2; n <= 99; n++ {
-		suffix := fmt.Sprintf("%d", n)
-		candidate := base[:len(base)-len(suffix)] + suffix
+		suffix := []rune(fmt.Sprintf("%d", n))
+		prefixLen := len(runes) - len(suffix)
+		if prefixLen < 0 {
+			prefixLen = 0
+		}
+		candidate := string(runes[:prefixLen]) + string(suffix)
 		if !used[candidate] {
 			return candidate
 		}

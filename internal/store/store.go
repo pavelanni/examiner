@@ -547,25 +547,16 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 
 // ListSessions returns all sessions (newest first, for UI display).
 func (s *Store) ListSessions() ([]model.ExamSession, error) {
-	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id DESC`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var sessions []model.ExamSession
-	for rows.Next() {
-		var sess model.ExamSession
-		if err := rows.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt); err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, sess)
-	}
-	return sessions, rows.Err()
+	return s.listSessionsWithOrder("ORDER BY id DESC")
 }
 
 // ListSessionsChronological returns all sessions oldest-first (for export).
 func (s *Store) ListSessionsChronological() ([]model.ExamSession, error) {
-	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id ASC`)
+	return s.listSessionsWithOrder("ORDER BY id ASC")
+}
+
+func (s *Store) listSessionsWithOrder(orderClause string) ([]model.ExamSession, error) {
+	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ` + orderClause)
 	if err != nil {
 		return nil, err
 	}
