@@ -94,6 +94,18 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 - `internal/store/` — SQLite storage layer
 - `web/` — static assets (htmx, Pico CSS)
 
+## Issue tracking
+
+This project uses **bd (beads)** for issue tracking. See `AGENTS.md`
+for full details. Key commands:
+
+- `bd ready` — find available work
+- `bd create "title" --description="..." -t bug|feature|task -p 0-4`
+- `bd update <id> --claim` — claim work
+- `bd close <id> --reason "Done"` — complete work
+
+Do NOT use markdown TODOs or other tracking methods.
+
 ## Tech notes
 
 - Go 1.25, pure Go SQLite (modernc.org, no CGO)
