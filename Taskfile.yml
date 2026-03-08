@@ -262,10 +262,11 @@ tasks:
           rm -f "/tmp/examiner-${exam_id}-data.volume"
 
           # Seed DB into Podman volume via helper container.
+          # Quadlet prefixes volume names with "systemd-", so we must match that.
           ssh {{.DEPLOY_HOST}} "
-            podman volume create examiner-${exam_id}-data 2>/dev/null || true
+            podman volume create systemd-examiner-${exam_id}-data 2>/dev/null || true
             podman run --rm \
-              -v examiner-${exam_id}-data:/data/db:Z \
+              -v systemd-examiner-${exam_id}-data:/data/db:Z \
               -v ~/examiner/exams/${exam_id}/examiner.db:/src.db:ro \
               busybox cp /src.db /data/db/examiner.db
           "
@@ -369,7 +370,7 @@ tasks:
           ssh {{.DEPLOY_HOST}} "
             rm -f ~/{{.QUADLET_DIR}}/examiner-${exam_id}.container
             rm -f ~/{{.QUADLET_DIR}}/examiner-${exam_id}-data.volume
-            podman volume rm examiner-${exam_id}-data 2>/dev/null || true
+            podman volume rm systemd-examiner-${exam_id}-data 2>/dev/null || true
             rm -rf ~/examiner/exams/${exam_id}
           "
         done
