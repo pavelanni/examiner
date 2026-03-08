@@ -2,7 +2,10 @@
 /examiner
 
 # Database
-/*.db
+*.db
+
+# Generated credentials
+*-creds.csv
 
 # Environment
 *.env
