@@ -280,8 +280,8 @@ tasks:
           port=$((port + 1))
         done
 
-        # Write Caddyfile.exams on host.
-        echo "$caddy_blocks" | ssh {{.DEPLOY_HOST}} "cat > ~/examiner/Caddyfile.exams"
+        # Write Caddyfile.exams into /etc/caddy/Caddyfile.d/ on host.
+        echo "$caddy_blocks" | ssh {{.DEPLOY_HOST}} "sudo tee /etc/caddy/Caddyfile.d/examiner-exams.caddyfile > /dev/null"
 
         # Reload systemd and (re)start services.
         ssh {{.DEPLOY_HOST}} "
@@ -293,13 +293,6 @@ tasks:
 
         # Reload Caddy.
         ssh {{.DEPLOY_HOST}} "sudo systemctl reload caddy"
-
-        # Check if import line exists in main Caddyfile.
-        if ! ssh {{.DEPLOY_HOST}} "grep -q 'Caddyfile.exams' /etc/caddy/Caddyfile 2>/dev/null"; then
-          echo ""
-          echo "NOTE: Add this line to /etc/caddy/Caddyfile on {{.DEPLOY_HOST}}:"
-          echo "  import /home/\$(ssh {{.DEPLOY_HOST}} whoami)/examiner/Caddyfile.exams"
-        fi
 
         echo ""
         echo "==> Deployed ${#manifests[@]} exam group(s):${services}"
@@ -384,7 +377,7 @@ tasks:
         # Reload systemd, remove Caddyfile, reload Caddy.
         ssh {{.DEPLOY_HOST}} "
           systemctl --user daemon-reload
-          rm -f ~/examiner/Caddyfile.exams
+          sudo rm -f /etc/caddy/Caddyfile.d/examiner-exams.caddyfile
           sudo systemctl reload caddy
         "
 
