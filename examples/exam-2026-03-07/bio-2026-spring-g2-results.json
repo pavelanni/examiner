@@ -1,0 +1,130 @@
+{
+  "exam_id": "bio-2026-spring-g2",
+  "subject": "Biology",
+  "date": "2026-03-15",
+  "prompt_variant": "standard",
+  "num_questions": 5,
+  "results": [
+    {
+      "external_id": "STU-101",
+      "display_name": "Diana Green",
+      "session_number": 1,
+      "status": "graded",
+      "started_at": "2026-03-08T18:34:06.734604359Z",
+      "submitted_at": "2026-03-08T18:38:14.11425783Z",
+      "questions": [
+        {
+          "text": "A ball of mass m₁ strikes a stationary ball of mass m₂ in a head-on elastic collision at speed v. Find the velocities of both balls after collision. Analyze the special cases: m₁ = m₂, m₁ \u003e\u003e m₂, and m₁ \u003c\u003c m₂.",
+          "topic": "Momentum",
+          "difficulty": "hard",
+          "max_points": 15,
+          "rubric": "System: m₁v = m₁v₁ + m₂v₂ and m₁v²/2 = m₁v₁²/2 + m₂v₂²/2. Solution: v₁ = v(m₁ − m₂)/(m₁ + m₂), v₂ = 2m₁v/(m₁ + m₂). Cases: equal masses → v₁ = 0, v₂ = v; heavy striker → v₁ ≈ v, v₂ ≈ 2v; light striker → v₁ ≈ −v, v₂ ≈ 0.",
+          "model_answer": "Write conservation of momentum and kinetic energy: m₁v = m₁v₁ + m₂v₂ and m₁v² = m₁v₁² + m₂v₂². From the first: m₁(v − v₁) = m₂v₂. From the second: m₁(v² − v₁²) = m₂v₂², i.e., m₁(v − v₁)(v + v₁) = m₂v₂². Dividing: v + v₁ = v₂. Substituting back: v₁ = v(m₁ − m₂)/(m₁ + m₂), v₂ = 2m₁v/(m₁ + m₂). Special cases: m₁ = m₂ → v₁ = 0, v₂ = v (balls exchange velocities); m₁ \u003e\u003e m₂ → v₁ ≈ v, v₂ ≈ 2v (heavy ball barely slows, light one flies off at twice the speed); m₁ \u003c\u003c m₂ → v₁ ≈ −v, v₂ ≈ 0 (light ball bounces back, heavy one stays put — like a ball off a wall).",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here are the solutions derived from the standard elastic collision formulas.\n\n**General Formulas for Head-On Elastic Collision** ($m_2$ at rest initially):\n$$v_1' = \\frac{m_1 - m_2}{m_1 + m_2} v$$\n$$v_2' = \\frac{2m_1}{m_1 + m_2} v$$\n\n**Special Cases:**\n\n- **Case 1: $m_1 = m_2$** (Equal masses)\n    - $v_1' = 0$ (The first ball stops dead)\n    - $v_2' = v$ (The second ball moves off with the original speed)\n\n- **Case 2: $m_1 \u003e\u003e m_2$** (Massive ball hits a light ball, e.g., bowling ball hitting a marble)\n    - $v_1' \\approx v$ (The massive ball continues with almost the same velocity)\n    - $v_2' \\approx 2v$ (The light ball is hurled forward at nearly twice the speed)\n\n- **Case 3: $m_1 \u003c\u003c m_2$** (Light ball hits a massive stationary ball, e.g., golf ball hitting a wall)\n    - $v_1' \\approx -v$ (The light ball bounces back with almost the same speed)\n    - $v_2' \\approx 0$ (The massive ball remains essentially at rest)",
+              "at": "2026-03-08T18:35:51.691806656Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent answer! You correctly provided the general formulas for velocities after an elastic collision and accurately analyzed all three special cases with clear physical interpretations.",
+              "at": "2026-03-08T18:35:55.123883024Z"
+            }
+          ],
+          "llm_score": 15,
+          "llm_feedback": "Excellent work! You correctly derived and presented the general formulas for velocities after a head-on elastic collision: v₁' = (m₁ - m₂)/(m₁ + m₂) v and v₂' = 2m₁/(m₁ + m₂) v. Your analysis of the special cases is precise and insightful: for equal masses (m₁ = m₂), you correctly stated v₁' = 0 and v₂' = v, indicating a velocity exchange; for m₁ \u003e\u003e m₂, you accurately approximated v₁' ≈ v and v₂' ≈ 2v, with a good physical example (bowling ball hitting a marble); and for m₁ \u003c\u003c m₂, you correctly gave v₁' ≈ -v and v₂' ≈ 0, with an apt analogy (golf ball hitting a wall). Your explanations are clear and demonstrate a strong conceptual understanding of elastic collisions. Full points awarded."
+        },
+        {
+          "text": "What is momentum? Define the impulse of a force. State the law of conservation of momentum and the conditions under which it applies.",
+          "topic": "Momentum",
+          "difficulty": "easy",
+          "max_points": 10,
+          "rubric": "Momentum: p = mv (vector). Impulse: FΔt. Relationship: FΔt = Δp. Conservation law: in a closed system the total momentum is constant. Condition: no external forces (or zero net external force).",
+          "model_answer": "Momentum is a vector quantity equal to the product of a body's mass and velocity: p⃗ = mv⃗, measured in kg·m/s. The impulse of a force is the product of the force and the time interval over which it acts: J = FΔt. They are linked by Newton's second law in impulse form: F⃗Δt = Δp⃗ = mv⃗₂ − mv⃗₁. The law of conservation of momentum: in a closed system (where external forces are absent or their resultant is zero), the total momentum remains constant: Σp⃗ = const. It is widely applied to collisions, explosions, and recoil problems.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Momentum is the product of an object's mass and velocity, representing the quantity of motion it possesses. Impulse is the product of the average force and the time interval over which it acts, and it is equal to the change in an object's momentum. The law of conservation of momentum states that the total momentum of an isolated system remains constant. This law applies only when the net external force acting on the system is zero.",
+              "at": "2026-03-08T18:36:16.433023448Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent answer! You correctly defined momentum, impulse, and the law of conservation of momentum with all key details, including the condition of zero net external force.",
+              "at": "2026-03-08T18:36:19.653938341Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Your answer is comprehensive and accurate. You correctly defined momentum as the product of mass and velocity, impulse as the product of average force and time interval (and its equivalence to change in momentum), and the law of conservation of momentum with the precise condition of zero net external force. All key points from the rubric are covered, demonstrating a strong conceptual understanding."
+        },
+        {
+          "text": "A 10 kg shell flying horizontally at 200 m/s explodes into two fragments. The 4 kg fragment flies backward at 100 m/s. Find the velocity of the other fragment.",
+          "topic": "Momentum",
+          "difficulty": "medium",
+          "max_points": 10,
+          "rubric": "Conservation of momentum: mv = m₁v₁ + m₂v₂. Forward is positive. 10×200 = 4×(−100) + 6×v₂ → 2000 = −400 + 6v₂ → v₂ = 2400/6 = 400 m/s forward.",
+          "model_answer": "Apply conservation of momentum, taking the original direction as positive. Before explosion: p₀ = mv = 10×200 = 2000 kg·m/s. After: first fragment (backward) has p₁ = 4×(−100) = −400 kg·m/s. Second fragment mass: m₂ = 10 − 4 = 6 kg. Conservation: p₀ = p₁ + p₂ → 2000 = −400 + 6v₂ → 6v₂ = 2400 → v₂ = 400 m/s. The second fragment flies forward at 400 m/s.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the solution:\n\n**1. Define directions**\nLet the initial direction of the shell be positive.\n\n**2. Apply conservation of momentum**\nTotal mass $M = 10\\text{ kg}$, initial velocity $V = 200\\text{ m/s}$.\nFragment 1: $m_1 = 4\\text{ kg}$, $v_1 = -100\\text{ m/s}$ (backward).\nFragment 2: $m_2 = 6\\text{ kg}$, $v_2 = ?$.\n\n$$MV = m_1v_1 + m_2v_2$$\n$$(10)(200) = (4)(-100) + (6)(v_2)$$\n$$2000 = -400 + 6v_2$$\n$$6v_2 = 2400$$\n$$v_2 = 400\\text{ m/s}$$\n\n**Final Answer:** The 6 kg fragment moves forward at **400 m/s**.",
+              "at": "2026-03-08T18:36:54.42747675Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent work! You correctly applied conservation of momentum, defined the coordinate system clearly, accounted for the direction of the backward-moving fragment with a negative sign, calculated the mass of the second fragment, and solved accurately for its velocity. Your solution is complete and matches the expected answer.",
+              "at": "2026-03-08T18:36:58.55050756Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Your solution is perfect. You correctly applied the principle of conservation of momentum, clearly defined the positive direction, accounted for the backward motion of the 4 kg fragment with a negative sign, accurately calculated the mass of the second fragment as 6 kg, and solved the equation step-by-step to find the correct velocity of 400 m/s forward. The reasoning is clear, complete, and matches the model answer exactly."
+        },
+        {
+          "text": "What is momentum? Define the impulse of a force. State the law of conservation of momentum and the conditions under which it applies.",
+          "topic": "Momentum",
+          "difficulty": "easy",
+          "max_points": 10,
+          "rubric": "Momentum: p = mv (vector). Impulse: FΔt. Relationship: FΔt = Δp. Conservation law: in a closed system the total momentum is constant. Condition: no external forces (or zero net external force).",
+          "model_answer": "Momentum is a vector quantity equal to the product of a body's mass and velocity: p⃗ = mv⃗, measured in kg·m/s. The impulse of a force is the product of the force and the time interval over which it acts: J = FΔt. They are linked by Newton's second law in impulse form: F⃗Δt = Δp⃗ = mv⃗₂ − mv⃗₁. The law of conservation of momentum: in a closed system (where external forces are absent or their resultant is zero), the total momentum remains constant: Σp⃗ = const. It is widely applied to collisions, explosions, and recoil problems.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Momentum is the product of an object's mass and velocity, representing the quantity of motion it possesses. Impulse is the product of the average force and the time interval over which it acts, and it is equal to the change in an object's momentum. The law of conservation of momentum states that the total momentum of an isolated system remains constant. This law applies only when the net external force acting on the system is zero.",
+              "at": "2026-03-08T18:37:29.955809013Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent answer! You correctly defined momentum, impulse, and the law of conservation of momentum with all key details, including the condition of zero net external force.",
+              "at": "2026-03-08T18:37:33.415002617Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Your answer is comprehensive and accurate. You correctly defined momentum as the product of mass and velocity, impulse as the product of average force and time interval, and linked impulse to the change in momentum. You also accurately stated the law of conservation of momentum and specified the condition of zero net external force, which aligns perfectly with the rubric. No errors or omissions were found."
+        },
+        {
+          "text": "Two balls of masses 2 kg and 3 kg move toward each other at 4 m/s and 2 m/s respectively. Find their velocity after a perfectly inelastic collision. In which direction does the combined mass move?",
+          "topic": "Momentum",
+          "difficulty": "medium",
+          "max_points": 10,
+          "rubric": "Conservation of momentum: m₁v₁ − m₂v₂ = (m₁ + m₂)u. Substituting: 2×4 − 3×2 = 5u → 8 − 6 = 5u → u = 0.4 m/s. System moves in the direction of the first ball (larger momentum). Must handle signs correctly.",
+          "model_answer": "In a perfectly inelastic collision the bodies stick together. Take the first ball's direction as positive. Conservation of momentum: m₁v₁ − m₂v₂ = (m₁ + m₂)u → 2×4 − 3×2 = (2 + 3)×u → 8 − 6 = 5u → u = 2/5 = 0.4 m/s. The positive result means the combined mass moves in the direction of the first ball, which had the larger momentum (8 kg·m/s vs. 6 kg·m/s).",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the solution:\n\n**1. Define direction**\nLet the direction of the 2 kg ball be positive.\nTherefore: $m_1 = 2\\text{ kg}$, $v_1 = +4\\text{ m/s}$; $m_2 = 3\\text{ kg}$, $v_2 = -2\\text{ m/s}$.\n\n**2. Apply conservation of momentum for a perfectly inelastic collision**\nThey stick together, so final mass $M = m_1 + m_2 = 5\\text{ kg}$ with final velocity $V$.\n$$m_1v_1 + m_2v_2 = (m_1 + m_2)V$$\n$$(2)(4) + (3)(-2) = (5)V$$\n$$8 - 6 = 5V$$\n$$2 = 5V$$\n$$V = 0.4\\text{ m/s}$$\n\n**3. Direction**\nSince $V$ is positive ($+0.4\\text{ m/s}$), the combined mass moves in the **original direction of the 2 kg ball**.\n\n**Final Answer:** Combined velocity = **0.4 m/s** in the direction of the 2 kg ball's initial motion.",
+              "at": "2026-03-08T18:38:04.508761653Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent work! You correctly defined the coordinate system, applied conservation of momentum with proper sign conventions, and obtained the correct final velocity of 0.4 m/s in the direction of the 2 kg ball. Your solution is complete and matches the model answer.",
+              "at": "2026-03-08T18:38:08.464892285Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Your solution is perfect. You correctly set up the coordinate system with the 2 kg ball's direction as positive, assigned appropriate signs to velocities, applied conservation of momentum accurately for a perfectly inelastic collision, solved for the final velocity (0.4 m/s), and correctly interpreted the direction based on the positive result. All steps are clear and match the rubric exactly."
+        }
+      ],
+      "llm_grade": 100
+    }
+  ]
+}

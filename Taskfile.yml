@@ -6,11 +6,8 @@ vars:
   IMAGE: examiner
   IMAGE_TAG: latest
   REGISTRY: ghcr.io/pavelanni/examiner
-  GIT_SHA:
-    sh: git rev-parse --short HEAD
-  GIT_DIRTY:
-    sh: git diff --quiet && echo "" || echo "-dirty"
-  DEV_TAG: "{{.GIT_SHA}}{{.GIT_DIRTY}}"
+  DEV_TAG:
+    sh: echo "$(git rev-parse --short HEAD)$(git diff --quiet && echo '' || echo '-dirty')"
   DEPLOY_HOST: examiner-01
   QUADLET_DIR: .config/containers/systemd
 
@@ -152,3 +149,242 @@ tasks:
     desc: Tidy go.mod and go.sum
     cmds:
       - go mod tidy
+
+  # ── Exam group management ─────────────────────────────────
+
+  exam-prep:
+    desc: Prepare exam databases from manifests (EXAM_DIR=path/to/dir)
+    deps: [build]
+    requires:
+      vars: [EXAM_DIR]
+    cmds:
+      - |
+        for manifest in {{.EXAM_DIR}}/*.yaml; do
+          [ -f "$manifest" ] || continue
+          # Skip examiner.env or other non-manifest YAML
+          basename "$manifest" | grep -q '^examiner' && continue
+          echo "==> Preparing $manifest"
+          ./{{.BINARY}} prep -m "$manifest" -o "{{.EXAM_DIR}}"
+        done
+
+  exam-deploy:
+    desc: Deploy exam groups to cloud host (EXAM_DIR=path/to/dir)
+    requires:
+      vars: [EXAM_DIR]
+    vars:
+      BASE_PORT: '{{.BASE_PORT | default "8082"}}'
+    cmds:
+      - |
+        set -e
+
+        # Refuse to deploy with a dirty working tree.
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "ERROR: working tree is dirty — commit or stash before deploying" >&2
+          echo "       (a dirty tree produces image tags like '${DEV_TAG}-dirty'" >&2
+          echo "       that don't exist on the registry)" >&2
+          exit 1
+        fi
+
+        # Verify shared env file exists.
+        if [ ! -f "{{.EXAM_DIR}}/examiner.env" ]; then
+          echo "ERROR: {{.EXAM_DIR}}/examiner.env not found (need LLM key)" >&2
+          exit 1
+        fi
+
+        # Collect manifests sorted alphabetically for deterministic ports.
+        manifests=()
+        for f in {{.EXAM_DIR}}/*.yaml; do
+          [ -f "$f" ] || continue
+          basename "$f" | grep -q '^examiner' && continue
+          manifests+=("$f")
+        done
+        if [ ${#manifests[@]} -eq 0 ]; then
+          echo "ERROR: no manifest YAML files found in {{.EXAM_DIR}}" >&2
+          exit 1
+        fi
+        caddy_blocks=""
+        services=""
+        port={{.BASE_PORT}}
+
+        for manifest in "${manifests[@]}"; do
+          exam_id=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
+          lang=$(grep '^lang:' "$manifest" | awk '{print $2}')
+          prompt_variant=$(grep '^prompt_variant:' "$manifest" | awk '{print $2}')
+          num_questions=$(grep '^num_questions:' "$manifest" | awk '{print $2}')
+          max_followups=$(grep '^max_followups:' "$manifest" | awk '{print $2}')
+          shuffle=$(grep '^shuffle:' "$manifest" | awk '{print $2}')
+
+          echo "==> Deploying $exam_id on port $port"
+
+          # Create host directory.
+          ssh {{.DEPLOY_HOST}} "mkdir -p ~/examiner/exams/${exam_id}"
+
+          # Copy pre-seeded DB.
+          scp "{{.EXAM_DIR}}/${exam_id}.db" "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/examiner.db"
+
+          # Copy questions file (resolve from manifest).
+          questions_file=$(grep '^questions:' "$manifest" | awk '{print $2}')
+          manifest_dir=$(dirname "$manifest")
+          if [ "${questions_file:0:1}" != "/" ]; then
+            questions_file="${manifest_dir}/${questions_file}"
+          fi
+          scp "$questions_file" "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/questions.json"
+
+          # Generate per-group YAML config.
+          {
+            [ -n "$lang" ] && echo "lang: $lang"
+            [ -n "$prompt_variant" ] && echo "prompt-variant: $prompt_variant"
+            [ -n "$num_questions" ] && echo "num-questions: $num_questions"
+            [ -n "$max_followups" ] && echo "max-followups: $max_followups"
+            [ -n "$shuffle" ] && echo "shuffle: $shuffle"
+          } > "/tmp/examiner-${exam_id}.yaml"
+          scp "/tmp/examiner-${exam_id}.yaml" "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/examiner.yaml"
+          rm -f "/tmp/examiner-${exam_id}.yaml"
+
+          # Copy shared env file.
+          scp "{{.EXAM_DIR}}/examiner.env" "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/examiner.env"
+
+          # Generate Quadlet container unit from template.
+          sed -e "s|__EXAM_ID__|${exam_id}|g" \
+              -e "s|__IMAGE__|{{.REGISTRY}}:{{.DEV_TAG}}|g" \
+              -e "s|__PORT__|${port}|g" \
+              deploy/exam-group.container.tmpl \
+              > "/tmp/examiner-${exam_id}.container"
+          scp "/tmp/examiner-${exam_id}.container" "{{.DEPLOY_HOST}}:~/{{.QUADLET_DIR}}/examiner-${exam_id}.container"
+          rm -f "/tmp/examiner-${exam_id}.container"
+
+          # Generate Quadlet volume unit from template.
+          cp deploy/exam-group.volume.tmpl "/tmp/examiner-${exam_id}-data.volume"
+          scp "/tmp/examiner-${exam_id}-data.volume" "{{.DEPLOY_HOST}}:~/{{.QUADLET_DIR}}/examiner-${exam_id}-data.volume"
+          rm -f "/tmp/examiner-${exam_id}-data.volume"
+
+          # Seed DB into Podman volume via helper container.
+          # Quadlet prefixes volume names with "systemd-", so we must match that.
+          ssh {{.DEPLOY_HOST}} "
+            podman volume create systemd-examiner-${exam_id}-data 2>/dev/null || true
+            podman run --rm \
+              -v systemd-examiner-${exam_id}-data:/data/db:Z \
+              -v ~/examiner/exams/${exam_id}/examiner.db:/src.db:ro \
+              busybox sh -c 'cp /src.db /data/db/examiner.db && chmod 777 /data/db && chmod 666 /data/db/examiner.db'
+          "
+
+          # Build Caddy block for this group.
+          caddy_blocks="${caddy_blocks}
+        ${exam_id}.examiner.pavelanni.dev {
+            reverse_proxy localhost:${port}
+        }
+        "
+          services="${services} examiner-${exam_id}"
+          port=$((port + 1))
+        done
+
+        # Write Caddyfile.exams into /etc/caddy/Caddyfile.d/ on host.
+        echo "$caddy_blocks" | ssh {{.DEPLOY_HOST}} "sudo tee /etc/caddy/Caddyfile.d/examiner-exams.caddyfile > /dev/null"
+
+        # Reload systemd and (re)start services.
+        ssh {{.DEPLOY_HOST}} "
+          systemctl --user daemon-reload
+          for svc in ${services}; do
+            systemctl --user restart \$svc || echo \"WARNING: \$svc failed to start\"
+          done
+        "
+
+        # Reload Caddy.
+        ssh {{.DEPLOY_HOST}} "sudo systemctl reload caddy"
+
+        echo ""
+        echo "==> Deployed ${#manifests[@]} exam group(s):${services}"
+        echo ""
+        echo "Exam URLs:"
+        for manifest in "${manifests[@]}"; do
+          eid=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
+          echo "  https://${eid}.examiner.pavelanni.dev"
+        done
+
+  exam-status:
+    desc: Show status of all exam services on cloud host
+    cmds:
+      - >-
+        ssh {{.DEPLOY_HOST}}
+        "systemctl --user list-units 'examiner-*' --no-pager"
+
+  exam-collect:
+    desc: Collect exam results from cloud host (EXAM_DIR=path/to/dir)
+    deps: [build]
+    requires:
+      vars: [EXAM_DIR]
+    cmds:
+      - |
+        set -e
+        for manifest in {{.EXAM_DIR}}/*.yaml; do
+          [ -f "$manifest" ] || continue
+          basename "$manifest" | grep -q '^examiner' && continue
+          exam_id=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
+          echo "==> Collecting results for $exam_id"
+
+          # Stop the service to flush WAL, copy DB, then restart.
+          ssh {{.DEPLOY_HOST}} "
+            systemctl --user stop examiner-${exam_id} 2>/dev/null || true
+            podman run --rm \
+              -v systemd-examiner-${exam_id}-data:/data/db:ro \
+              -v ~/examiner/exams/${exam_id}:/out:Z \
+              busybox cp /data/db/examiner.db /out/examiner.db
+            systemctl --user start examiner-${exam_id} 2>/dev/null || true
+          "
+          scp "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/examiner.db" \
+              "{{.EXAM_DIR}}/${exam_id}.db"
+
+          # Export results locally.
+          ./{{.BINARY}} export \
+            --db "{{.EXAM_DIR}}/${exam_id}.db" \
+            -o "{{.EXAM_DIR}}/${exam_id}-results.json"
+
+          echo "    Saved {{.EXAM_DIR}}/${exam_id}-results.json"
+        done
+
+  exam-teardown:
+    desc: Tear down exam groups on cloud host (EXAM_DIR=path/to/dir)
+    requires:
+      vars: [EXAM_DIR]
+    cmds:
+      - |
+        set -e
+        services=""
+        exam_ids=()
+
+        for manifest in {{.EXAM_DIR}}/*.yaml; do
+          [ -f "$manifest" ] || continue
+          basename "$manifest" | grep -q '^examiner' && continue
+          exam_id=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
+          exam_ids+=("$exam_id")
+          services="${services} examiner-${exam_id}"
+        done
+
+        if [ ${#exam_ids[@]} -eq 0 ]; then
+          echo "No exam manifests found in {{.EXAM_DIR}}"
+          exit 0
+        fi
+
+        echo "==> Tearing down:${services}"
+
+        # Stop services.
+        ssh {{.DEPLOY_HOST}} "systemctl --user stop ${services} 2>/dev/null || true"
+
+        # Remove Quadlet files and volumes.
+        for exam_id in "${exam_ids[@]}"; do
+          ssh {{.DEPLOY_HOST}} "
+            rm -f ~/{{.QUADLET_DIR}}/examiner-${exam_id}.container
+            rm -f ~/{{.QUADLET_DIR}}/examiner-${exam_id}-data.volume
+            podman volume rm systemd-examiner-${exam_id}-data 2>/dev/null || true
+            rm -rf ~/examiner/exams/${exam_id}
+          "
+        done
+
+        # Reload systemd, remove Caddyfile, reload Caddy.
+        ssh {{.DEPLOY_HOST}} "
+          systemctl --user daemon-reload
+          sudo rm -f /etc/caddy/Caddyfile.d/examiner-exams.caddyfile
+          sudo systemctl reload caddy
+        "
+
+        echo "==> Teardown complete"

@@ -254,6 +254,8 @@ deploy/
   examiner-ru.yaml        Russian YAML config (base-path: /ru)
   examiner-en.env.example English env template (secrets only)
   examiner-ru.env.example Russian env template (secrets only)
+  exam-group.container.tmpl  Quadlet template for exam group instances
+  exam-group.volume.tmpl     Quadlet volume template for exam groups
   Caddyfile               Caddy reverse proxy with path routing
 docs/
   architecture.md      System design, data flow, database schema
@@ -466,6 +468,67 @@ use the correct prefix.
 The Caddyfile in `deploy/` routes `/ru/*` to the Russian instance
 and everything else to the English instance. See
 `deploy/examiner-ru.container` for the container configuration.
+
+## Multi-session exam groups
+
+Deploy multiple isolated exam instances (one per student group) using
+subdomain-based routing. Each group gets its own database, questions
+file, and container.
+
+### Exam group prerequisites
+
+- A **wildcard DNS record** `*.examiner.pavelanni.dev` pointing to the
+  cloud host (create in Cloudflare or your DNS provider)
+- An `examiner.env` file in the exam directory with secrets
+  (`LLM_API_KEY`, `ADMIN_PASSWORD`)
+- A pushed container image (`task deploy` builds and pushes one)
+
+### Preparing an exam
+
+Create a directory with one YAML manifest and CSV roster per group
+(see `examples/` for the format), then generate pre-seeded databases:
+
+```bash
+task exam-prep EXAM_DIR=examples/exam-2026-03-07
+```
+
+### Deploying exam groups
+
+```bash
+task exam-deploy EXAM_DIR=examples/exam-2026-03-07
+```
+
+This copies databases and configs to the cloud host, installs Quadlet
+units, generates a `Caddyfile.exams` with per-subdomain reverse proxy
+blocks, and starts the services. On first deploy, add an import line
+to the main Caddyfile on the host:
+
+```text
+import /home/<user>/examiner/Caddyfile.exams
+```
+
+The existing English/Russian instances (ports 8080/8081) are not
+affected — exam groups start at port 8082.
+
+### Collecting results and tearing down
+
+```bash
+# Download databases and export results as JSON
+task exam-collect EXAM_DIR=examples/exam-2026-03-07
+
+# Stop services, remove volumes and Caddy config
+task exam-teardown EXAM_DIR=examples/exam-2026-03-07
+```
+
+### Exam group task reference
+
+| Task | Description |
+| ---- | ----------- |
+| `exam-prep` | Generate pre-seeded databases from manifests |
+| `exam-deploy` | Deploy all groups to the cloud host |
+| `exam-status` | Show status of exam services on the host |
+| `exam-collect` | Download databases and export results |
+| `exam-teardown` | Stop services and clean up |
 
 ## Tech stack
 

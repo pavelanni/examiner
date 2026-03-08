@@ -30,27 +30,35 @@ func generateCSRFToken() (string, error) {
 
 func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		cookiePath := "/"
+		if h.config.BasePath != "" {
+			cookiePath = h.config.BasePath + "/"
+		}
+
 		if r.Method == "GET" || r.Method == "HEAD" {
-			token, err := generateCSRFToken()
-			if err != nil {
-				slog.Error("failed to generate CSRF token", "error", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
-				return
+			// Reuse existing CSRF token if present; generate only on first visit.
+			cookie, err := r.Cookie(csrfCookieName)
+			if err != nil || cookie.Value == "" {
+				token, err := generateCSRFToken()
+				if err != nil {
+					slog.Error("failed to generate CSRF token", "error", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+					return
+				}
+				http.SetCookie(w, &http.Cookie{
+					Name:     csrfCookieName,
+					Value:    token,
+					Path:     cookiePath,
+					HttpOnly: false,
+					Secure:   h.config.SecureCookies,
+					SameSite: http.SameSiteLaxMode,
+				})
+				ctx := model.ContextWithCSRFToken(r.Context(), token)
+				next.ServeHTTP(w, r.WithContext(ctx))
+			} else {
+				ctx := model.ContextWithCSRFToken(r.Context(), cookie.Value)
+				next.ServeHTTP(w, r.WithContext(ctx))
 			}
-			cookiePath := "/"
-			if h.config.BasePath != "" {
-				cookiePath = h.config.BasePath + "/"
-			}
-			http.SetCookie(w, &http.Cookie{
-				Name:     csrfCookieName,
-				Value:    token,
-				Path:     cookiePath,
-				HttpOnly: false,
-				Secure:   h.config.SecureCookies,
-				SameSite: http.SameSiteLaxMode,
-			})
-			ctx := model.ContextWithCSRFToken(r.Context(), token)
-			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
 
@@ -74,26 +82,8 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		token, err := generateCSRFToken()
-		if err != nil {
-			slog.Error("failed to generate CSRF token", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		cookiePath := "/"
-		if h.config.BasePath != "" {
-			cookiePath = h.config.BasePath + "/"
-		}
-		http.SetCookie(w, &http.Cookie{
-			Name:     csrfCookieName,
-			Value:    token,
-			Path:     cookiePath,
-			HttpOnly: false,
-			Secure:   h.config.SecureCookies,
-			SameSite: http.SameSiteLaxMode,
-		})
-
-		ctx := model.ContextWithCSRFToken(r.Context(), token)
+		// Keep the same token for POST responses so htmx fragments stay valid.
+		ctx := model.ContextWithCSRFToken(r.Context(), cookie.Value)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -228,6 +218,14 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		Path:     logoutCookiePath,
 		MaxAge:   -1,
 		HttpOnly: true,
+		Secure:   h.config.SecureCookies,
+	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    "",
+		Path:     logoutCookiePath,
+		MaxAge:   -1,
+		HttpOnly: false,
 		Secure:   h.config.SecureCookies,
 	})
 	http.Redirect(w, r, h.path("/login"), http.StatusSeeOther)

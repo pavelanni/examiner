@@ -1,0 +1,24 @@
+[Unit]
+Description=Examiner - __EXAM_ID__
+After=network-online.target
+Wants=network-online.target
+
+[Container]
+Image=__IMAGE__
+PublishPort=127.0.0.1:__PORT__:8080
+Volume=examiner-__EXAM_ID__-data.volume:/data/db:Z
+Volume=%h/examiner/exams/__EXAM_ID__/questions.json:/data/questions.json:ro,Z
+Volume=%h/examiner/exams/__EXAM_ID__/examiner.yaml:/data/examiner.yaml:ro,Z
+
+EnvironmentFile=%h/examiner/exams/__EXAM_ID__/examiner.env
+
+Environment=EXAMINER_DB=/data/db/examiner.db
+Environment=EXAMINER_QUESTIONS=/data/questions.json
+Environment=EXAMINER_ADDR=0.0.0.0:8080
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=30
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,150 @@
+{
+  "exam_id": "phys-2026-spring-g1",
+  "subject": "Physics",
+  "date": "2026-03-15",
+  "prompt_variant": "standard",
+  "num_questions": 5,
+  "results": [
+    {
+      "external_id": "STU-001",
+      "display_name": "Alice Johnson",
+      "session_number": 1,
+      "status": "graded",
+      "started_at": "2026-03-08T18:40:49.736283736Z",
+      "submitted_at": "2026-03-08T18:45:18.899995973Z",
+      "questions": [
+        {
+          "text": "A car rounds a flat curve of radius 100 m. The friction coefficient is μ = 0.4. Find the maximum safe speed. How does the answer change if the road is banked at 15°?",
+          "topic": "Circular motion",
+          "difficulty": "medium",
+          "max_points": 10,
+          "rubric": "Flat: μmg = mv²/R → v = √(μgR) = √(0.4×10×100) = 20 m/s. Banked: combine friction and normal force components. Result: v ≈ 27.4 m/s.",
+          "model_answer": "On a flat road, friction provides the centripetal force: μmg = mv²/R → v = √(μgR) = √(0.4×10×100) = √400 = 20 m/s = 72 km/h. On a banked road (angle β = 15°), both friction and the normal force contribute. Projecting horizontally (toward center): N·sin β + f·cos β = mv²/R. Vertically: N·cos β − f·sin β = mg. With f = μN: v² = gR·(sin β + μ·cos β)/(cos β − μ·sin β) = 10×100×(0.259 + 0.386)/(0.966 − 0.104) = 1000×0.645/0.862 ≈ 748. v ≈ 27.4 m/s ≈ 99 km/h. Banking increases the safe speed by nearly 37%.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the solution for both scenarios:\n\n**1. Flat curve (Friction provides centripetal force)**\nThe maximum speed is when friction is at its maximum ($f_s = \\mu mg$).\n$$\\mu mg = \\frac{mv^2}{r} \\implies v = \\sqrt{\\mu g r}$$\n$$v = \\sqrt{0.4 \\times 9.8 \\times 100} = \\sqrt{392} \\approx 19.8\\text{ m/s}$$\n\n**2. Banked curve at $15^\\circ$ (Assuming no friction contribution)**\nFor a frictionless banked curve, the formula is $v = \\sqrt{rg \\tan \\theta}$.\n$$v = \\sqrt{100 \\times 9.8 \\times \\tan 15^\\circ}$$\n$\\tan 15^\\circ \\approx 0.268$, so $v = \\sqrt{100 \\times 9.8 \\times 0.268} = \\sqrt{262.64} \\approx 16.2\\text{ m/s}$.\n\n**Analysis:** With only this banking angle ($15^\\circ$), the \"safe speed\" (where no friction is needed) is actually **lower** ($16.2\\text{ m/s}$) than the maximum allowed by friction on a flat road ($19.8\\text{ m/s}$). In reality, banking allows you to go *faster* than the flat-road limit because you add the horizontal component of the normal force to the available friction force.",
+              "at": "2026-03-08T18:41:19.024341646Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Your flat curve solution is correct, using g=9.8 m/s² gives v≈19.8 m/s (acceptable). For the banked curve, you only computed the frictionless case, which is not what the question asks—it asks for maximum safe speed with μ=0.4, where friction contributes. Your analysis correctly notes banking should allow higher speeds, but you didn't calculate it. Partial credit for understanding the flat case and recognizing the role of friction in banking.\n\n**Follow-up question:** For the banked curve with μ=0.4, how would you set up the equations to find the maximum safe speed, considering both friction and the normal force? (You don't need to solve fully, just explain the approach.)",
+              "at": "2026-03-08T18:41:26.669177077Z"
+            },
+            {
+              "role": "student",
+              "content": "For a banked curve with friction, the maximum safe speed is found by considering that friction can act **down the incline** (to prevent the car from sliding outwards) and the normal force provides the horizontal centripetal force.\n\n**1. Set up coordinates**\nResolve forces horizontally and vertically (or parallel/perpendicular to the incline). The standard approach is to use horizontal and vertical axes because the acceleration is purely horizontal toward the center.\n\n**2. Apply Newton's Second Law**\n\n- **Horizontal direction:** The centripetal force is provided by the horizontal components of both the normal force ($N$) and the friction force ($f$).\n$$N \\sin\\theta + f \\cos\\theta = \\frac{mv^2}{r}$$\n\n- **Vertical direction:** No vertical acceleration, so forces balance.\n$$N \\cos\\theta - f \\sin\\theta - mg = 0$$\n\n**3. Incorporate maximum friction**\nFor maximum speed without slipping, static friction is at its maximum:\n$$f = \\mu_s N$$\n\n**4. Solve the system**\nSubstitute $f = \\mu N$ into both equations. You then have two equations with two unknowns ($N$ and $v$). Solve for $v$ by eliminating $N$.\n\nThe resulting maximum speed will be **greater** than both the flat curve limit ($\\sqrt{\\mu g r}$) and the frictionless banked curve limit ($\\sqrt{rg \\tan\\theta}$), combining the benefits of banking and friction.",
+              "at": "2026-03-08T18:42:04.77117384Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Your setup for the banked curve is correct and complete, showing good conceptual understanding. You correctly derived the equations and noted the maximum speed will be higher than both limits. However, you didn't compute the numerical answer for the banked case as requested in the question, which is why partial credit is deducted.",
+              "at": "2026-03-08T18:42:09.862406776Z"
+            }
+          ],
+          "llm_score": 7,
+          "llm_feedback": "Your solution for the flat curve is correct, using g=9.8 m/s² yields v≈19.8 m/s, which is acceptable (the rubric uses g=10 m/s² for simplicity, but your approach is valid). For the banked curve, you initially computed only the frictionless case (v≈16.2 m/s), which does not address the full question—it asks for the maximum safe speed with μ=0.4, where friction contributes. However, in your follow-up response, you correctly set up the equations for the banked curve with friction, including the horizontal and vertical force balances and incorporating maximum friction (f=μN). This demonstrates strong conceptual understanding of the physics involved. You also correctly noted that the maximum speed should be higher than both the flat and frictionless banked limits. Points are deducted because you did not provide the numerical answer for the banked case as requested in the original question, despite being prompted to explain the approach. Overall, your reasoning is sound, but the incomplete final answer reduces the score."
+        },
+        {
+          "text": "A coin of mass m sits on a rotating horizontal turntable at distance r from the center. The friction coefficient is μ. What is the maximum r before the coin slides off? How does the answer change if the turntable is tilted at angle α and the coin is at the highest point?",
+          "topic": "Circular motion",
+          "difficulty": "hard",
+          "max_points": 15,
+          "rubric": "Horizontal: μmg = mω²r → r = μg/ω². Tilted (top point): friction must oppose both gravity component and centripetal tendency. Simplified: μmg·cos α ≥ mω²r + mg·sin α → r ≤ g(μ·cos α − sin α)/ω². Requires μ \u003e tan α.",
+          "model_answer": "On a horizontal turntable, friction provides the centripetal force. At the limit: μmg = mω²r → r_max = μg/ω². On a tilted turntable with the coin at the highest point: gravity component mg·sin α pulls the coin down the slope. Centripetal force mω²r is directed away from the center (downhill at the top). Normal force: N ≈ mg·cos α. Friction must resist both: μmg·cos α ≥ mω²r + mg·sin α (simplified model). So: r_max = g(μ·cos α − sin α)/ω². The coin stays only if μ \u003e tan α; otherwise it slides at any r. The tilt reduces the maximum radius compared to a horizontal turntable.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the approach for both setups:\n\n**1. Horizontal turntable**\nFriction provides the centripetal force. The maximum static friction is $f_{max} = \\mu mg$.\n$$\\mu mg = m\\omega^2 r \\implies r = \\frac{\\mu g}{\\omega^2}$$\n\n**2. Turntable tilted at angle $\\alpha$ (coin at highest point)**\nAt the highest point, the coin is at the top of the incline. The components of gravity and friction contribute to the net centripetal force, which acts horizontally toward the center of the circle.\n\n- **Radial direction (horizontal):** $N\\sin\\alpha + f\\cos\\alpha = m\\omega^2 r$\n- **Perpendicular to the incline:** $N + f\\sin\\alpha = mg\\cos\\alpha$\n\nFor maximum $r$ (just before sliding), set $f = \\mu N$. Solve the two equations simultaneously for $r$. The result will be smaller than the flat case because the tangential component of gravity ($mg\\sin\\alpha$) aids the outward sliding tendency, reducing the allowable radius before slipping occurs.",
+              "at": "2026-03-08T18:42:55.006039837Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Your horizontal case is correct and well-explained. For the tilted case, you correctly set up the force components and equations, but you did not solve them to find the explicit expression for r_max, which is required for a complete answer. Your qualitative reasoning about the effect of tilt is accurate.\n\n**Follow-up question:** Can you solve the two equations you wrote for the tilted case to find the explicit formula for the maximum radius r before the coin slides off? This will help confirm your understanding of the forces involved.",
+              "at": "2026-03-08T18:43:00.55949983Z"
+            },
+            {
+              "role": "student",
+              "content": "Here is the explicit solution for the tilted turntable with the coin at the highest point.\n\n**1. The equations**\nAt the highest point, the coin is at the top of the incline. The radial direction is horizontal toward the center.\n- Radial (horizontal): $N\\sin\\alpha + f\\cos\\alpha = m\\omega^2 r$  ...(1)\n- Perpendicular to incline: $N - f\\sin\\alpha = mg\\cos\\alpha$  ...(2)  *(Note: The component of gravity perpendicular to the incline is $mg\\cos\\alpha$; the normal force $N$ acts perpendicularly outward from the surface.)*\n- Maximum friction: $f = \\mu N$\n\n**2. Substitute $f = \\mu N$**\nFrom (2): $N - \\mu N \\sin\\alpha = mg\\cos\\alpha$\n$$N(1 - \\mu \\sin\\alpha) = mg\\cos\\alpha \\implies N = \\frac{mg\\cos\\alpha}{1 - \\mu \\sin\\alpha}$$\n\nFrom (1): $N\\sin\\alpha + \\mu N \\cos\\alpha = m\\omega^2 r$\n$$N(\\sin\\alpha + \\mu \\cos\\alpha) = m\\omega^2 r$$\n\n**3. Eliminate $N$**\nSubstitute the expression for $N$:\n$$\\frac{mg\\cos\\alpha}{1 - \\mu \\sin\\alpha} (\\sin\\alpha + \\mu \\cos\\alpha) = m\\omega^2 r$$\n\n**4. Solve for $r$**\nCancel $m$ from both sides:\n$$r = \\frac{g\\cos\\alpha (\\sin\\alpha + \\mu \\cos\\alpha)}{\\omega^2 (1 - \\mu \\sin\\alpha)}$$\n\nThis is the maximum radius before the coin slides off at the highest point. Compared to the flat case ($r = \\mu g/\\omega^2$), the tilt introduces trigonometric factors that generally reduce the allowable $r$ because gravity now has a component pulling the coin outward along the surface.",
+              "at": "2026-03-08T18:43:34.623298885Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Your horizontal case is correct. For the tilted case, your force equations and derivation are mathematically sound, but the final expression for r_max differs from the simplified model in the rubric, which assumes friction opposes both gravity and centripetal components directly. Your more rigorous approach is valid, but it's important to note that the condition for the coin to stay (μ \u003e tan α) is not explicitly derived here, and the physical interpretation of the denominator (1 - μ sin α) requires μ sin α \u003c 1 for a positive normal force. Good work overall.",
+              "at": "2026-03-08T18:43:41.400936437Z"
+            }
+          ],
+          "llm_score": 14,
+          "llm_feedback": "Your solution for the horizontal turntable is correct and clearly explained, earning full credit for that part. For the tilted turntable, you correctly set up the force equations and derived an explicit expression for r_max through a rigorous approach. However, your final expression, while mathematically valid, differs from the simplified model in the rubric, which uses a more direct physical interpretation (friction opposing both gravity and centripetal components). Your derivation is acceptable, but you did not explicitly derive the condition μ \u003e tan α or discuss the physical implications of the denominator (1 - μ sin α) requiring μ sin α \u003c 1 for a positive normal force. Additionally, your qualitative reasoning about the tilt reducing the allowable radius is accurate. Overall, your work demonstrates strong conceptual understanding and problem-solving skills, with only minor omissions in connecting to the simplified model and conditions."
+        },
+        {
+          "text": "What is angular velocity? How is it related to linear velocity and the period of revolution? What is Earth's angular velocity about its axis?",
+          "topic": "Circular motion",
+          "difficulty": "easy",
+          "max_points": 10,
+          "rubric": "ω = Δφ/Δt (rad/s). Relations: v = ωR, ω = 2π/T = 2πν. Earth's angular velocity: ω = 2π/(24×3600) ≈ 7.27×10⁻⁵ rad/s. All points of a rigid body share the same angular velocity but have different linear velocities.",
+          "model_answer": "Angular velocity is the rate of change of angle: ω = Δφ/Δt, measured in rad/s. Relation to linear velocity: v = ωR, where R is the radius of the circular path. Relation to period: ω = 2π/T. Relation to frequency: ω = 2πν. Earth's angular velocity about its axis: T = 24 h = 86,400 s, so ω = 2π/86,400 ≈ 7.27×10⁻⁵ rad/s. Important property: all points of a rotating rigid body have the same angular velocity, but linear velocity increases with distance from the axis. At the equator v ≈ 465 m/s; at the poles v = 0.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Angular velocity ($\\omega$) is the rate of change of angular displacement, measured in radians per second (rad/s). It relates to linear velocity ($v$) by $v = \\omega r$ (where $r$ is the radius) and to the period ($T$) by $\\omega = 2\\pi / T$. Earth's angular velocity about its axis is approximately $7.27 \\times 10^{-5}$ rad/s (calculated as $2\\pi$ radians per 24 hours).",
+              "at": "2026-03-08T18:44:11.715709026Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Correct. You defined angular velocity accurately, provided the correct relations to linear velocity and period, and correctly calculated Earth's angular velocity with the proper units and value.",
+              "at": "2026-03-08T18:44:15.115594247Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Your answer is comprehensive and accurate. You correctly defined angular velocity as the rate of change of angular displacement with proper units (rad/s). You accurately stated the relationship to linear velocity (v = ωr) and period (ω = 2π/T). You also correctly calculated Earth's angular velocity as approximately 7.27 × 10⁻⁵ rad/s, showing understanding of the conversion from 24 hours to seconds. All key points from the rubric are covered, demonstrating full conceptual understanding."
+        },
+        {
+          "text": "A 1200 kg car travels over a convex bridge of radius 50 m. What is the maximum speed at the top of the bridge so the car doesn't leave the road?",
+          "topic": "Circular motion",
+          "difficulty": "medium",
+          "max_points": 10,
+          "rubric": "At the top: mg − N = mv²/R. Liftoff when N = 0: mg = mv²/R → v = √(gR) = √(10×50) = √500 ≈ 22.4 m/s. Must write Newton's second law for circular motion and state the liftoff condition.",
+          "model_answer": "At the top of the convex bridge, the car experiences gravity mg (downward) and normal force N (upward). Centripetal acceleration is directed downward (toward the center of curvature). Newton's second law: mg − N = mv²/R. The car leaves the road when N = 0: mg = mv²/R → v² = gR → v = √(gR) = √(10×50) = √500 ≈ 22.4 m/s ≈ 80 km/h. Above this speed, gravity cannot provide the required centripetal acceleration, and the car lifts off.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the solution:\n\n**1. Analyze forces at the top of the bridge**\nAt the top of a convex bridge, gravity ($mg$) acts downward, and the normal force ($N$) acts upward. The centripetal force (downward, toward the center of the circle) is provided by the net force:\n$$mg - N = \\frac{mv^2}{r}$$\n\n**2. Condition for losing contact**\nThe car loses contact with the road when the normal force becomes zero ($N = 0$). This is the maximum speed before it leaves the road.\n$$mg = \\frac{mv^2}{r} \\implies v = \\sqrt{g r}$$\n\n**3. Calculate**\n$$v = \\sqrt{9.8 \\times 50} = \\sqrt{490} \\approx 22.1 \\text{ m/s}$$\n\n**Final Answer:** The maximum speed is **22.1 m/s** (about 79.6 km/h).",
+              "at": "2026-03-08T18:44:39.223787551Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent work! You correctly identified the forces, applied Newton's second law for circular motion, stated the liftoff condition (N=0), derived the formula v=√(gR), and performed the calculation accurately. Your explanation is clear and complete.",
+              "at": "2026-03-08T18:44:43.483492136Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Excellent work! You correctly identified the forces (gravity downward, normal force upward), applied Newton's second law for circular motion (mg - N = mv²/r), stated the liftoff condition (N = 0), derived the formula v = √(gR), and performed the calculation accurately using g = 9.8 m/s². Your explanation is clear, complete, and matches the model answer in conceptual understanding, with only a minor numerical difference due to using g = 9.8 instead of 10, which is acceptable. Full credit awarded."
+        },
+        {
+          "text": "A wheel of radius 0.5 m rotates at 10 rev/s. Find the linear speed, centripetal acceleration, and period of a point on the rim.",
+          "topic": "Circular motion",
+          "difficulty": "easy",
+          "max_points": 10,
+          "rubric": "T = 1/ν = 0.1 s. ω = 2πν = 20π ≈ 62.8 rad/s. v = ωR = 62.8×0.5 = 31.4 m/s. a = ω²R = v²/R ≈ 1975 m/s².",
+          "model_answer": "Period: T = 1/ν = 1/10 = 0.1 s. Angular velocity: ω = 2πν = 2π×10 = 20π ≈ 62.8 rad/s. Linear speed at the rim: v = ωR = 62.8×0.5 = 31.4 m/s ≈ 113 km/h. Centripetal acceleration: a = v²/R = 31.4²/0.5 ≈ 1975 m/s² ≈ 200g. Even at moderate rotation rates, centripetal acceleration can be enormous — this is why centrifuges are effective for separation.",
+          "conversation": [
+            {
+              "role": "student",
+              "content": "Here is the solution:\n\n**1. Known values**\nRadius $r = 0.5\\text{ m}$, frequency $f = 10\\text{ rev/s}$.\n\n**2. Angular velocity**\n$$\\omega = 2\\pi f = 2\\pi (10) = 20\\pi \\approx 62.8\\text{ rad/s}$$\n\n**3. Linear speed**\n$$v = \\omega r = (20\\pi)(0.5) = 10\\pi \\approx 31.4\\text{ m/s}$$\n\n**4. Centripetal acceleration**\n$$a_c = \\omega^2 r = (20\\pi)^2 (0.5) = (400\\pi^2)(0.5) = 200\\pi^2 \\approx 1974\\text{ m/s}^2$$\n\n**5. Period**\n$$T = \\frac{1}{f} = \\frac{1}{10} = 0.1\\text{ s}$$\n\n**Final Answer:**\n- Linear speed: **$10\\pi$ m/s** ($\\approx 31.4$ m/s)\n- Centripetal acceleration: **$200\\pi^2$ m/s²** ($\\approx 1974$ m/s²)\n- Period: **0.1 s**",
+              "at": "2026-03-08T18:45:06.983688543Z"
+            },
+            {
+              "role": "assistant",
+              "content": "Excellent work! Your solution is complete and correct. You correctly identified all given values, calculated angular velocity, linear speed, centripetal acceleration, and period using appropriate formulas. You provided both exact expressions (with π) and numerical approximations, which is thorough. All values match the expected results.",
+              "at": "2026-03-08T18:45:11.981370619Z"
+            }
+          ],
+          "llm_score": 10,
+          "llm_feedback": "Excellent work! Your solution is complete and correct. You correctly identified all given values, calculated angular velocity, linear speed, centripetal acceleration, and period using appropriate formulas. You provided both exact expressions (with π) and numerical approximations, which is thorough. All values match the expected results."
+        }
+      ],
+      "llm_grade": 92.72727272727272
+    }
+  ]
+}

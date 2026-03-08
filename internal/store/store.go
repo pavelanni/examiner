@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -116,6 +117,7 @@ func (s *Store) migrate() error {
 	CREATE TABLE IF NOT EXISTS users (
 		id            INTEGER PRIMARY KEY AUTOINCREMENT,
 		username      TEXT NOT NULL UNIQUE,
+		external_id   TEXT NOT NULL DEFAULT '',
 		display_name  TEXT NOT NULL DEFAULT '',
 		password_hash TEXT NOT NULL,
 		role          TEXT NOT NULL DEFAULT 'student',
@@ -130,11 +132,37 @@ func (s *Store) migrate() error {
 		expires_at DATETIME NOT NULL
 	);
 
+	CREATE TABLE IF NOT EXISTS exam_metadata (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires
 		ON auth_sessions(expires_at);
 	`
 	_, err := s.db.Exec(schema)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add external_id column to existing users tables (no-op if column already exists).
+	_, err = s.db.Exec(`ALTER TABLE users ADD COLUMN external_id TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+
+	// Ensure non-empty external_id values are unique.
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id_nonempty ON users(external_id) WHERE external_id != ''`)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// isAlterDuplicate returns true if the error indicates the column already exists.
+func isAlterDuplicate(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
 // InsertQuestion stores a question.
@@ -517,9 +545,18 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 	}, nil
 }
 
-// ListSessions returns all sessions.
+// ListSessions returns all sessions (newest first, for UI display).
 func (s *Store) ListSessions() ([]model.ExamSession, error) {
-	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id DESC`)
+	return s.listSessionsWithOrder("ORDER BY id DESC")
+}
+
+// ListSessionsChronological returns all sessions oldest-first (for export).
+func (s *Store) ListSessionsChronological() ([]model.ExamSession, error) {
+	return s.listSessionsWithOrder("ORDER BY id ASC")
+}
+
+func (s *Store) listSessionsWithOrder(orderClause string) ([]model.ExamSession, error) {
+	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ` + orderClause)
 	if err != nil {
 		return nil, err
 	}

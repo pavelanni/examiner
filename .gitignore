@@ -2,7 +2,10 @@
 /examiner
 
 # Database
-/examiner.db
+*.db
+
+# Generated credentials
+*-creds.csv
 
 # Environment
 *.env
@@ -27,3 +30,6 @@
 # Test output
 coverage.out
 coverage.html
+
+# Dolt database files (added by bd init)
+.dolt/

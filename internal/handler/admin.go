@@ -34,6 +34,7 @@ func (h *Handler) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 // handleCreateUser processes the user creation form.
 func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	username := r.FormValue("username")
+	externalID := r.FormValue("external_id")
 	displayName := r.FormValue("display_name")
 	password := r.FormValue("password")
 	role := r.FormValue("role")
@@ -56,6 +57,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 
 	_, err = h.store.CreateUser(model.User{
 		Username:     username,
+		ExternalID:   externalID,
 		DisplayName:  displayName,
 		PasswordHash: string(hash),
 		Role:         model.UserRole(role),
