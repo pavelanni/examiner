@@ -294,6 +294,12 @@ tasks:
 
         echo ""
         echo "==> Deployed ${#manifests[@]} exam group(s):${services}"
+        echo ""
+        echo "Exam URLs:"
+        for manifest in "${manifests[@]}"; do
+          eid=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
+          echo "  https://${eid}.examiner.pavelanni.dev"
+        done
 
   exam-status:
     desc: Show status of all exam services on cloud host
