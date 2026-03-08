@@ -180,6 +180,14 @@ tasks:
       - |
         set -e
 
+        # Refuse to deploy with a dirty working tree.
+        if [ -n "$(git status --porcelain)" ]; then
+          echo "ERROR: working tree is dirty — commit or stash before deploying" >&2
+          echo "       (a dirty tree produces image tags like '${DEV_TAG}-dirty'" >&2
+          echo "       that don't exist on the registry)" >&2
+          exit 1
+        fi
+
         # Verify shared env file exists.
         if [ ! -f "{{.EXAM_DIR}}/examiner.env" ]; then
           echo "ERROR: {{.EXAM_DIR}}/examiner.env not found (need LLM key)" >&2
@@ -197,8 +205,6 @@ tasks:
           echo "ERROR: no manifest YAML files found in {{.EXAM_DIR}}" >&2
           exit 1
         fi
-        IFS=$'\n' manifests=($(sort <<<"${manifests[*]}")); unset IFS
-
         caddy_blocks=""
         services=""
         port={{.BASE_PORT}}
@@ -277,10 +283,12 @@ tasks:
         # Write Caddyfile.exams on host.
         echo "$caddy_blocks" | ssh {{.DEPLOY_HOST}} "cat > ~/examiner/Caddyfile.exams"
 
-        # Reload systemd and start services.
+        # Reload systemd and (re)start services.
         ssh {{.DEPLOY_HOST}} "
           systemctl --user daemon-reload
-          systemctl --user start ${services}
+          for svc in ${services}; do
+            systemctl --user restart \$svc || echo \"WARNING: \$svc failed to start\"
+          done
         "
 
         # Reload Caddy.
