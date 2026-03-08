@@ -220,6 +220,14 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		HttpOnly: true,
 		Secure:   h.config.SecureCookies,
 	})
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    "",
+		Path:     logoutCookiePath,
+		MaxAge:   -1,
+		HttpOnly: false,
+		Secure:   h.config.SecureCookies,
+	})
 	http.Redirect(w, r, h.path("/login"), http.StatusSeeOther)
 }
 

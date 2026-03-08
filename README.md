@@ -475,7 +475,7 @@ Deploy multiple isolated exam instances (one per student group) using
 subdomain-based routing. Each group gets its own database, questions
 file, and container.
 
-### Prerequisites
+### Exam group prerequisites
 
 - A **wildcard DNS record** `*.examiner.pavelanni.dev` pointing to the
   cloud host (create in Cloudflare or your DNS provider)

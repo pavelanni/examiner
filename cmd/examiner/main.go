@@ -696,19 +696,19 @@ func usernameFromDisplayName(displayName string) string {
 	if len(parts) == 0 {
 		return "user"
 	}
-	first := strings.ToLower(parts[0])
+	first := []rune(strings.ToLower(parts[0]))
 	if len(parts) == 1 {
 		if len(first) > 8 {
-			return first[:8]
+			return string(first[:8])
 		}
-		return first
+		return string(first)
 	}
-	last := strings.ToLower(parts[len(parts)-1])
-	username := string(first[0]) + last
+	last := []rune(strings.ToLower(parts[len(parts)-1]))
+	username := append(first[:1], last...)
 	if len(username) > 8 {
 		username = username[:8]
 	}
-	return username
+	return string(username)
 }
 
 // deduplicateUsername ensures uniqueness by replacing the last character with

@@ -322,12 +322,14 @@ tasks:
           exam_id=$(grep '^exam_id:' "$manifest" | awk '{print $2}')
           echo "==> Collecting results for $exam_id"
 
-          # Copy DB out of Podman volume via helper container, then scp back.
+          # Stop the service to flush WAL, copy DB, then restart.
           ssh {{.DEPLOY_HOST}} "
+            systemctl --user stop examiner-${exam_id} 2>/dev/null || true
             podman run --rm \
               -v systemd-examiner-${exam_id}-data:/data/db:ro \
               -v ~/examiner/exams/${exam_id}:/out:Z \
               busybox cp /data/db/examiner.db /out/examiner.db
+            systemctl --user start examiner-${exam_id} 2>/dev/null || true
           "
           scp "{{.DEPLOY_HOST}}:~/examiner/exams/${exam_id}/examiner.db" \
               "{{.EXAM_DIR}}/${exam_id}.db"

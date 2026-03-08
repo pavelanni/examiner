@@ -8,7 +8,7 @@ import (
 
 // ExportAllSessions builds export-ready student results from all sessions.
 func (s *Store) ExportAllSessions() ([]model.StudentResult, error) {
-	sessions, err := s.ListSessions()
+	sessions, err := s.ListSessionsChronological()
 	if err != nil {
 		return nil, fmt.Errorf("list sessions: %w", err)
 	}

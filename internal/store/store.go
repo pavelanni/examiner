@@ -151,6 +151,12 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Ensure non-empty external_id values are unique.
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id_nonempty ON users(external_id) WHERE external_id != ''`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -539,9 +545,27 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 	}, nil
 }
 
-// ListSessions returns all sessions.
+// ListSessions returns all sessions (newest first, for UI display).
 func (s *Store) ListSessions() ([]model.ExamSession, error) {
 	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sessions []model.ExamSession
+	for rows.Next() {
+		var sess model.ExamSession
+		if err := rows.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt); err != nil {
+			return nil, err
+		}
+		sessions = append(sessions, sess)
+	}
+	return sessions, rows.Err()
+}
+
+// ListSessionsChronological returns all sessions oldest-first (for export).
+func (s *Store) ListSessionsChronological() ([]model.ExamSession, error) {
+	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ORDER BY id ASC`)
 	if err != nil {
 		return nil, err
 	}
