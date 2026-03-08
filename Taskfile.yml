@@ -325,7 +325,7 @@ tasks:
           # Copy DB out of Podman volume via helper container, then scp back.
           ssh {{.DEPLOY_HOST}} "
             podman run --rm \
-              -v examiner-${exam_id}-data:/data/db:ro \
+              -v systemd-examiner-${exam_id}-data:/data/db:ro \
               -v ~/examiner/exams/${exam_id}:/out:Z \
               busybox cp /data/db/examiner.db /out/examiner.db
           "
