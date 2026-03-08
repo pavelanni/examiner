@@ -157,6 +157,17 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Deduplicate questions by text (guards against legacy DB duplicates).
+	seen := make(map[string]bool, len(questions))
+	unique := questions[:0]
+	for _, q := range questions {
+		if !seen[q.Text] {
+			seen[q.Text] = true
+			unique = append(unique, q)
+		}
+	}
+	questions = unique
+
 	if h.config.Shuffle {
 		rand.Shuffle(len(questions), func(i, j int) {
 			questions[i], questions[j] = questions[j], questions[i]

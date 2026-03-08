@@ -72,7 +72,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--llm-model` | | `llama3.2` | Model name |
 | `--lang` | `-l` | `en` | UI language (`en`, `ru`) |
 | `--num-questions` | `-n` | `0` (all) | Number of questions per exam |
-| `--difficulty` | `-d` | (all) | Filter by difficulty (`easy`, `medium`, `hard`) |
+| `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per answer |
 | `--shuffle` | | `false` | Randomize question order |
@@ -114,7 +114,7 @@ lang: ru
 llm-url: https://api.openai.com/v1
 llm-model: gpt-4o
 num-questions: 10
-difficulty: medium
+difficulty: easy,medium
 shuffle: true
 max-followups: 3
 base-path: /ru
@@ -125,8 +125,8 @@ secure-cookies: true
 #### Examples
 
 ```bash
-# 10 random medium-difficulty questions in Russian
-./examiner -l ru -n 10 -d medium --shuffle
+# 10 random easy+medium questions in Russian
+./examiner -l ru -n 10 -d easy,medium --shuffle
 
 # Only "Mechanics" topic, 5 questions
 ./examiner -t "Законы Ньютона" -n 5 --shuffle
