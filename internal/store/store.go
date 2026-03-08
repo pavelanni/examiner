@@ -157,6 +157,18 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Remove duplicate questions (keep lowest ID) before adding unique constraint.
+	_, err = s.db.Exec(`DELETE FROM questions WHERE id NOT IN (SELECT MIN(id) FROM questions GROUP BY course_id, text)`)
+	if err != nil {
+		return err
+	}
+
+	// Prevent duplicate questions (same text within a course).
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_questions_course_text ON questions(course_id, text)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -165,10 +177,10 @@ func isAlterDuplicate(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
-// InsertQuestion stores a question.
+// InsertQuestion stores a question. Duplicate questions (same course_id + text) are silently skipped.
 func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO questions (course_id, text, difficulty, topic, rubric, model_answer, max_points)
+		`INSERT OR IGNORE INTO questions (course_id, text, difficulty, topic, rubric, model_answer, max_points)
 		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		q.CourseID, q.Text, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints,
 	)
@@ -179,6 +191,10 @@ func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	id, err := res.LastInsertId()
 	if err != nil {
 		return 0, err
+	}
+	if id == 0 {
+		slog.Debug("skipped duplicate question", "topic", q.Topic, "difficulty", q.Difficulty)
+		return 0, nil
 	}
 	slog.Debug("inserted question", "id", id, "topic", q.Topic, "difficulty", q.Difficulty)
 	return id, nil
@@ -204,12 +220,16 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 
 // ListQuestionsFiltered returns questions matching the given filters.
 // Empty strings mean no filtering on that field.
+// Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
 	query := `SELECT id, course_id, text, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
-		query += ` AND difficulty = ?`
-		args = append(args, difficulty)
+		levels := strings.Split(difficulty, ",")
+		query += ` AND difficulty IN (` + placeholders(len(levels)) + `)`
+		for _, l := range levels {
+			args = append(args, strings.TrimSpace(l))
+		}
 	}
 	if topic != "" {
 		query += ` AND topic = ?`
@@ -642,4 +662,12 @@ func (s *Store) ListDistinctTopics() ([]string, error) {
 		topics = append(topics, t)
 	}
 	return topics, rows.Err()
+}
+
+// placeholders returns a comma-separated string of n SQL placeholder marks.
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strings.Repeat("?,", n-1) + "?"
 }
