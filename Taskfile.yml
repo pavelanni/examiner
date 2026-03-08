@@ -6,11 +6,8 @@ vars:
   IMAGE: examiner
   IMAGE_TAG: latest
   REGISTRY: ghcr.io/pavelanni/examiner
-  GIT_SHA:
-    sh: git rev-parse --short HEAD
-  GIT_DIRTY:
-    sh: git diff --quiet && echo "" || echo "-dirty"
-  DEV_TAG: "{{.GIT_SHA}}{{.GIT_DIRTY}}"
+  DEV_TAG:
+    sh: echo "$(git rev-parse --short HEAD)$(git diff --quiet && echo '' || echo '-dirty')"
   DEPLOY_HOST: examiner-01
   QUADLET_DIR: .config/containers/systemd
 
