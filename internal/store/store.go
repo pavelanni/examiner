@@ -157,7 +157,19 @@ func (s *Store) migrate() error {
 		return err
 	}
 
-	// Remove duplicate questions (keep lowest ID) before adding unique constraint.
+	// Remove duplicate questions (keep lowest ID) and remap any threads that
+	// reference deleted duplicates to the canonical (MIN) question ID.
+	_, err = s.db.Exec(`
+		UPDATE question_threads SET question_id = (
+			SELECT MIN(q2.id) FROM questions q2
+			WHERE q2.course_id = (SELECT course_id FROM questions WHERE id = question_threads.question_id)
+			  AND q2.text = (SELECT text FROM questions WHERE id = question_threads.question_id)
+		)
+		WHERE question_id NOT IN (SELECT MIN(id) FROM questions GROUP BY course_id, text)
+	`)
+	if err != nil {
+		return err
+	}
 	_, err = s.db.Exec(`DELETE FROM questions WHERE id NOT IN (SELECT MIN(id) FROM questions GROUP BY course_id, text)`)
 	if err != nil {
 		return err
@@ -225,10 +237,17 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 	query := `SELECT id, course_id, text, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
-		levels := strings.Split(difficulty, ",")
-		query += ` AND difficulty IN (` + placeholders(len(levels)) + `)`
-		for _, l := range levels {
-			args = append(args, strings.TrimSpace(l))
+		var levels []string
+		for _, l := range strings.Split(difficulty, ",") {
+			if level := strings.TrimSpace(l); level != "" {
+				levels = append(levels, level)
+			}
+		}
+		if len(levels) > 0 {
+			query += ` AND difficulty IN (` + placeholders(len(levels)) + `)`
+			for _, level := range levels {
+				args = append(args, level)
+			}
 		}
 	}
 	if topic != "" {
