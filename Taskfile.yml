@@ -268,7 +268,7 @@ tasks:
             podman run --rm \
               -v systemd-examiner-${exam_id}-data:/data/db:Z \
               -v ~/examiner/exams/${exam_id}/examiner.db:/src.db:ro \
-              busybox cp /src.db /data/db/examiner.db
+              busybox sh -c 'cp /src.db /data/db/examiner.db && chmod 666 /data/db/examiner.db'
           "
 
           # Build Caddy block for this group.
