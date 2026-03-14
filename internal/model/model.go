@@ -221,3 +221,10 @@ type SessionView struct {
 	Threads   []ThreadView
 	Grade     *Grade
 }
+
+// ExamPageView extends SessionView with time limit display fields.
+type ExamPageView struct {
+	SessionView
+	TimeRemaining time.Duration
+	TimeExceeded  bool
+}

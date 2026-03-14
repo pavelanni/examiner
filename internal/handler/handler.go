@@ -7,6 +7,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
@@ -25,6 +26,21 @@ type Handler struct {
 // New creates a new Handler.
 func New(s *store.Store, l *llm.Client, cfg model.ExamConfig) (*Handler, error) {
 	return &Handler{store: s, llm: l, config: cfg}, nil
+}
+
+// calculateTimeRemaining returns remaining exam time.
+// Returns -1 if no limit is set, 0 if the limit has been exceeded.
+func calculateTimeRemaining(session model.ExamSession, blueprint model.ExamBlueprint) time.Duration {
+	if blueprint.TimeLimit <= 0 {
+		return -1 // no limit
+	}
+	limit := time.Duration(blueprint.TimeLimit) * time.Minute
+	elapsed := time.Since(session.StartedAt)
+	remaining := limit - elapsed
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }
 
 // BasePathMiddleware injects the base path into the request context.
@@ -214,8 +230,15 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timeRemaining := calculateTimeRemaining(view.Session, view.Blueprint)
+	pageView := model.ExamPageView{
+		SessionView:   *view,
+		TimeRemaining: timeRemaining,
+		TimeExceeded:  timeRemaining == 0,
+	}
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ExamPage(*view).Render(r.Context(), w); err != nil {
+	if err := views.ExamPage(pageView).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -245,6 +268,20 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	if sess.Status != model.StatusInProgress {
 		http.Error(w, "exam already submitted", http.StatusBadRequest)
+		return
+	}
+
+	// Check time limit.
+	bp, err := h.store.GetBlueprint(sess.BlueprintID)
+	if err != nil {
+		slog.Error("failed to get blueprint", "blueprint_id", sess.BlueprintID, "error", err)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if calculateTimeRemaining(sess, bp) == 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `<p class="time-exceeded-error">Time limit exceeded. Please submit your exam.</p>`)
 		return
 	}
 
@@ -280,13 +317,6 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	messages, err := h.store.GetMessages(threadID)
 	if err != nil {
 		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	bp, err := h.store.GetBlueprint(sess.BlueprintID)
-	if err != nil {
-		slog.Error("failed to get blueprint", "blueprint_id", sess.BlueprintID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -344,7 +374,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess).Render(r.Context(), w); err != nil {
+	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, false).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

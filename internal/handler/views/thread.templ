@@ -7,7 +7,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ ThreadContent(thread model.QuestionThread, question model.Question, messages []model.Message, sessionID int64, index int, session model.ExamSession) {
+templ ThreadContent(thread model.QuestionThread, question model.Question, messages []model.Message, sessionID int64, index int, session model.ExamSession, timeExceeded bool) {
 	<h3>
 		{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(index + 1)}) }
 		<span class={ "status-badge", "status-" + string(thread.Status) }>{ string(thread.Status) }</span>
@@ -51,8 +51,15 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 						placeholder={ t(ctx, "TypeAnswer") }
 					}
 					required
+					if timeExceeded {
+						disabled
+					}
 				></textarea>
-				<button class="answer-submit" type="submit">
+				<button class="answer-submit" type="submit"
+					if timeExceeded {
+						disabled
+					}
+				>
 					if len(messages) > 0 {
 						{ t(ctx, "Reply") }
 					} else {

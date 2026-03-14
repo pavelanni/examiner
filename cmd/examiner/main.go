@@ -76,6 +76,7 @@ func serveCmd() *cobra.Command {
 	f.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
 	f.StringP("topic", "t", "", "Filter questions by topic")
 	f.Int("max-followups", 3, "Maximum follow-up questions per answer")
+	f.Int("time-limit", 0, "Exam time limit in minutes (0 = no limit)")
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
@@ -189,7 +190,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Load questions from all specified files.
-	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups")); err != nil {
+	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
@@ -370,7 +371,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
+func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit int) error {
 	count, err := db.QuestionCount()
 	if err != nil {
 		return err
@@ -379,7 +380,7 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int) error {
 		_, err = db.CreateBlueprint(model.ExamBlueprint{
 			CourseID:     1,
 			Name:         "Exam",
-			TimeLimit:    0,
+			TimeLimit:    timeLimit,
 			MaxFollowups: maxFollowups,
 		})
 		if err != nil {
@@ -580,7 +581,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if maxFollowups == 0 {
 		maxFollowups = 3
 	}
-	if err := loadQuestions(db, []string{questionsPath}, maxFollowups); err != nil {
+	if err := loadQuestions(db, []string{questionsPath}, maxFollowups, 0); err != nil {
 		return fmt.Errorf("load questions: %w", err)
 	}
 

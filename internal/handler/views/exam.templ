@@ -2,6 +2,7 @@ package views
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
@@ -21,13 +22,25 @@ templ submitForm(action string, confirmMsg string, buttonText string, gradingMsg
 	</div>
 }
 
-templ ExamPage(view model.SessionView) {
+templ ExamPage(view model.ExamPageView) {
 	@Layout(td(ctx, "ExamTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ t(ctx, "Exam") }</h1>
+		if view.Blueprint.TimeLimit > 0 {
+			<div class="timer-section">
+				if view.TimeExceeded {
+					<span id="exam-timer" class="time-exceeded">00:00</span>
+				} else {
+					<span id="exam-timer" data-remaining={ strconv.Itoa(int(view.TimeRemaining.Seconds())) }>--:--</span>
+				}
+				<div id="time-exceeded-banner" class="time-exceeded-banner">
+					<strong>Time&#39;s up! Please submit your exam.</strong>
+				</div>
+			</div>
+		}
 		if view.Session.Status == model.StatusInProgress {
 			<p>{ t(ctx, "ExamInstructions") }</p>
 		} else {
@@ -35,11 +48,47 @@ templ ExamPage(view model.SessionView) {
 		}
 		for i, tv := range view.Threads {
 			<div class="thread" id={ fmt.Sprintf("thread-%d", tv.Thread.ID) }>
-				@ThreadContent(tv.Thread, tv.Question, tv.Messages, view.Session.ID, i, view.Session)
+				@ThreadContent(tv.Thread, tv.Question, tv.Messages, view.Session.ID, i, view.Session, view.TimeExceeded)
 			</div>
 		}
 		if view.Session.Status == model.StatusInProgress {
 			@submitForm(p(ctx, fmt.Sprintf("/exam/%d/submit", view.Session.ID)), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"), t(ctx, "GradingInProgress"), csrf(ctx))
+		}
+		if view.Blueprint.TimeLimit > 0 && !view.TimeExceeded {
+			<script>
+(function() {
+    const timerEl = document.getElementById('exam-timer');
+    if (!timerEl) return;
+
+    let remaining = parseInt(timerEl.dataset.remaining, 10); // seconds
+
+    function formatTime(secs) {
+        const m = Math.floor(secs / 60);
+        const s = secs % 60;
+        return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function tick() {
+        if (remaining <= 0) {
+            timerEl.textContent = '00:00';
+            timerEl.classList.add('time-exceeded');
+            document.getElementById('time-exceeded-banner')?.style.setProperty('display', 'block');
+            // Disable all answer textareas and submit buttons
+            document.querySelectorAll('.answer-input').forEach(el => el.disabled = true);
+            document.querySelectorAll('.answer-submit').forEach(el => el.disabled = true);
+            return;
+        }
+        timerEl.textContent = formatTime(remaining);
+        if (remaining <= 300) { // 5 minutes warning
+            timerEl.classList.add('time-warning');
+        }
+        remaining--;
+        setTimeout(tick, 1000);
+    }
+
+    tick();
+})();
+			</script>
 		}
 	}
 }

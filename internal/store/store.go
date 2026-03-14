@@ -690,3 +690,20 @@ func placeholders(n int) string {
 	}
 	return strings.Repeat("?,", n-1) + "?"
 }
+
+// GetSessionWithBlueprint returns a session and its associated blueprint in one query.
+func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, model.ExamBlueprint, error) {
+	var sess model.ExamSession
+	var bp model.ExamBlueprint
+	err := s.db.QueryRow(`
+		SELECT s.id, s.blueprint_id, s.student_id, s.status, s.started_at, s.submitted_at,
+		       b.id, b.course_id, b.name, b.time_limit, b.max_followups
+		FROM exam_sessions s
+		JOIN exam_blueprints b ON b.id = s.blueprint_id
+		WHERE s.id = ?`, sessionID,
+	).Scan(
+		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
+		&bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups,
+	)
+	return sess, bp, err
+}

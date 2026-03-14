@@ -30,6 +30,10 @@ templ Layout(title string) {
 				.htmx-indicator { display: none; }
 				.htmx-request .htmx-indicator { display: inline-block; }
 				.htmx-request button[type="submit"] { opacity: 0.5; pointer-events: none; }
+				#exam-timer { font-weight: bold; font-size: 1.2em; }
+				#exam-timer.time-warning { color: orange; }
+				#exam-timer.time-exceeded { color: red; }
+				.time-exceeded-banner { display: none; background: #fee; border: 1px solid red; padding: 1em; margin: 1em 0; border-radius: 4px; }
 			</style>
 		</head>
 		<body>
