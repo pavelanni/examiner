@@ -436,6 +436,16 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit 
 		slog.Info("imported questions", "path", path, "count", len(questions))
 	}
 
+	// Always update blueprint settings to match current CLI flags.
+	bp, err := db.GetBlueprint(1)
+	if err == nil {
+		bp.TimeLimit = timeLimit
+		bp.MaxFollowups = maxFollowups
+		if err := db.UpdateBlueprint(bp); err != nil {
+			slog.Warn("failed to update blueprint", "error", err)
+		}
+	}
+
 	return nil
 }
 

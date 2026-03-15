@@ -297,6 +297,15 @@ func (s *Store) CreateBlueprint(bp model.ExamBlueprint) (int64, error) {
 	return id, nil
 }
 
+// UpdateBlueprint updates the time_limit and max_followups of an existing blueprint.
+func (s *Store) UpdateBlueprint(bp model.ExamBlueprint) error {
+	_, err := s.db.Exec(
+		`UPDATE exam_blueprints SET time_limit = ?, max_followups = ? WHERE id = ?`,
+		bp.TimeLimit, bp.MaxFollowups, bp.ID,
+	)
+	return err
+}
+
 // GetBlueprint returns a blueprint by ID.
 func (s *Store) GetBlueprint(id int64) (model.ExamBlueprint, error) {
 	var bp model.ExamBlueprint
