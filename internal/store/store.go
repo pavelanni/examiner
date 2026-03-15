@@ -297,6 +297,25 @@ func (s *Store) CreateBlueprint(bp model.ExamBlueprint) (int64, error) {
 	return id, nil
 }
 
+// UpdateBlueprint updates the time_limit and max_followups of an existing blueprint.
+func (s *Store) UpdateBlueprint(bp model.ExamBlueprint) error {
+	res, err := s.db.Exec(
+		`UPDATE exam_blueprints SET time_limit = ?, max_followups = ? WHERE id = ?`,
+		bp.TimeLimit, bp.MaxFollowups, bp.ID,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		slog.Warn("UpdateBlueprint: no rows affected", "id", bp.ID)
+	}
+	return nil
+}
+
 // GetBlueprint returns a blueprint by ID.
 func (s *Store) GetBlueprint(id int64) (model.ExamBlueprint, error) {
 	var bp model.ExamBlueprint
@@ -689,4 +708,21 @@ func placeholders(n int) string {
 		return ""
 	}
 	return strings.Repeat("?,", n-1) + "?"
+}
+
+// GetSessionWithBlueprint returns a session and its associated blueprint in one query.
+func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, model.ExamBlueprint, error) {
+	var sess model.ExamSession
+	var bp model.ExamBlueprint
+	err := s.db.QueryRow(`
+		SELECT s.id, s.blueprint_id, s.student_id, s.status, s.started_at, s.submitted_at,
+		       b.id, b.course_id, b.name, b.time_limit, b.max_followups
+		FROM exam_sessions s
+		JOIN exam_blueprints b ON b.id = s.blueprint_id
+		WHERE s.id = ?`, sessionID,
+	).Scan(
+		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
+		&bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups,
+	)
+	return sess, bp, err
 }
