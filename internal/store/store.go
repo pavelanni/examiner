@@ -299,11 +299,21 @@ func (s *Store) CreateBlueprint(bp model.ExamBlueprint) (int64, error) {
 
 // UpdateBlueprint updates the time_limit and max_followups of an existing blueprint.
 func (s *Store) UpdateBlueprint(bp model.ExamBlueprint) error {
-	_, err := s.db.Exec(
+	res, err := s.db.Exec(
 		`UPDATE exam_blueprints SET time_limit = ?, max_followups = ? WHERE id = ?`,
 		bp.TimeLimit, bp.MaxFollowups, bp.ID,
 	)
-	return err
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		slog.Warn("UpdateBlueprint: no rows affected", "id", bp.ID)
+	}
+	return nil
 }
 
 // GetBlueprint returns a blueprint by ID.

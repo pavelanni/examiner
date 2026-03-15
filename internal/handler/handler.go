@@ -253,9 +253,9 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := h.store.GetSession(sessionID)
+	sess, bp, err := h.store.GetSessionWithBlueprint(sessionID)
 	if err != nil {
-		slog.Error("failed to get session", "session_id", sessionID, "error", err)
+		slog.Error("failed to get session with blueprint", "session_id", sessionID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -272,12 +272,6 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check time limit.
-	bp, err := h.store.GetBlueprint(sess.BlueprintID)
-	if err != nil {
-		slog.Error("failed to get blueprint", "blueprint_id", sess.BlueprintID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 	if calculateTimeRemaining(sess, bp) == 0 {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusForbidden)
@@ -373,8 +367,11 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Recalculate time status for accurate UI rendering after LLM evaluation.
+	timeExceeded := calculateTimeRemaining(sess, bp) == 0
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, false).Render(r.Context(), w); err != nil {
+	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

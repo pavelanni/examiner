@@ -60,7 +60,8 @@ templ ExamPage(view model.ExamPageView) {
     const timerEl = document.getElementById('exam-timer');
     if (!timerEl) return;
 
-    let remaining = parseInt(timerEl.dataset.remaining, 10); // seconds
+    const remaining = parseInt(timerEl.dataset.remaining, 10); // seconds
+    const endTime = Date.now() + remaining * 1000;
 
     function formatTime(secs) {
         const m = Math.floor(secs / 60);
@@ -69,7 +70,8 @@ templ ExamPage(view model.ExamPageView) {
     }
 
     function tick() {
-        if (remaining <= 0) {
+        const secsLeft = Math.max(0, Math.floor((endTime - Date.now()) / 1000));
+        if (secsLeft <= 0) {
             timerEl.textContent = '00:00';
             timerEl.classList.add('time-exceeded');
             document.getElementById('time-exceeded-banner')?.style.setProperty('display', 'block');
@@ -78,11 +80,10 @@ templ ExamPage(view model.ExamPageView) {
             document.querySelectorAll('.answer-submit').forEach(el => el.disabled = true);
             return;
         }
-        timerEl.textContent = formatTime(remaining);
-        if (remaining <= 300) { // 5 minutes warning
+        timerEl.textContent = formatTime(secsLeft);
+        if (secsLeft <= 300) { // 5 minutes warning
             timerEl.classList.add('time-warning');
         }
-        remaining--;
         setTimeout(tick, 1000);
     }
 

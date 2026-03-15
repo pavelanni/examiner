@@ -55,6 +55,7 @@ type ExamManifest struct {
 	PromptVariant string `yaml:"prompt_variant"`
 	NumQuestions  int    `yaml:"num_questions"`
 	MaxFollowups  int    `yaml:"max_followups"`
+	TimeLimit     int    `yaml:"time_limit"`
 	Shuffle       bool   `yaml:"shuffle"`
 	Questions     string `yaml:"questions"`
 	Roster        string `yaml:"roster"`

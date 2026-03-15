@@ -591,7 +591,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if maxFollowups == 0 {
 		maxFollowups = 3
 	}
-	if err := loadQuestions(db, []string{questionsPath}, maxFollowups, 0); err != nil {
+	if err := loadQuestions(db, []string{questionsPath}, maxFollowups, manifest.TimeLimit); err != nil {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
