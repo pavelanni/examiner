@@ -26,6 +26,7 @@ func TestGetReviewData(t *testing.T) {
 	}
 	if data == nil {
 		t.Fatal("expected review data, got nil")
+		return
 	}
 	if data.StudentName != "Alice" {
 		t.Errorf("StudentName = %q, want Alice", data.StudentName)
@@ -51,15 +52,20 @@ func TestGetReviewData(t *testing.T) {
 func TestUpdateTeacherScore(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
-	s.ImportExam(sampleExport())
+	if err := s.ImportExam(sampleExport()); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
 
 	students, _ := s.ListStudentsForExam("test-exam-1")
 	sessionID := students[0].SessionID
 
-	data, _ := s.GetReviewData(sessionID)
+	data, err := s.GetReviewData(sessionID)
+	if err != nil {
+		t.Fatalf("GetReviewData: %v", err)
+	}
 	questionID := data.Questions[0].ID
 
-	err := s.UpdateTeacherScore(questionID, 8.5, "Good but missing detail")
+	err = s.UpdateTeacherScore(questionID, 8.5, "Good but missing detail")
 	if err != nil {
 		t.Fatalf("UpdateTeacherScore: %v", err)
 	}
@@ -81,13 +87,17 @@ func TestFinalizeGrade(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 	// Create a teacher user for reviewed_by
-	s.CreateUser(model.User{
+	if _, err := s.CreateUser(model.User{
 		Username:     "teacher",
 		PasswordHash: "hash",
 		Role:         model.UserRoleTeacher,
 		Active:       true,
-	})
-	s.ImportExam(sampleExport())
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if err := s.ImportExam(sampleExport()); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
 
 	students, _ := s.ListStudentsForExam("test-exam-1")
 	sessionID := students[0].SessionID

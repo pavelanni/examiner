@@ -34,5 +34,5 @@ func (h *Handler) handleReport(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", filename))
-	w.Write([]byte(md))
+	_, _ = w.Write([]byte(md))
 }

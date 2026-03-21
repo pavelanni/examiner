@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -126,11 +127,9 @@ func requireRole(allowed ...model.UserRole) func(http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			for _, role := range allowed {
-				if user.Role == role {
-					next.ServeHTTP(w, r)
-					return
-				}
+			if slices.Contains(allowed, user.Role) {
+				next.ServeHTTP(w, r)
+				return
 			}
 			http.Error(w, "forbidden", http.StatusForbidden)
 		})

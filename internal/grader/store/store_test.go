@@ -56,6 +56,7 @@ func TestFullGradingWorkflow(t *testing.T) {
 	}
 	if data == nil {
 		t.Fatal("expected review data")
+		return
 	}
 	if len(data.Questions) != 1 {
 		t.Fatalf("expected 1 question, got %d", len(data.Questions))
@@ -83,12 +84,14 @@ func TestFullGradingWorkflow(t *testing.T) {
 
 	// 6. Finalize grade
 	// Create a teacher user first
-	s.CreateUser(model.User{
+	if _, err := s.CreateUser(model.User{
 		Username:     "teacher",
 		PasswordHash: "hash",
 		Role:         model.UserRoleTeacher,
 		Active:       true,
-	})
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 	if err := s.FinalizeGrade(sessionID, 90.0, "Great work", 1); err != nil {
 		t.Fatalf("FinalizeGrade: %v", err)
 	}
@@ -174,6 +177,7 @@ func TestCreateAndGetUser(t *testing.T) {
 	}
 	if u == nil {
 		t.Fatal("expected user, got nil")
+		return
 	}
 	if u.DisplayName != "Test Teacher" {
 		t.Errorf("DisplayName = %q, want %q", u.DisplayName, "Test Teacher")
@@ -197,12 +201,14 @@ func TestAuthSession(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	s.CreateUser(model.User{
+	if _, err := s.CreateUser(model.User{
 		Username:     "admin",
 		PasswordHash: "hash",
 		Role:         model.UserRoleAdmin,
 		Active:       true,
-	})
+	}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 
 	token, err := s.CreateAuthSession(1)
 	if err != nil {
@@ -218,6 +224,7 @@ func TestAuthSession(t *testing.T) {
 	}
 	if sess == nil {
 		t.Fatal("expected session, got nil")
+		return
 	}
 	if sess.UserID != 1 {
 		t.Errorf("UserID = %d, want 1", sess.UserID)
@@ -286,6 +293,7 @@ func TestGetExamByID(t *testing.T) {
 	}
 	if ex == nil {
 		t.Fatal("expected exam, got nil")
+		return
 	}
 	if ex.Subject != "Physics" {
 		t.Errorf("Subject = %q, want Physics", ex.Subject)
