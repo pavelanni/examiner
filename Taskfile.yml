@@ -21,8 +21,10 @@ tasks:
     desc: Generate Go code from .templ files
     sources:
       - internal/handler/views/*.templ
+      - internal/grader/handler/views/*.templ
     generates:
       - internal/handler/views/*_templ.go
+      - internal/grader/handler/views/*_templ.go
     cmds:
       - templ generate
 
@@ -139,11 +141,30 @@ tasks:
         {{else}}ssh {{.DEPLOY_HOST}} "journalctl --user -u examiner-en -u examiner-ru -n 50 --no-pager"
         {{end}}
 
+  grader-build:
+    desc: Build the grader binary
+    deps: [generate]
+    cmds:
+      - go build -o grader ./cmd/grader/
+
+  grader-run:
+    desc: Build and run the grader server
+    deps: [grader-build]
+    cmds:
+      - ./grader serve {{.CLI_ARGS}}
+
+  grader-import:
+    desc: Import exam results into grader
+    deps: [grader-build]
+    cmds:
+      - ./grader import {{.CLI_ARGS}}
+
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -f {{.BINARY}}
+      - rm -f {{.BINARY}} grader
       - rm -f internal/handler/views/*_templ.go
+      - rm -f internal/grader/handler/views/*_templ.go
 
   tidy:
     desc: Tidy go.mod and go.sum
