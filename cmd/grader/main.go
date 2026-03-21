@@ -190,8 +190,11 @@ func importCmd(v *viper.Viper) *cobra.Command {
 func importUsersCmd(v *viper.Viper) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import-users [file.csv]",
-		Short: "Import teacher accounts from a CSV file (columns: username, display_name, password)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Import teacher accounts from a CSV file (columns: teacher_id, display_name)",
+		Long: `Import teacher accounts from a CSV file. Usernames and passwords
+are generated automatically. A credentials CSV is written to
+<input>-creds.csv with the generated login details.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			setupLogging(v)
 
@@ -208,12 +211,28 @@ func importUsersCmd(v *viper.Viper) *cobra.Command {
 			}
 			defer f.Close()
 
-			n, err := s.ImportUsersCSV(f)
+			creds, err := s.ImportUsersCSV(f)
 			if err != nil {
 				return fmt.Errorf("import users: %w", err)
 			}
 
-			slog.Info("imported users", "path", args[0], "count", n)
+			slog.Info("imported users", "path", args[0], "count", len(creds))
+
+			// Write credentials CSV.
+			credsPath := strings.TrimSuffix(args[0], ".csv") + "-creds.csv"
+			cf, err := os.Create(credsPath)
+			if err != nil {
+				return fmt.Errorf("create credentials file: %w", err)
+			}
+			defer cf.Close()
+
+			_, _ = fmt.Fprintln(cf, "teacher_id,display_name,username,password")
+			for _, c := range creds {
+				_, _ = fmt.Fprintf(cf, "%s,%s,%s,%s\n",
+					c.TeacherID, c.DisplayName, c.Username, c.Password)
+			}
+
+			slog.Info("credentials written", "path", credsPath)
 			return nil
 		},
 	}

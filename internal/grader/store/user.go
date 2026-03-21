@@ -1,11 +1,13 @@
 package store
 
 import (
+	"crypto/rand"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
 	"io"
 	"log/slog"
+	"math/big"
 	"strings"
 	"time"
 
@@ -98,53 +100,67 @@ func (s *Store) UserCount() (int, error) {
 	return count, err
 }
 
-// ImportUsersCSV reads a CSV with columns username, display_name, password
-// and creates teacher accounts. Returns the number of users created.
-func (s *Store) ImportUsersCSV(r io.Reader) (int, error) {
+// UserCredential holds generated credentials for a single imported user.
+type UserCredential struct {
+	TeacherID   string
+	DisplayName string
+	Username    string
+	Password    string
+}
+
+// ImportUsersCSV reads a CSV with columns teacher_id, display_name
+// and creates teacher accounts with generated usernames and passwords.
+// Returns the generated credentials for output.
+func (s *Store) ImportUsersCSV(r io.Reader) ([]UserCredential, error) {
 	reader := csv.NewReader(r)
 	records, err := reader.ReadAll()
 	if err != nil {
-		return 0, fmt.Errorf("parse CSV: %w", err)
+		return nil, fmt.Errorf("parse CSV: %w", err)
 	}
 	if len(records) < 2 {
-		return 0, fmt.Errorf("CSV must have a header row and at least one user")
+		return nil, fmt.Errorf("CSV must have a header row and at least one user")
 	}
 
 	// Find column indices (case-insensitive, whitespace-tolerant).
 	header := records[0]
-	userCol, nameCol, passCol := -1, -1, -1
+	idCol, nameCol := -1, -1
 	for i, h := range header {
 		switch strings.TrimSpace(strings.ToLower(h)) {
-		case "username":
-			userCol = i
+		case "teacher_id":
+			idCol = i
 		case "display_name":
 			nameCol = i
-		case "password":
-			passCol = i
 		}
 	}
-	if userCol < 0 {
-		return 0, fmt.Errorf("CSV: missing username column")
+	if idCol < 0 {
+		return nil, fmt.Errorf("CSV: missing teacher_id column")
 	}
 	if nameCol < 0 {
-		return 0, fmt.Errorf("CSV: missing display_name column")
-	}
-	if passCol < 0 {
-		return 0, fmt.Errorf("CSV: missing password column")
+		return nil, fmt.Errorf("CSV: missing display_name column")
 	}
 
-	created := 0
+	usedUsernames := map[string]bool{"admin": true}
+	var creds []UserCredential
+
 	for _, row := range records[1:] {
-		username := strings.TrimSpace(row[userCol])
+		teacherID := strings.TrimSpace(row[idCol])
 		displayName := strings.TrimSpace(row[nameCol])
-		password := strings.TrimSpace(row[passCol])
-		if username == "" || password == "" {
+		if teacherID == "" {
 			continue
+		}
+
+		username := deduplicateUsername(
+			usernameFromDisplayName(displayName), usedUsernames)
+		usedUsernames[username] = true
+
+		password, err := randomPassword("teach", 5)
+		if err != nil {
+			return creds, fmt.Errorf("generate password for %s: %w", teacherID, err)
 		}
 
 		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 		if err != nil {
-			return created, fmt.Errorf("hash password for %s: %w", username, err)
+			return creds, fmt.Errorf("hash password for %s: %w", teacherID, err)
 		}
 
 		if _, err := s.CreateUser(model.User{
@@ -154,11 +170,74 @@ func (s *Store) ImportUsersCSV(r io.Reader) (int, error) {
 			Role:         model.UserRoleTeacher,
 			Active:       true,
 		}); err != nil {
-			slog.Warn("skipping user", "username", username, "error", err)
+			slog.Warn("skipping user", "teacher_id", teacherID, "error", err)
 			continue
 		}
-		created++
+
+		creds = append(creds, UserCredential{
+			TeacherID:   teacherID,
+			DisplayName: displayName,
+			Username:    username,
+			Password:    password,
+		})
 	}
 
-	return created, nil
+	return creds, nil
+}
+
+// usernameFromDisplayName builds a username from "First Last" as first letter
+// of the first name + last name, lowercased and truncated to 8 characters.
+func usernameFromDisplayName(displayName string) string {
+	parts := strings.Fields(displayName)
+	if len(parts) == 0 {
+		return "user"
+	}
+	first := []rune(strings.ToLower(parts[0]))
+	if len(parts) == 1 {
+		if len(first) > 8 {
+			return string(first[:8])
+		}
+		return string(first)
+	}
+	last := []rune(strings.ToLower(parts[len(parts)-1]))
+	username := append(first[:1], last...)
+	if len(username) > 8 {
+		username = username[:8]
+	}
+	return string(username)
+}
+
+// deduplicateUsername ensures uniqueness by replacing the last character with
+// an incrementing digit (2, 3, ...) when a collision is found.
+func deduplicateUsername(base string, used map[string]bool) string {
+	if !used[base] {
+		return base
+	}
+	runes := []rune(base)
+	for n := 2; n <= 99; n++ {
+		suffix := []rune(fmt.Sprintf("%d", n))
+		prefixLen := len(runes) - len(suffix)
+		if prefixLen < 0 {
+			prefixLen = 0
+		}
+		candidate := string(runes[:prefixLen]) + string(suffix)
+		if !used[candidate] {
+			return candidate
+		}
+	}
+	return base
+}
+
+// randomPassword generates a password as prefix-XXXXX with random alphanumeric chars.
+func randomPassword(prefix string, length int) (string, error) {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	b := make([]byte, length)
+	for i := range b {
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
+		if err != nil {
+			return "", err
+		}
+		b[i] = charset[n.Int64()]
+	}
+	return prefix + "-" + string(b), nil
 }

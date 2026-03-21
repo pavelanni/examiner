@@ -145,13 +145,22 @@ func (h *Handler) handleImportUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	n, err := h.store.ImportUsersCSV(f)
+	creds, err := h.store.ImportUsersCSV(f)
 	if err != nil {
 		h.renderUsersPage(w, r, fmt.Sprintf("Import error: %v", err))
 		return
 	}
 
-	h.renderUsersPage(w, r, fmt.Sprintf("Imported %d teacher account(s)", n))
+	// Build summary with generated credentials.
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "Imported %d teacher(s). Credentials: ", len(creds))
+	for i, c := range creds {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+		fmt.Fprintf(&sb, "%s → %s / %s", c.DisplayName, c.Username, c.Password)
+	}
+	h.renderUsersPage(w, r, sb.String())
 }
 
 // renderUsersPage renders the users page with a flash message.

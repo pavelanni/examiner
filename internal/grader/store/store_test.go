@@ -248,21 +248,33 @@ func TestImportUsersCSV(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	csv := "username,display_name,password\nivanov,Ivan Ivanov,secret1\npetrov,Petr Petrov,secret2\n"
-	n, err := s.ImportUsersCSV(strings.NewReader(csv))
+	csvData := "teacher_id,display_name\nT-001,Ivan Ivanov\nT-002,Petr Petrov\n"
+	creds, err := s.ImportUsersCSV(strings.NewReader(csvData))
 	if err != nil {
 		t.Fatalf("ImportUsersCSV: %v", err)
 	}
-	if n != 2 {
-		t.Errorf("imported %d users, want 2", n)
+	if len(creds) != 2 {
+		t.Fatalf("imported %d users, want 2", len(creds))
 	}
 
-	u, err := s.GetUserByUsername("ivanov")
+	// Verify generated credentials
+	if creds[0].TeacherID != "T-001" {
+		t.Errorf("TeacherID = %q, want T-001", creds[0].TeacherID)
+	}
+	if creds[0].Username != "iivanov" {
+		t.Errorf("Username = %q, want iivanov", creds[0].Username)
+	}
+	if !strings.HasPrefix(creds[0].Password, "teach-") {
+		t.Errorf("Password = %q, want teach-* prefix", creds[0].Password)
+	}
+
+	// Verify user was stored
+	u, err := s.GetUserByUsername(creds[0].Username)
 	if err != nil {
 		t.Fatalf("GetUserByUsername: %v", err)
 	}
 	if u == nil {
-		t.Fatal("expected user ivanov, got nil")
+		t.Fatal("expected user, got nil")
 		return
 	}
 	if u.DisplayName != "Ivan Ivanov" {
