@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/grader/store"
+	"github.com/pavelanni/examiner/internal/model"
 )
 
 func TestNew(t *testing.T) {
@@ -32,4 +33,91 @@ func newTestStore(t *testing.T) *store.Store {
 		t.Fatalf("New: %v", err)
 	}
 	return s
+}
+
+func TestCreateAndGetUser(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	id, err := s.CreateUser(model.User{
+		Username:     "teacher1",
+		DisplayName:  "Test Teacher",
+		PasswordHash: "hash123",
+		Role:         model.UserRoleTeacher,
+		Active:       true,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("expected non-zero ID")
+	}
+
+	u, err := s.GetUserByUsername("teacher1")
+	if err != nil {
+		t.Fatalf("GetUserByUsername: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected user, got nil")
+	}
+	if u.DisplayName != "Test Teacher" {
+		t.Errorf("DisplayName = %q, want %q", u.DisplayName, "Test Teacher")
+	}
+}
+
+func TestUserCount(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	n, err := s.UserCount()
+	if err != nil {
+		t.Fatalf("UserCount: %v", err)
+	}
+	if n != 0 {
+		t.Errorf("UserCount = %d, want 0", n)
+	}
+}
+
+func TestAuthSession(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	s.CreateUser(model.User{
+		Username:     "admin",
+		PasswordHash: "hash",
+		Role:         model.UserRoleAdmin,
+		Active:       true,
+	})
+
+	token, err := s.CreateAuthSession(1)
+	if err != nil {
+		t.Fatalf("CreateAuthSession: %v", err)
+	}
+	if token == "" {
+		t.Fatal("expected non-empty token")
+	}
+
+	sess, err := s.GetAuthSession(token)
+	if err != nil {
+		t.Fatalf("GetAuthSession: %v", err)
+	}
+	if sess == nil {
+		t.Fatal("expected session, got nil")
+	}
+	if sess.UserID != 1 {
+		t.Errorf("UserID = %d, want 1", sess.UserID)
+	}
+
+	err = s.DeleteAuthSession(token)
+	if err != nil {
+		t.Fatalf("DeleteAuthSession: %v", err)
+	}
+
+	sess, err = s.GetAuthSession(token)
+	if err != nil {
+		t.Fatalf("GetAuthSession after delete: %v", err)
+	}
+	if sess != nil {
+		t.Fatal("expected nil session after delete")
+	}
 }
