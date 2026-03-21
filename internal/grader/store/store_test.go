@@ -9,6 +9,7 @@ import (
 	"github.com/pavelanni/examiner/internal/grader/report"
 	"github.com/pavelanni/examiner/internal/grader/store"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/userutil"
 )
 
 func TestFullGradingWorkflow(t *testing.T) {
@@ -248,18 +249,21 @@ func TestImportUsersCSV(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
 
-	csvData := "teacher_id,display_name\nT-001,Ivan Ivanov\nT-002,Petr Petrov\n"
-	creds, err := s.ImportUsersCSV(strings.NewReader(csvData))
+	csvData := "user_id,display_name\nT-001,Ivan Ivanov\nT-002,Petr Petrov\n"
+	creds, err := userutil.ImportCSV(strings.NewReader(csvData), s, userutil.ImportConfig{
+		Role:           model.UserRoleTeacher,
+		PasswordPrefix: "teach",
+	})
 	if err != nil {
-		t.Fatalf("ImportUsersCSV: %v", err)
+		t.Fatalf("ImportCSV: %v", err)
 	}
 	if len(creds) != 2 {
 		t.Fatalf("imported %d users, want 2", len(creds))
 	}
 
 	// Verify generated credentials
-	if creds[0].TeacherID != "T-001" {
-		t.Errorf("TeacherID = %q, want T-001", creds[0].TeacherID)
+	if creds[0].UserID != "T-001" {
+		t.Errorf("UserID = %q, want T-001", creds[0].UserID)
 	}
 	if creds[0].Username != "iivanov" {
 		t.Errorf("Username = %q, want iivanov", creds[0].Username)

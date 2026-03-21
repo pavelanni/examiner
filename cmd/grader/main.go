@@ -15,6 +15,7 @@ import (
 	"github.com/pavelanni/examiner/internal/grader/handler"
 	"github.com/pavelanni/examiner/internal/grader/store"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/userutil"
 )
 
 func main() {
@@ -190,7 +191,7 @@ func importCmd(v *viper.Viper) *cobra.Command {
 func importUsersCmd(v *viper.Viper) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "import-users [file.csv]",
-		Short: "Import teacher accounts from a CSV file (columns: teacher_id, display_name)",
+		Short: "Import teacher accounts from a CSV file (columns: user_id, display_name)",
 		Long: `Import teacher accounts from a CSV file. Usernames and passwords
 are generated automatically. A credentials CSV is written to
 <input>-creds.csv with the generated login details.`,
@@ -211,7 +212,10 @@ are generated automatically. A credentials CSV is written to
 			}
 			defer f.Close()
 
-			creds, err := s.ImportUsersCSV(f)
+			creds, err := userutil.ImportCSV(f, s, userutil.ImportConfig{
+				Role:           model.UserRoleTeacher,
+				PasswordPrefix: "teach",
+			})
 			if err != nil {
 				return fmt.Errorf("import users: %w", err)
 			}
@@ -226,10 +230,8 @@ are generated automatically. A credentials CSV is written to
 			}
 			defer cf.Close()
 
-			_, _ = fmt.Fprintln(cf, "teacher_id,display_name,username,password")
-			for _, c := range creds {
-				_, _ = fmt.Fprintf(cf, "%s,%s,%s,%s\n",
-					c.TeacherID, c.DisplayName, c.Username, c.Password)
+			if err := userutil.WriteCredentialsCSV(cf, creds); err != nil {
+				return fmt.Errorf("write credentials: %w", err)
 			}
 
 			slog.Info("credentials written", "path", credsPath)

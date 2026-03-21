@@ -2,15 +2,12 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -30,6 +27,7 @@ import (
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
+	"github.com/pavelanni/examiner/internal/userutil"
 )
 
 //go:generate templ generate
@@ -513,40 +511,6 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 		rosterPath = filepath.Join(manifestDir, rosterPath)
 	}
 
-	// Parse roster CSV.
-	rosterFile, err := os.Open(rosterPath)
-	if err != nil {
-		return fmt.Errorf("open roster: %w", err)
-	}
-	defer rosterFile.Close()
-
-	reader := csv.NewReader(rosterFile)
-	rosterRecords, err := reader.ReadAll()
-	if err != nil {
-		return fmt.Errorf("parse roster CSV: %w", err)
-	}
-	if len(rosterRecords) < 2 {
-		return fmt.Errorf("roster CSV must have a header row and at least one student")
-	}
-
-	// Find column indices.
-	header := rosterRecords[0]
-	idCol, nameCol := -1, -1
-	for i, h := range header {
-		switch strings.TrimSpace(strings.ToLower(h)) {
-		case "student_id":
-			idCol = i
-		case "display_name":
-			nameCol = i
-		}
-	}
-	if idCol < 0 {
-		return fmt.Errorf("roster CSV: missing student_id column")
-	}
-	if nameCol < 0 {
-		return fmt.Errorf("roster CSV: missing display_name column")
-	}
-
 	// Create database.
 	dbPath := filepath.Join(outputDir, manifest.ExamID+".db")
 	db, err := store.New(dbPath)
@@ -567,7 +531,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	}
 
 	// Create admin user with random password.
-	adminPassword, err := randomPassword("admin", 8)
+	adminPassword, err := userutil.RandomPassword("admin", 8)
 	if err != nil {
 		return fmt.Errorf("generate admin password: %w", err)
 	}
@@ -595,68 +559,27 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
-	// Build credentials list (admin first).
-	type credential struct {
-		studentID   string
-		displayName string
-		username    string
-		password    string
+	// Import student users from roster CSV.
+	rosterFile, err := os.Open(rosterPath)
+	if err != nil {
+		return fmt.Errorf("open roster: %w", err)
 	}
-	creds := []credential{
-		{studentID: "", displayName: "Administrator", username: "admin", password: adminPassword},
-	}
+	defer rosterFile.Close()
 
-	// Subject prefix for passwords (first 4 lowercase chars).
 	prefix := strings.ToLower(manifest.Subject)
 	if len(prefix) > 4 {
 		prefix = prefix[:4]
 	}
 
-	// Create student users.
-	usedUsernames := map[string]bool{"admin": true}
-	for _, row := range rosterRecords[1:] {
-		studentID := strings.TrimSpace(row[idCol])
-		displayName := strings.TrimSpace(row[nameCol])
-		if studentID == "" {
-			continue
-		}
-
-		// Username: first letter of first name + last name, truncated to 8 chars.
-		// Duplicates get last char replaced with 2, 3, etc.
-		username := deduplicateUsername(usernameFromDisplayName(displayName), usedUsernames)
-		usedUsernames[username] = true
-
-		password, err := randomPassword(prefix, 5)
-		if err != nil {
-			return fmt.Errorf("generate password for %s: %w", studentID, err)
-		}
-
-		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			return fmt.Errorf("hash password for %s: %w", studentID, err)
-		}
-
-		_, err = db.CreateUser(model.User{
-			Username:     username,
-			ExternalID:   studentID,
-			DisplayName:  displayName,
-			PasswordHash: string(hash),
-			Role:         model.UserRoleStudent,
-			Active:       true,
-		})
-		if err != nil {
-			return fmt.Errorf("create user %s: %w", studentID, err)
-		}
-
-		creds = append(creds, credential{
-			studentID:   studentID,
-			displayName: displayName,
-			username:    username,
-			password:    password,
-		})
+	studentCreds, err := userutil.ImportCSV(rosterFile, db, userutil.ImportConfig{
+		Role:           model.UserRoleStudent,
+		PasswordPrefix: prefix,
+	})
+	if err != nil {
+		return fmt.Errorf("import roster: %w", err)
 	}
 
-	// Write credentials CSV.
+	// Write credentials CSV (admin first, then students).
 	credsPath := filepath.Join(outputDir, manifest.ExamID+"-creds.csv")
 	credsFile, err := os.Create(credsPath)
 	if err != nil {
@@ -664,83 +587,25 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	}
 	defer credsFile.Close()
 
-	csvWriter := csv.NewWriter(credsFile)
-	_ = csvWriter.Write([]string{"student_id", "display_name", "username", "password"})
-	for _, c := range creds {
-		_ = csvWriter.Write([]string{c.studentID, c.displayName, c.username, c.password})
+	adminCred := userutil.Credential{
+		DisplayName: "Administrator",
+		Username:    "admin",
+		Password:    adminPassword,
 	}
-	csvWriter.Flush()
-	if err := csvWriter.Error(); err != nil {
+	allCreds := append([]userutil.Credential{adminCred}, studentCreds...)
+	if err := userutil.WriteCredentialsCSV(credsFile, allCreds); err != nil {
 		return fmt.Errorf("write credentials CSV: %w", err)
 	}
 
 	slog.Info("exam prepared",
 		"db", dbPath,
 		"credentials", credsPath,
-		"students", len(creds)-1,
+		"students", len(studentCreds),
 	)
 	fmt.Printf("Database:    %s\n", dbPath)
 	fmt.Printf("Credentials: %s\n", credsPath)
 
 	return nil
-}
-
-// randomPassword generates a password like "prefix-XXXXX" with random alphanumeric chars.
-func randomPassword(prefix string, length int) (string, error) {
-	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
-	b := make([]byte, length)
-	for i := range b {
-		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
-		if err != nil {
-			return "", err
-		}
-		b[i] = charset[n.Int64()]
-	}
-	return prefix + "-" + string(b), nil
-}
-
-// usernameFromDisplayName builds a username from "First Last" as first letter
-// of the first name + last name, lowercased and truncated to 8 characters.
-// For example, "Alice Johnson" becomes "ajohnson", "Bob Smith" becomes "bsmith".
-func usernameFromDisplayName(displayName string) string {
-	parts := strings.Fields(displayName)
-	if len(parts) == 0 {
-		return "user"
-	}
-	first := []rune(strings.ToLower(parts[0]))
-	if len(parts) == 1 {
-		if len(first) > 8 {
-			return string(first[:8])
-		}
-		return string(first)
-	}
-	last := []rune(strings.ToLower(parts[len(parts)-1]))
-	username := append(first[:1], last...)
-	if len(username) > 8 {
-		username = username[:8]
-	}
-	return string(username)
-}
-
-// deduplicateUsername ensures uniqueness by replacing the last character with
-// an incrementing digit (2, 3, ...) when a collision is found.
-func deduplicateUsername(base string, used map[string]bool) string {
-	if !used[base] {
-		return base
-	}
-	runes := []rune(base)
-	for n := 2; n <= 99; n++ {
-		suffix := []rune(fmt.Sprintf("%d", n))
-		prefixLen := len(runes) - len(suffix)
-		if prefixLen < 0 {
-			prefixLen = 0
-		}
-		candidate := string(runes[:prefixLen]) + string(suffix)
-		if !used[candidate] {
-			return candidate
-		}
-	}
-	return base
 }
 
 func seedAdmin(db *store.Store, password string) error {

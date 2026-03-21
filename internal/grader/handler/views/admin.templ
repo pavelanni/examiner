@@ -29,7 +29,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 		}
 		<section>
 			<h2>Import Teachers from CSV</h2>
-			<p>CSV format: <code>teacher_id,display_name</code> — usernames and passwords are generated automatically</p>
+			<p>CSV format: <code>user_id,display_name</code> — usernames and passwords are generated automatically</p>
 			<form method="POST" action="/admin/users/import" enctype="multipart/form-data">
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<input type="file" name="csv_file" accept=".csv" required/>

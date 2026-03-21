@@ -14,6 +14,7 @@ import (
 
 	"github.com/pavelanni/examiner/internal/grader/handler/views"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/userutil"
 )
 
 // uploadPage renders the exam upload form.
@@ -145,7 +146,10 @@ func (h *Handler) handleImportUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	creds, err := h.store.ImportUsersCSV(f)
+	creds, err := userutil.ImportCSV(f, h.store, userutil.ImportConfig{
+		Role:           model.UserRoleTeacher,
+		PasswordPrefix: "teach",
+	})
 	if err != nil {
 		h.renderUsersPage(w, r, fmt.Sprintf("Import error: %v", err))
 		return
