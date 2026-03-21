@@ -7,16 +7,41 @@ import (
 	"github.com/pavelanni/examiner/internal/grader/store"
 )
 
+// adjustedGrade computes the total grade using TeacherScore where available,
+// falling back to LLMScore. Returns (grade, hasOverrides).
+func adjustedGrade(data store.ReviewData) (float64, bool) {
+	var totalScore float64
+	var totalMax int
+	hasOverrides := false
+	for _, q := range data.Questions {
+		if q.TeacherScore != nil {
+			totalScore += *q.TeacherScore
+			hasOverrides = true
+		} else {
+			totalScore += q.LLMScore
+		}
+		totalMax += q.MaxPoints
+	}
+	if totalMax == 0 {
+		return 0, false
+	}
+	return totalScore / float64(totalMax) * 100, hasOverrides
+}
+
 templ ReviewPage(data store.ReviewData) {
 	@Layout(fmt.Sprintf("Review - %s", data.StudentName)) {
 		<p><a href={ templ.SafeURL(fmt.Sprintf("/exam/%s", data.ExamID)) }>&larr; Back to student list</a></p>
 		<h1>{ data.StudentName } <small>({ data.ExternalID })</small></h1>
 		<p>
 			{ data.Subject } — { data.ExamID } — { data.Date }
-			<br/>
-			<strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }
 			<span class={ "status-badge", "status-" + data.Status } style="margin-left: 0.5rem;">{ data.Status }</span>
 		</p>
+		<div class="score-box">
+			<p><strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }</p>
+			if adjusted, ok := adjustedGrade(data); ok {
+				<p><strong>Adjusted Grade:</strong> { fmt.Sprintf("%.1f%%", adjusted) }</p>
+			}
+		</div>
 		for i, q := range data.Questions {
 			<div class="thread" id={ fmt.Sprintf("question-%d", q.ID) }>
 				<h3>
@@ -70,6 +95,12 @@ templ ReviewPage(data store.ReviewData) {
 		if data.Status != "reviewed" {
 			<hr/>
 			<h2>Finalize Grade</h2>
+			<div class="score-box" style="margin-bottom: 1rem;">
+				<p><strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }</p>
+				if adjusted, ok := adjustedGrade(data); ok {
+					<p><strong>Adjusted Grade:</strong> { fmt.Sprintf("%.1f%%", adjusted) }</p>
+				}
+			</div>
 			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/exam/%s/student/%d/finalize", data.ExamID, data.SessionID)) }>
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<label>
@@ -80,7 +111,11 @@ templ ReviewPage(data store.ReviewData) {
 						step="0.5"
 						min="0"
 						max="100"
-						value={ fmt.Sprintf("%.1f", data.LLMGrade) }
+						if adjusted, ok := adjustedGrade(data); ok {
+							value={ fmt.Sprintf("%.1f", adjusted) }
+						} else {
+							value={ fmt.Sprintf("%.1f", data.LLMGrade) }
+						}
 					/>
 				</label>
 				<label>
