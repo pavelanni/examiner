@@ -1,0 +1,40 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/grader/store"
+)
+
+templ StudentsPage(examID string, subject string, students []store.StudentListItem) {
+	@Layout(fmt.Sprintf("Grader - %s", examID)) {
+		<h1>{ subject } — { examID }</h1>
+		<p><a href="/">&larr; Back to exams</a></p>
+		if len(students) == 0 {
+			<p>No students found.</p>
+		} else {
+			<table>
+				<thead>
+					<tr>
+						<th>Student</th>
+						<th>External ID</th>
+						<th>LLM Grade</th>
+						<th>Status</th>
+						<th>Action</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range students {
+						<tr>
+							<td>{ s.DisplayName }</td>
+							<td>{ s.ExternalID }</td>
+							<td>{ fmt.Sprintf("%.1f%%", s.LLMGrade) }</td>
+							<td><span class={ "status-badge", "status-" + s.Status }>{ s.Status }</span></td>
+							<td><a href={ templ.SafeURL(fmt.Sprintf("/exam/%s/student/%d", examID, s.SessionID)) }>Review</a></td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}

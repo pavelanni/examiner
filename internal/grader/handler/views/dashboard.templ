@@ -1,0 +1,41 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/grader/store"
+)
+
+templ DashboardPage(exams []store.ExamSummary) {
+	@Layout("Grader - Dashboard") {
+		<h1>Exams</h1>
+		if len(exams) == 0 {
+			<p>No exams imported yet.</p>
+		} else {
+			<table>
+				<thead>
+					<tr>
+						<th>Exam ID</th>
+						<th>Subject</th>
+						<th>Date</th>
+						<th>Students</th>
+						<th>Progress</th>
+						<th>Imported</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, e := range exams {
+						<tr>
+							<td><a href={ templ.SafeURL(fmt.Sprintf("/exam/%s", e.ExamID)) }>{ e.ExamID }</a></td>
+							<td>{ e.Subject }</td>
+							<td>{ e.Date }</td>
+							<td>{ fmt.Sprint(e.StudentCount) }</td>
+							<td>{ fmt.Sprintf("%d / %d reviewed", e.ReviewedCount, e.StudentCount) }</td>
+							<td>{ e.ImportedAt.Format("2006-01-02 15:04") }</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
+	}
+}

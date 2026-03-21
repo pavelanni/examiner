@@ -1,0 +1,151 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+
+	"github.com/pavelanni/examiner/internal/grader/store"
+)
+
+templ ReviewPage(data store.ReviewData) {
+	@Layout(fmt.Sprintf("Review - %s", data.StudentName)) {
+		<p><a href={ templ.SafeURL(fmt.Sprintf("/exam/%s", data.ExamID)) }>&larr; Back to student list</a></p>
+		<h1>{ data.StudentName } <small>({ data.ExternalID })</small></h1>
+		<p>
+			{ data.Subject } — { data.ExamID } — { data.Date }
+			<br/>
+			<strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }
+			<span class={ "status-badge", "status-" + data.Status } style="margin-left: 0.5rem;">{ data.Status }</span>
+		</p>
+		for i, q := range data.Questions {
+			<div class="thread" id={ fmt.Sprintf("question-%d", q.ID) }>
+				<h3>
+					{ fmt.Sprintf("Question %d: %s", i+1, q.Topic) }
+					<small>({ q.Difficulty }, { strconv.Itoa(q.MaxPoints) } pts)</small>
+				</h3>
+				<p class="question-text">{ q.Text }</p>
+				<details>
+					<summary>Rubric &amp; Model Answer</summary>
+					<p><strong>Rubric:</strong> { q.Rubric }</p>
+					<p><strong>Model Answer:</strong> { q.ModelAnswer }</p>
+				</details>
+				if len(q.Messages) > 0 {
+					<h4>Conversation</h4>
+					<div class="messages">
+						for _, m := range q.Messages {
+							<div class={ "message", messageClass(m.Role) }>
+								<div class="message-role">
+									if m.Role == "student" {
+										Student
+									} else {
+										Examiner
+									}
+									if !m.Timestamp.IsZero() {
+										<small>({ m.Timestamp.Format("15:04") })</small>
+									}
+								</div>
+								<div>{ m.Content }</div>
+							</div>
+						}
+					</div>
+				}
+				<div class="score-box">
+					<p><strong>LLM Score:</strong> { fmt.Sprintf("%.1f / %d", q.LLMScore, q.MaxPoints) }</p>
+					<p><strong>LLM Feedback:</strong> { q.LLMFeedback }</p>
+				</div>
+				if data.Status != "reviewed" {
+					<div id={ fmt.Sprintf("score-form-%d", q.ID) }>
+						@ScoreForm(data.ExamID, data.SessionID, q, nil)
+					</div>
+				} else if q.TeacherScore != nil {
+					<div class="score-box">
+						<p><strong>Teacher Score:</strong> { fmt.Sprintf("%.1f / %d", *q.TeacherScore, q.MaxPoints) }</p>
+						if q.TeacherComment != "" {
+							<p><strong>Teacher Comment:</strong> { q.TeacherComment }</p>
+						}
+					</div>
+				}
+			</div>
+		}
+		if data.Status != "reviewed" {
+			<hr/>
+			<h2>Finalize Grade</h2>
+			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/exam/%s/student/%d/finalize", data.ExamID, data.SessionID)) }>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<label>
+					Final Grade (0-100%)
+					<input
+						type="number"
+						name="final_grade"
+						step="0.5"
+						min="0"
+						max="100"
+						value={ fmt.Sprintf("%.1f", data.LLMGrade) }
+					/>
+				</label>
+				<label>
+					Overall Comment
+					<textarea name="teacher_comment" rows="3" placeholder="Optional overall comment for the student..."></textarea>
+				</label>
+				<button type="submit">Finalize Grade</button>
+			</form>
+		} else if data.Grade != nil {
+			<hr/>
+			<div class="score-box">
+				<h2>Final Grade</h2>
+				if data.Grade.FinalGrade != nil {
+					<p><strong>Grade:</strong> { fmt.Sprintf("%.1f%%", *data.Grade.FinalGrade) }</p>
+				}
+				if data.Grade.TeacherComment != "" {
+					<p><strong>Comment:</strong> { data.Grade.TeacherComment }</p>
+				}
+				<p>
+					<a href={ templ.SafeURL(fmt.Sprintf("/exam/%s/student/%d/report", data.ExamID, data.SessionID)) }>
+						Download Report (Markdown)
+					</a>
+				</p>
+			</div>
+		}
+	}
+}
+
+// ScoreForm renders the teacher score form for a question. Used both on initial render and as htmx swap target.
+templ ScoreForm(examID string, sessionID int64, q store.ReviewQuestion, successMsg *string) {
+	if successMsg != nil {
+		<p class="save-success">{ *successMsg }</p>
+	}
+	<form
+		hx-post={ fmt.Sprintf("/exam/%s/student/%d/score/%d", examID, sessionID, q.ID) }
+		hx-target={ fmt.Sprintf("#score-form-%d", q.ID) }
+		hx-swap="innerHTML"
+	>
+		<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+		<div class="grid">
+			<div>
+				<label>
+					{ fmt.Sprintf("Teacher Score (max %d)", q.MaxPoints) }
+					<input
+						type="number"
+						name="teacher_score"
+						step="0.5"
+						min="0"
+						max={ strconv.Itoa(q.MaxPoints) }
+						if q.TeacherScore != nil {
+							value={ fmt.Sprintf("%.1f", *q.TeacherScore) }
+						} else {
+							value={ fmt.Sprintf("%.1f", q.LLMScore) }
+						}
+					/>
+				</label>
+			</div>
+			<div>
+				<label>
+					Comment
+					<textarea name="teacher_comment" rows="2">{ q.TeacherComment }</textarea>
+				</label>
+			</div>
+		</div>
+		<button type="submit" class="secondary">Save Score</button>
+		<span class="htmx-indicator" aria-busy="true">Saving...</span>
+	</form>
+}
