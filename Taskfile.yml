@@ -1,7 +1,7 @@
 version: "3"
 
 vars:
-  BINARY: examiner
+  BINARY: bin/examiner
   MODULE: github.com/pavelanni/examiner
   IMAGE: examiner
   IMAGE_TAG: latest
@@ -145,24 +145,24 @@ tasks:
     desc: Build the grader binary
     deps: [generate]
     cmds:
-      - go build -o grader ./cmd/grader/
+      - go build -o bin/grader ./cmd/grader/
 
   grader-run:
     desc: Build and run the grader server
     deps: [grader-build]
     cmds:
-      - ./grader serve {{.CLI_ARGS}}
+      - ./bin/grader serve {{.CLI_ARGS}}
 
   grader-import:
     desc: Import exam results into grader
     deps: [grader-build]
     cmds:
-      - ./grader import {{.CLI_ARGS}}
+      - ./bin/grader import {{.CLI_ARGS}}
 
   clean:
     desc: Remove build artifacts
     cmds:
-      - rm -f {{.BINARY}} grader
+      - rm -rf bin/
       - rm -f internal/handler/views/*_templ.go
       - rm -f internal/grader/handler/views/*_templ.go
 

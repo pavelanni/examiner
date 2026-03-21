@@ -18,13 +18,13 @@ task grader-build
 ### Import exam results
 
 ```bash
-./grader import results1.json results2.json --db grader.db
+./bin/grader import results1.json results2.json --db grader.db
 ```
 
 ### Start the server
 
 ```bash
-GRADER_ADMIN_PASSWORD=secret ./grader serve --db grader.db --port 8082
+GRADER_ADMIN_PASSWORD=secret ./bin/grader serve --db grader.db --port 8082
 ```
 
 Open `http://localhost:8082` and log in as `admin`.
