@@ -121,3 +121,66 @@ func TestAuthSession(t *testing.T) {
 		t.Fatal("expected nil session after delete")
 	}
 }
+
+func TestListStudentsForExam(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	if err := s.ImportExam(sampleExport()); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
+
+	students, err := s.ListStudentsForExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("ListStudentsForExam: %v", err)
+	}
+	if len(students) != 1 {
+		t.Fatalf("len = %d, want 1", len(students))
+	}
+	if students[0].DisplayName != "Alice" {
+		t.Errorf("name = %q, want Alice", students[0].DisplayName)
+	}
+}
+
+func TestDeleteExam(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	if err := s.ImportExam(sampleExport()); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
+
+	err := s.DeleteExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("DeleteExam: %v", err)
+	}
+	exams, _ := s.ListExams()
+	if len(exams) != 0 {
+		t.Fatalf("len(exams) = %d after delete, want 0", len(exams))
+	}
+}
+
+func TestGetExamByID(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+	if err := s.ImportExam(sampleExport()); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
+
+	ex, err := s.GetExamByID("test-exam-1")
+	if err != nil {
+		t.Fatalf("GetExamByID: %v", err)
+	}
+	if ex == nil {
+		t.Fatal("expected exam, got nil")
+	}
+	if ex.Subject != "Physics" {
+		t.Errorf("Subject = %q, want Physics", ex.Subject)
+	}
+
+	ex, err = s.GetExamByID("nonexistent")
+	if err != nil {
+		t.Fatalf("GetExamByID nonexistent: %v", err)
+	}
+	if ex != nil {
+		t.Fatal("expected nil for nonexistent exam")
+	}
+}
