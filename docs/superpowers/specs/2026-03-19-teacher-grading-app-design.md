@@ -239,8 +239,8 @@ Footer:
        `conversation_messages.timestamp`)
      - Insert score row with LLM fields populated,
        `teacher_score = NULL`, `teacher_comment = ''`
-5. Create `grades` row with `llm_grade` from JSON,
-   `final_grade = NULL`
+5. Create `grades` row with `final_grade = NULL`
+   (`llm_grade` lives on `exam_sessions`, not `grades`)
 6. Print/return summary
 
 ### Validation
