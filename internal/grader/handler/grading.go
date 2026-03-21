@@ -138,6 +138,10 @@ func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
 				if err := views.ScoreForm(examID, sessionID, q, &successMsg).Render(r.Context(), w); err != nil {
 					slog.Error("render score form", "error", err)
 				}
+				// Out-of-band swap: update grade summaries and finalize input.
+				if err := views.GradeSummaryOOB(*data).Render(r.Context(), w); err != nil {
+					slog.Error("render grade summary oob", "error", err)
+				}
 				return
 			}
 		}

@@ -36,11 +36,8 @@ templ ReviewPage(data store.ReviewData) {
 			{ data.Subject } — { data.ExamID } — { data.Date }
 			<span class={ "status-badge", "status-" + data.Status } style="margin-left: 0.5rem;">{ data.Status }</span>
 		</p>
-		<div class="score-box">
-			<p><strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }</p>
-			if adjusted, ok := adjustedGrade(data); ok {
-				<p><strong>Adjusted Grade:</strong> { fmt.Sprintf("%.1f%%", adjusted) }</p>
-			}
+		<div id="grade-summary-header">
+			@GradeSummary(data)
 		</div>
 		for i, q := range data.Questions {
 			<div class="thread" id={ fmt.Sprintf("question-%d", q.ID) }>
@@ -95,17 +92,15 @@ templ ReviewPage(data store.ReviewData) {
 		if data.Status != "reviewed" {
 			<hr/>
 			<h2>Finalize Grade</h2>
-			<div class="score-box" style="margin-bottom: 1rem;">
-				<p><strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }</p>
-				if adjusted, ok := adjustedGrade(data); ok {
-					<p><strong>Adjusted Grade:</strong> { fmt.Sprintf("%.1f%%", adjusted) }</p>
-				}
+			<div id="grade-summary-finalize">
+				@GradeSummary(data)
 			</div>
 			<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/exam/%s/student/%d/finalize", data.ExamID, data.SessionID)) }>
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<label>
 					Final Grade (0-100%)
 					<input
+						id="final-grade-input"
 						type="number"
 						name="final_grade"
 						step="0.5"
@@ -141,6 +136,38 @@ templ ReviewPage(data store.ReviewData) {
 				</p>
 			</div>
 		}
+	}
+}
+
+// GradeSummary renders the LLM grade and adjusted grade box.
+templ GradeSummary(data store.ReviewData) {
+	<div class="score-box" style="margin-bottom: 1rem;">
+		<p><strong>LLM Grade:</strong> { fmt.Sprintf("%.1f%%", data.LLMGrade) }</p>
+		if adjusted, ok := adjustedGrade(data); ok {
+			<p><strong>Adjusted Grade:</strong> { fmt.Sprintf("%.1f%%", adjusted) }</p>
+		}
+	</div>
+}
+
+// GradeSummaryOOB renders out-of-band swaps for both grade summary boxes
+// and the final grade input, so they update live after a score save.
+templ GradeSummaryOOB(data store.ReviewData) {
+	<div id="grade-summary-header" hx-swap-oob="innerHTML">
+		@GradeSummary(data)
+	</div>
+	<div id="grade-summary-finalize" hx-swap-oob="innerHTML">
+		@GradeSummary(data)
+	</div>
+	if adjusted, ok := adjustedGrade(data); ok {
+		<input id="final-grade-input" type="number" name="final_grade"
+			step="0.5" min="0" max="100"
+			value={ fmt.Sprintf("%.1f", adjusted) }
+			hx-swap-oob="outerHTML"/>
+	} else {
+		<input id="final-grade-input" type="number" name="final_grade"
+			step="0.5" min="0" max="100"
+			value={ fmt.Sprintf("%.1f", data.LLMGrade) }
+			hx-swap-oob="outerHTML"/>
 	}
 }
 
