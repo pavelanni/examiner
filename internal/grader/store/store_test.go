@@ -3,11 +3,126 @@ package store_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/pavelanni/examiner/internal/grader/report"
 	"github.com/pavelanni/examiner/internal/grader/store"
 	"github.com/pavelanni/examiner/internal/model"
 )
+
+func TestFullGradingWorkflow(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	// 1. Import sample exam
+	exp := sampleExport()
+	if err := s.ImportExam(exp); err != nil {
+		t.Fatalf("ImportExam: %v", err)
+	}
+
+	// 2. List exams — verify count and metadata
+	exams, err := s.ListExams()
+	if err != nil {
+		t.Fatalf("ListExams: %v", err)
+	}
+	if len(exams) != 1 {
+		t.Fatalf("expected 1 exam, got %d", len(exams))
+	}
+	if exams[0].ReviewedCount != 0 {
+		t.Errorf("expected 0 reviewed, got %d", exams[0].ReviewedCount)
+	}
+
+	// 3. List students — verify names
+	students, err := s.ListStudentsForExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("ListStudentsForExam: %v", err)
+	}
+	if len(students) != 1 {
+		t.Fatalf("expected 1 student, got %d", len(students))
+	}
+	if students[0].DisplayName != "Alice" {
+		t.Errorf("student name = %q, want Alice", students[0].DisplayName)
+	}
+	if students[0].Status != "imported" {
+		t.Errorf("status = %q, want imported", students[0].Status)
+	}
+	sessionID := students[0].SessionID
+
+	// 4. Get review data — verify questions and conversations
+	data, err := s.GetReviewData(sessionID)
+	if err != nil {
+		t.Fatalf("GetReviewData: %v", err)
+	}
+	if data == nil {
+		t.Fatal("expected review data")
+	}
+	if len(data.Questions) != 1 {
+		t.Fatalf("expected 1 question, got %d", len(data.Questions))
+	}
+	if len(data.Questions[0].Messages) != 2 {
+		t.Fatalf("expected 2 messages, got %d", len(data.Questions[0].Messages))
+	}
+
+	// 5. Update teacher score — verify transition to in_review
+	questionID := data.Questions[0].ID
+	if err := s.UpdateTeacherScore(questionID, 9.0, "Well done"); err != nil {
+		t.Fatalf("UpdateTeacherScore: %v", err)
+	}
+	if err := s.SetSessionStatus(sessionID, "in_review"); err != nil {
+		t.Fatalf("SetSessionStatus: %v", err)
+	}
+
+	data, _ = s.GetReviewData(sessionID)
+	if data.Status != "in_review" {
+		t.Errorf("status after score = %q, want in_review", data.Status)
+	}
+	if data.Questions[0].TeacherScore == nil || *data.Questions[0].TeacherScore != 9.0 {
+		t.Error("teacher score not saved correctly")
+	}
+
+	// 6. Finalize grade
+	// Create a teacher user first
+	s.CreateUser(model.User{
+		Username:     "teacher",
+		PasswordHash: "hash",
+		Role:         model.UserRoleTeacher,
+		Active:       true,
+	})
+	if err := s.FinalizeGrade(sessionID, 90.0, "Great work", 1); err != nil {
+		t.Fatalf("FinalizeGrade: %v", err)
+	}
+
+	// 7. Verify session status = reviewed
+	data, _ = s.GetReviewData(sessionID)
+	if data.Status != "reviewed" {
+		t.Errorf("status after finalize = %q, want reviewed", data.Status)
+	}
+	if data.Grade == nil || data.Grade.FinalGrade == nil || *data.Grade.FinalGrade != 90.0 {
+		t.Error("final grade not saved correctly")
+	}
+
+	// 8. Verify exam shows as reviewed in listing
+	exams, _ = s.ListExams()
+	if exams[0].ReviewedCount != 1 {
+		t.Errorf("reviewed count = %d, want 1", exams[0].ReviewedCount)
+	}
+
+	// 9. Generate report — verify content
+	md := report.Generate(*data)
+	if !strings.Contains(md, "Alice") {
+		t.Error("report missing student name")
+	}
+	if !strings.Contains(md, "90.0%") {
+		t.Error("report missing final grade")
+	}
+	if !strings.Contains(md, "Great work") {
+		t.Error("report missing teacher comment")
+	}
+	if !strings.Contains(md, "9.0/10") {
+		t.Error("report missing teacher score")
+	}
+}
 
 func TestNew(t *testing.T) {
 	dir := t.TempDir()
