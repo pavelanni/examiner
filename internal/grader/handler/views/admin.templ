@@ -28,6 +28,15 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 			<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
 		}
 		<section>
+			<h2>Import Teachers from CSV</h2>
+			<p>CSV format: <code>username,display_name,password</code></p>
+			<form method="POST" action="/admin/users/import" enctype="multipart/form-data">
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<input type="file" name="csv_file" accept=".csv" required/>
+				<button type="submit" class="secondary">Import CSV</button>
+			</form>
+		</section>
+		<section>
 			<h2>Create User</h2>
 			<form method="POST" action="/admin/users">
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>

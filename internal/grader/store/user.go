@@ -2,10 +2,15 @@ package store
 
 import (
 	"database/sql"
+	"encoding/csv"
+	"fmt"
+	"io"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // CreateUser inserts a new user.
@@ -91,4 +96,69 @@ func (s *Store) UserCount() (int, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&count)
 	return count, err
+}
+
+// ImportUsersCSV reads a CSV with columns username, display_name, password
+// and creates teacher accounts. Returns the number of users created.
+func (s *Store) ImportUsersCSV(r io.Reader) (int, error) {
+	reader := csv.NewReader(r)
+	records, err := reader.ReadAll()
+	if err != nil {
+		return 0, fmt.Errorf("parse CSV: %w", err)
+	}
+	if len(records) < 2 {
+		return 0, fmt.Errorf("CSV must have a header row and at least one user")
+	}
+
+	// Find column indices (case-insensitive, whitespace-tolerant).
+	header := records[0]
+	userCol, nameCol, passCol := -1, -1, -1
+	for i, h := range header {
+		switch strings.TrimSpace(strings.ToLower(h)) {
+		case "username":
+			userCol = i
+		case "display_name":
+			nameCol = i
+		case "password":
+			passCol = i
+		}
+	}
+	if userCol < 0 {
+		return 0, fmt.Errorf("CSV: missing username column")
+	}
+	if nameCol < 0 {
+		return 0, fmt.Errorf("CSV: missing display_name column")
+	}
+	if passCol < 0 {
+		return 0, fmt.Errorf("CSV: missing password column")
+	}
+
+	created := 0
+	for _, row := range records[1:] {
+		username := strings.TrimSpace(row[userCol])
+		displayName := strings.TrimSpace(row[nameCol])
+		password := strings.TrimSpace(row[passCol])
+		if username == "" || password == "" {
+			continue
+		}
+
+		hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return created, fmt.Errorf("hash password for %s: %w", username, err)
+		}
+
+		if _, err := s.CreateUser(model.User{
+			Username:     username,
+			DisplayName:  displayName,
+			PasswordHash: string(hash),
+			Role:         model.UserRoleTeacher,
+			Active:       true,
+		}); err != nil {
+			slog.Warn("skipping user", "username", username, "error", err)
+			continue
+		}
+		created++
+	}
+
+	return created, nil
 }

@@ -244,6 +244,35 @@ func TestAuthSession(t *testing.T) {
 	}
 }
 
+func TestImportUsersCSV(t *testing.T) {
+	s := newTestStore(t)
+	defer s.Close()
+
+	csv := "username,display_name,password\nivanov,Ivan Ivanov,secret1\npetrov,Petr Petrov,secret2\n"
+	n, err := s.ImportUsersCSV(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("ImportUsersCSV: %v", err)
+	}
+	if n != 2 {
+		t.Errorf("imported %d users, want 2", n)
+	}
+
+	u, err := s.GetUserByUsername("ivanov")
+	if err != nil {
+		t.Fatalf("GetUserByUsername: %v", err)
+	}
+	if u == nil {
+		t.Fatal("expected user ivanov, got nil")
+		return
+	}
+	if u.DisplayName != "Ivan Ivanov" {
+		t.Errorf("DisplayName = %q, want Ivan Ivanov", u.DisplayName)
+	}
+	if u.Role != model.UserRoleTeacher {
+		t.Errorf("Role = %q, want teacher", u.Role)
+	}
+}
+
 func TestListStudentsForExam(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()

@@ -57,6 +57,7 @@ func (h *Handler) Routes() http.Handler {
 			r.Post("/admin/upload", h.handleUpload)
 			r.Get("/admin/users", h.usersPage)
 			r.Post("/admin/users", h.handleCreateUser)
+			r.Post("/admin/users/import", h.handleImportUsers)
 			r.Post("/admin/users/{userID}/toggle", h.handleToggleUser)
 			r.Delete("/admin/exam/{examID}", h.handleDeleteExam)
 		})

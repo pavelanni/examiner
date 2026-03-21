@@ -45,7 +45,8 @@ func rootCmd() *cobra.Command {
 
 	serve := serveCmd(v)
 	imp := importCmd(v)
-	root.AddCommand(serve, imp)
+	impUsers := importUsersCmd(v)
+	root.AddCommand(serve, imp, impUsers)
 
 	// Make "serve" the default when no subcommand is given.
 	root.RunE = serve.RunE
@@ -179,6 +180,40 @@ func importCmd(v *viper.Viper) *cobra.Command {
 				slog.Info("imported exam", "path", path, "exam_id", export.ExamID, "students", len(export.Results))
 			}
 
+			return nil
+		},
+	}
+
+	return cmd
+}
+
+func importUsersCmd(v *viper.Viper) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "import-users [file.csv]",
+		Short: "Import teacher accounts from a CSV file (columns: username, display_name, password)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			setupLogging(v)
+
+			dbPath := v.GetString("db")
+			s, err := store.New(dbPath)
+			if err != nil {
+				return fmt.Errorf("open database: %w", err)
+			}
+			defer s.Close()
+
+			f, err := os.Open(args[0])
+			if err != nil {
+				return fmt.Errorf("open CSV: %w", err)
+			}
+			defer f.Close()
+
+			n, err := s.ImportUsersCSV(f)
+			if err != nil {
+				return fmt.Errorf("import users: %w", err)
+			}
+
+			slog.Info("imported users", "path", args[0], "count", n)
 			return nil
 		},
 	}

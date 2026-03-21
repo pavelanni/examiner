@@ -123,6 +123,51 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 }
 
+// handleImportUsers processes a CSV upload of teacher accounts.
+func (h *Handler) handleImportUsers(w http.ResponseWriter, r *http.Request) {
+	const maxUploadSize = 1 << 20 // 1 MB
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		slog.Error("parse multipart form", "error", err)
+		h.renderUsersPage(w, r, "Failed to parse upload: "+err.Error())
+		return
+	}
+
+	files := r.MultipartForm.File["csv_file"]
+	if len(files) == 0 {
+		h.renderUsersPage(w, r, "No file selected")
+		return
+	}
+
+	f, err := files[0].Open()
+	if err != nil {
+		h.renderUsersPage(w, r, "Failed to open file: "+err.Error())
+		return
+	}
+	defer f.Close()
+
+	n, err := h.store.ImportUsersCSV(f)
+	if err != nil {
+		h.renderUsersPage(w, r, fmt.Sprintf("Import error: %v", err))
+		return
+	}
+
+	h.renderUsersPage(w, r, fmt.Sprintf("Imported %d teacher account(s)", n))
+}
+
+// renderUsersPage renders the users page with a flash message.
+func (h *Handler) renderUsersPage(w http.ResponseWriter, r *http.Request, msg string) {
+	users, err := h.store.ListUsers()
+	if err != nil {
+		slog.Error("list users", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.AdminUsersPage(users, msg).Render(r.Context(), w); err != nil {
+		slog.Error("render error", "error", err)
+	}
+}
+
 // handleToggleUser toggles a user's active status.
 func (h *Handler) handleToggleUser(w http.ResponseWriter, r *http.Request) {
 	idStr := chi.URLParam(r, "userID")
