@@ -13,8 +13,10 @@ func TestGetReviewData(t *testing.T) {
 		t.Fatalf("ImportExam: %v", err)
 	}
 
-	// Get session ID from student list
-	students, _ := s.ListStudentsForExam("test-exam-1")
+	students, err := s.ListStudentsForExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("ListStudentsForExam: %v", err)
+	}
 	if len(students) == 0 {
 		t.Fatal("no students found")
 	}
@@ -56,7 +58,10 @@ func TestUpdateTeacherScore(t *testing.T) {
 		t.Fatalf("ImportExam: %v", err)
 	}
 
-	students, _ := s.ListStudentsForExam("test-exam-1")
+	students, err := s.ListStudentsForExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("ListStudentsForExam: %v", err)
+	}
 	sessionID := students[0].SessionID
 
 	data, err := s.GetReviewData(sessionID)
@@ -71,7 +76,10 @@ func TestUpdateTeacherScore(t *testing.T) {
 	}
 
 	// Verify the score was updated
-	data, _ = s.GetReviewData(sessionID)
+	data, err = s.GetReviewData(sessionID)
+	if err != nil {
+		t.Fatalf("GetReviewData after update: %v", err)
+	}
 	if data.Questions[0].TeacherScore == nil {
 		t.Fatal("expected teacher score, got nil")
 	}
@@ -86,7 +94,6 @@ func TestUpdateTeacherScore(t *testing.T) {
 func TestFinalizeGrade(t *testing.T) {
 	s := newTestStore(t)
 	defer s.Close()
-	// Create a teacher user for reviewed_by
 	if _, err := s.CreateUser(model.User{
 		Username:     "teacher",
 		PasswordHash: "hash",
@@ -99,16 +106,21 @@ func TestFinalizeGrade(t *testing.T) {
 		t.Fatalf("ImportExam: %v", err)
 	}
 
-	students, _ := s.ListStudentsForExam("test-exam-1")
+	students, err := s.ListStudentsForExam("test-exam-1")
+	if err != nil {
+		t.Fatalf("ListStudentsForExam: %v", err)
+	}
 	sessionID := students[0].SessionID
 
-	err := s.FinalizeGrade(sessionID, 85.0, "Good work overall", 1)
+	err = s.FinalizeGrade(sessionID, 85.0, "Good work overall", 1)
 	if err != nil {
 		t.Fatalf("FinalizeGrade: %v", err)
 	}
 
-	// Verify grade and status
-	data, _ := s.GetReviewData(sessionID)
+	data, err := s.GetReviewData(sessionID)
+	if err != nil {
+		t.Fatalf("GetReviewData: %v", err)
+	}
 	if data.Status != "reviewed" {
 		t.Errorf("Status = %q, want reviewed", data.Status)
 	}

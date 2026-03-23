@@ -19,13 +19,16 @@ func New(dbPath string) (*Store, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 	if err := db.Ping(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
 	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("enable foreign keys: %w", err)
 	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	return s, nil
@@ -41,6 +44,7 @@ func (s *Store) migrate() error {
 		CREATE TABLE IF NOT EXISTS users (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			username TEXT NOT NULL UNIQUE,
+			external_id TEXT NOT NULL DEFAULT '',
 			display_name TEXT NOT NULL DEFAULT '',
 			password_hash TEXT NOT NULL,
 			role TEXT NOT NULL DEFAULT 'teacher',

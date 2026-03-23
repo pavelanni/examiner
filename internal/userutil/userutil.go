@@ -66,6 +66,9 @@ func ImportCSV(r io.Reader, store UserCreator, cfg ImportConfig) ([]Credential, 
 	var creds []Credential
 
 	for _, row := range records[1:] {
+		if len(row) <= idCol || len(row) <= nameCol {
+			continue // skip malformed rows
+		}
 		userID := strings.TrimSpace(row[idCol])
 		displayName := strings.TrimSpace(row[nameCol])
 		if userID == "" {

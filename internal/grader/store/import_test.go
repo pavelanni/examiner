@@ -14,7 +14,7 @@ func sampleExport() model.ExamExport {
 		Subject:       "Physics",
 		Date:          "2026-03-15",
 		PromptVariant: "standard",
-		NumQuestions:  2,
+		NumQuestions:  1,
 		Results: []model.StudentResult{
 			{
 				ExternalID:    "STU-001",

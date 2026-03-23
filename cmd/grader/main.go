@@ -160,27 +160,34 @@ func importCmd(v *viper.Viper) *cobra.Command {
 			}
 			defer s.Close()
 
+			failed := 0
 			for _, path := range args {
 				data, err := os.ReadFile(path)
 				if err != nil {
 					slog.Error("failed to read file", "path", path, "error", err)
+					failed++
 					continue
 				}
 
 				var export model.ExamExport
 				if err := json.Unmarshal(data, &export); err != nil {
 					slog.Error("failed to parse file", "path", path, "error", err)
+					failed++
 					continue
 				}
 
 				if err := s.ImportExam(export); err != nil {
 					slog.Error("failed to import exam", "path", path, "error", err)
+					failed++
 					continue
 				}
 
 				slog.Info("imported exam", "path", path, "exam_id", export.ExamID, "students", len(export.Results))
 			}
 
+			if failed > 0 {
+				return fmt.Errorf("%d import(s) failed", failed)
+			}
 			return nil
 		},
 	}
@@ -206,6 +213,14 @@ are generated automatically. A credentials CSV is written to
 			}
 			defer s.Close()
 
+			// Create credentials file first to fail early before creating accounts.
+			credsPath := strings.TrimSuffix(args[0], ".csv") + "-creds.csv"
+			cf, err := os.OpenFile(credsPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err != nil {
+				return fmt.Errorf("create credentials file: %w", err)
+			}
+			defer cf.Close()
+
 			f, err := os.Open(args[0])
 			if err != nil {
 				return fmt.Errorf("open CSV: %w", err)
@@ -221,14 +236,6 @@ are generated automatically. A credentials CSV is written to
 			}
 
 			slog.Info("imported users", "path", args[0], "count", len(creds))
-
-			// Write credentials CSV.
-			credsPath := strings.TrimSuffix(args[0], ".csv") + "-creds.csv"
-			cf, err := os.Create(credsPath)
-			if err != nil {
-				return fmt.Errorf("create credentials file: %w", err)
-			}
-			defer cf.Close()
 
 			if err := userutil.WriteCredentialsCSV(cf, creds); err != nil {
 				return fmt.Errorf("write credentials: %w", err)
