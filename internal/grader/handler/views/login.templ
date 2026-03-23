@@ -1,0 +1,18 @@
+package views
+
+templ LoginPage(errorMsg string) {
+	@Layout("Grader - Login") {
+		<h1>Login</h1>
+		if errorMsg != "" {
+			<p style="color: var(--pico-del-color);">{ errorMsg }</p>
+		}
+		<form method="POST" action="/login">
+			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+			<label for="username">Username</label>
+			<input type="text" id="username" name="username" required autofocus/>
+			<label for="password">Password</label>
+			<input type="password" id="password" name="password" required/>
+			<button type="submit">Login</button>
+		</form>
+	}
+}

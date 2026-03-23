@@ -1,0 +1,78 @@
+package views
+
+import (
+	"context"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ Layout(title string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title }</title>
+			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
+			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+			<style>
+				.thread { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
+				.message { padding: 0.5rem 1rem; margin: 0.5rem 0; border-radius: 6px; }
+				.message-student { background: var(--pico-primary-background); }
+				.message-assistant { background: var(--pico-secondary-background); }
+				.message-role { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.25rem; }
+				.score-box { background: var(--pico-card-background-color); padding: 1rem; border-radius: 6px; margin-top: 0.5rem; }
+				.status-badge { font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
+				.status-imported { background: #ffeeba; color: #856404; }
+				.status-in_review { background: #b8daff; color: #004085; }
+				.status-reviewed { background: #c3e6cb; color: #155724; }
+				.htmx-indicator { display: none; }
+				.htmx-request .htmx-indicator { display: inline-block; }
+				.htmx-request button[type="submit"] { opacity: 0.5; pointer-events: none; }
+				.save-success { color: var(--pico-ins-color); font-size: 0.85rem; }
+			</style>
+		</head>
+		<body>
+			<main class="container">
+				@userNav()
+				{ children... }
+			</main>
+		</body>
+	</html>
+}
+
+templ userNav() {
+	if user := model.UserFromContext(ctx); user != nil {
+		<nav>
+			<ul>
+				<li><a href="/">Grader</a></li>
+				if user.Role == model.UserRoleAdmin {
+					<li><a href="/admin/upload">Upload</a></li>
+					<li><a href="/admin/users">Users</a></li>
+				}
+			</ul>
+			<ul>
+				<li>{ user.DisplayName } <small>({ string(user.Role) })</small></li>
+				<li>
+					<form method="POST" action="/logout" style="margin:0;">
+						<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+						<button type="submit" class="outline secondary" style="padding:0.25rem 0.5rem;font-size:0.85rem;">
+							Logout
+						</button>
+					</form>
+				</li>
+			</ul>
+		</nav>
+	}
+}
+
+func csrf(ctx context.Context) string {
+	return model.CSRFTokenFromContext(ctx)
+}
+
+func messageClass(role string) string {
+	if role == "student" {
+		return "message-student"
+	}
+	return "message-assistant"
+}

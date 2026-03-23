@@ -1,0 +1,113 @@
+package views
+
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ AdminUploadPage(flashMsg string) {
+	@Layout("Grader - Upload") {
+		<h1>Upload Exam Results</h1>
+		if flashMsg != "" {
+			<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
+		}
+		<form method="POST" action="/admin/upload" enctype="multipart/form-data">
+			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+			<label for="files">Select JSON result file(s)</label>
+			<input type="file" id="files" name="files" accept=".json" multiple required/>
+			<button type="submit">Upload &amp; Import</button>
+		</form>
+	}
+}
+
+templ AdminUsersPage(users []model.User, flashMsg string) {
+	@Layout("Grader - Users") {
+		<h1>User Management</h1>
+		if flashMsg != "" {
+			<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
+		}
+		<section>
+			<h2>Import Teachers from CSV</h2>
+			<p>CSV format: <code>user_id,display_name</code> — usernames and passwords are generated automatically</p>
+			<form method="POST" action="/admin/users/import" enctype="multipart/form-data">
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<input type="file" name="csv_file" accept=".csv" required/>
+				<button type="submit" class="secondary">Import CSV</button>
+			</form>
+		</section>
+		<section>
+			<h2>Create User</h2>
+			<form method="POST" action="/admin/users">
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<div class="grid">
+					<div>
+						<label for="username">Username</label>
+						<input type="text" id="username" name="username" required/>
+					</div>
+					<div>
+						<label for="display_name">Display Name</label>
+						<input type="text" id="display_name" name="display_name"/>
+					</div>
+				</div>
+				<div class="grid">
+					<div>
+						<label for="password">Password</label>
+						<input type="password" id="password" name="password" required/>
+					</div>
+					<div>
+						<label for="role">Role</label>
+						<select id="role" name="role">
+							<option value="teacher">teacher</option>
+							<option value="admin">admin</option>
+						</select>
+					</div>
+				</div>
+				<button type="submit">Create User</button>
+			</form>
+		</section>
+		if len(users) > 0 {
+			<section>
+				<table>
+					<thead>
+						<tr>
+							<th>ID</th>
+							<th>Username</th>
+							<th>Display Name</th>
+							<th>Role</th>
+							<th>Active</th>
+							<th>Created</th>
+							<th>Action</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, u := range users {
+							<tr>
+								<td>{ fmt.Sprint(u.ID) }</td>
+								<td>{ u.Username }</td>
+								<td>{ u.DisplayName }</td>
+								<td>{ string(u.Role) }</td>
+								<td>
+									if u.Active {
+										Yes
+									} else {
+										No
+									}
+								</td>
+								<td>{ u.CreatedAt.Format("2006-01-02 15:04") }</td>
+								<td>
+									<form method="POST" action={ templ.SafeURL(fmt.Sprintf("/admin/users/%d/toggle", u.ID)) } style="display:inline;">
+										<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+										<button type="submit" class="outline secondary" style="padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+											Toggle
+										</button>
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</section>
+		}
+	}
+}
