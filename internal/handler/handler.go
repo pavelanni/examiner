@@ -85,6 +85,11 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Get("/review/{sessionID}", h.handleReviewPage)
 			r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
 			r.Post("/review/{sessionID}/finalize", h.handleFinalize)
+			r.Get("/teacher/me", h.handleTeacherMe)
+			r.Get("/teacher/profile", h.handleTeacherProfile)
+			r.Get("/teacher/create-test", h.handleTeacherCreateTest)
+			r.Post("/teacher/tests", h.handleTeacherUpload)
+			r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
 		})
 
 		// Admin-only routes.

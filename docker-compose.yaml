@@ -1,0 +1,36 @@
+services:
+  examiner:
+    build: .
+    user: "0:0"
+    image: examiner:latest
+    working_dir: /app
+    volumes:
+      - .:/app
+    environment:
+      - EXAMINER_ADMIN_PASSWORD=admin
+    command: [
+      "serve",
+      "--db", "examiner.db",
+      "--addr", "0.0.0.0:8080",
+      "--secure-cookies=true",
+      "--questions", "${EXAMINER_QUESTIONS}",
+      "--llm-url", "${EXAMINER_LLM_URL}",
+      "--llm-key", "${EXAMINER_LLM_KEY}",
+      "--llm-model", "${EXAMINER_LLM_MODEL}",
+      "--max-followups", "${EXAMINER_MAX_FOLLOWUPS}"
+      ]
+  caddy:
+    image: caddy:latest
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy.conf:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - examiner
+volumes:
+  caddy_data:
+  caddy_config:
