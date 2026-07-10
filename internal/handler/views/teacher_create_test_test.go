@@ -25,7 +25,9 @@ func TestTeacherCreateTestPageInitializesAddQuestionHandler(t *testing.T) {
 	if !strings.Contains(html, "DOMContentLoaded") {
 		t.Fatalf("expected DOMContentLoaded initialization in rendered page, got %q", html)
 	}
-	if !strings.Contains(html, "addEventListener('click', addQuestion)") {
+
+	// Updated to match the anonymous arrow function wrapper: () => addQuestion()
+	if !strings.Contains(html, "addEventListener('click', () => addQuestion())") {
 		t.Fatalf("expected add-question button handler in rendered page, got %q", html)
 	}
 }

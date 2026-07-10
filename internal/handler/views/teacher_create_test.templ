@@ -30,14 +30,15 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
         </style>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-            if filename != "" {
-                // Отрезаем расширение файла (.json) в заголовке H1
-                <h1 style="margin: 0;">{ t(ctx, "Edit Questions") } ({ filename[:len(filename)-len(filepath.Ext(filename))] })</h1>
-            } else {
-                <h1 style="margin: 0;">{ t(ctx, "Create Questions") }</h1>
-            }
-            <a href="/teacher/profile" class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
-        </div>
+			if filename != "" {
+				// Отрезаем расширение файла (.json) в заголовке H1
+				<h1>{ t(ctx, "Edit Questions") } ({ filename[:len(filename)-len(filepath.Ext(filename))] })</h1>
+			} else {
+				<h1>{ t(ctx, "Create Questions") }</h1>
+			}
+			{ /* Fix: Wrapped link target using p(ctx, "/teacher/profile") */ }
+			<a href={ templ.SafeURL(p(ctx, "/teacher/profile")) } class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
+		</div>
         
         <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()">
             <input type="hidden" name="csrf_token" value={ csrf }/>

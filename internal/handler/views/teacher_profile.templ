@@ -1,37 +1,38 @@
 package views
 
 import (
-    "fmt"
-    "path/filepath" // Добавляем импорт для работы с путями файлов
+	"fmt"
+	"net/url" // Added import to support URL query escaping
+	"path/filepath" // Добавляем импорт для работы с путями файлов
 )
 
 templ TeacherProfilePage(displayName string, files []string) {
-    @Layout(t(ctx, "TeacherProfile")) {
-        <h1>{ displayName }</h1>
-        <p>{ t(ctx, "TeacherUploadIntro") }</p>
-        <p>
-            <a href={ templ.SafeURL(p(ctx, "/teacher/create-test")) } class="contrast">{ t(ctx, "Create Questions") }</a>
-        </p>
+	@Layout(t(ctx, "TeacherProfile")) {
+		<h1>{ displayName }</h1>
+		<p>{ t(ctx, "TeacherUploadIntro") }</p>
+		<p>
+			<a href={ templ.SafeURL(p(ctx, "/teacher/create-test")) } class="contrast">{ t(ctx, "Create Questions") }</a>
+		</p>
 
-        if len(files) > 0 {
-            <h2>{ t(ctx, "Your Questions List") }</h2>
-            <ul style="list-style: none; padding: 0;">
-                for _, f := range files {
-                    // Используем filepath.Ext, чтобы узнать расширение, и TrimSuffix, чтобы его удалить
-                    <li style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
-                        // Кнопка Edit слева
-                        <a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/teacher/create-test?file=%s", f))) } 
-                           class="button" 
-                           style="padding: 6px 14px; text-decoration: none; font-size: 0.9rem; border-radius: 4px;">
-                            Edit
-                        </a>
-                        // Имя файла без расширения справа от кнопки
-                        <span style="font-weight: 500; font-size: 1.05rem;">
-                            { f[:len(f)-len(filepath.Ext(f))] }
-                        </span>
-                    </li>
-                }
-            </ul>
-        }
-    }
+		if len(files) > 0 {
+			<h2>{ t(ctx, "Your Questions List") }</h2>
+			<ul style="list-style: none; padding: 0;">
+				for _, f := range files {
+					// Используем filepath.Ext, чтобы узнать расширение, и TrimSuffix, чтобы его удалить
+					<li style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
+						// Кнопка Edit слева с закодированным query-параметром файла
+						<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/teacher/create-test?file=%s", url.QueryEscape(f)))) } 
+						   class="button" 
+						   style="padding: 6px 14px; text-decoration: none; font-size: 0.9rem; border-radius: 4px;">
+							Edit
+						</a>
+						// Имя файла без расширения справа от кнопки
+						<span style="font-weight: 500; font-size: 1.05rem;">
+							{ f[:len(f)-len(filepath.Ext(f))] }
+						</span>
+					</li>
+				}
+			</ul>
+		}
+	}
 }
