@@ -1,94 +1,94 @@
 package handler
 
 import (
-    "crypto/sha256"
-    "encoding/hex"
-    "encoding/json"
-    "fmt"
-    "io"
-    "log/slog"
-    "net/http"
-    "os"
-    "path/filepath"
-    "strings"
-    "time"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
-    "github.com/pavelanni/examiner/internal/model"
-    "github.com/pavelanni/examiner/internal/handler/views"
-    jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
-    "github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5"
+	"github.com/pavelanni/examiner/internal/handler/views"
+	"github.com/pavelanni/examiner/internal/model"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
-    user := model.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 
-    files := []string{}
-    entries, err := os.ReadDir("questions")
-    if err == nil {
-        for _, e := range entries {
-            if e.IsDir() {
-                continue
-            }
-            name := e.Name()
-            if filepath.Ext(name) == ".json" {
-                files = append(files, name)
-            }
-        }
-    }
+	files := []string{}
+	entries, err := os.ReadDir("questions")
+	if err == nil {
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if filepath.Ext(name) == ".json" {
+				files = append(files, name)
+			}
+		}
+	}
 
-    w.Header().Set("Content-Type", "text/html; charset=utf-8")
-    if err := views.TeacherProfilePage(user.DisplayName, files).Render(r.Context(), w); err != nil {
-        slog.Error("render error", "error", err)
-    }
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.TeacherProfilePage(user.DisplayName, files).Render(r.Context(), w); err != nil {
+		slog.Error("render error", "error", err)
+	}
 }
 
 func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request) {
-    user := model.UserFromContext(r.Context())
+	user := model.UserFromContext(r.Context())
 
-    filename := r.URL.Query().Get("file")
-    var existingQuestions []model.QuestionImport
+	filename := r.URL.Query().Get("file")
+	var existingQuestions []model.QuestionImport
 
-    if filename != "" {
-        baseName := filepath.Base(filename)
-        filePath := filepath.Join("questions", baseName)
+	if filename != "" {
+		baseName := filepath.Base(filename)
+		filePath := filepath.Join("questions", baseName)
 
-        fileBytes, err := os.ReadFile(filePath)
-        if err == nil {
-            if errUnmarshal := json.Unmarshal(fileBytes, &existingQuestions); errUnmarshal != nil {
-                var wrapper struct {
-                    Questions []model.QuestionImport `json:"questions"`
-                }
-                if errWrap := json.Unmarshal(fileBytes, &wrapper); errWrap == nil {
-                    existingQuestions = wrapper.Questions
-                }
-            }
-        } else {
-            slog.Warn("failed to read file for editing", "file", filePath, "error", err)
-        }
-    }
+		fileBytes, err := os.ReadFile(filePath)
+		if err == nil {
+			if errUnmarshal := json.Unmarshal(fileBytes, &existingQuestions); errUnmarshal != nil {
+				var wrapper struct {
+					Questions []model.QuestionImport `json:"questions"`
+				}
+				if errWrap := json.Unmarshal(fileBytes, &wrapper); errWrap == nil {
+					existingQuestions = wrapper.Questions
+				}
+			}
+		} else {
+			slog.Warn("failed to read file for editing", "file", filePath, "error", err)
+		}
+	}
 
-    w.Header().Set("Content-Type", "text/html; charset=utf-8")
-    
-    component := views.TeacherCreateTestPage(user.DisplayName, model.CSRFTokenFromContext(r.Context()), existingQuestions, filename)
-    if err := component.Render(r.Context(), w); err != nil {
-        slog.Error("render error", "error", err)
-    }
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+
+	component := views.TeacherCreateTestPage(user.DisplayName, model.CSRFTokenFromContext(r.Context()), existingQuestions, filename)
+	if err := component.Render(r.Context(), w); err != nil {
+		slog.Error("render error", "error", err)
+	}
 }
 
 func (h *Handler) handleTeacherMe(w http.ResponseWriter, r *http.Request) {
-    user := model.UserFromContext(r.Context())
-    if user == nil {
-        http.Error(w, "unauthorized", http.StatusUnauthorized)
-        return
-    }
-    w.Header().Set("Content-Type", "application/json; charset=utf-8")
-    _ = json.NewEncoder(w).Encode(map[string]any{
-        "id":          user.ID,
-        "username":    user.Username,
-        "display_name": user.DisplayName,
-        "role":        user.Role,
-        "active":      user.Active,
-    })
+	user := model.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"id":           user.ID,
+		"username":     user.Username,
+		"display_name": user.DisplayName,
+		"role":         user.Role,
+		"active":       user.Active,
+	})
 }
 
 func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
@@ -233,7 +233,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
-	if err := h.store.SetImportedFileHash(filename, hash); err != nil {
+	if err := h.store.SetImportedFileHash(safeName, hash); err != nil {
 		slog.Warn("failed to set import hash", "error", err)
 	}
 
@@ -244,15 +244,15 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {
-    name := chi.URLParam(r, "name")
-    if name == "" {
-        http.Error(w, "missing name", http.StatusBadRequest)
-        return
-    }
-    if filepath.Base(name) != name {
-        http.Error(w, "invalid filename", http.StatusBadRequest)
-        return
-    }
-    path := filepath.Join("questions", name)
-    http.ServeFile(w, r, path)
+	name := chi.URLParam(r, "name")
+	if name == "" {
+		http.Error(w, "missing name", http.StatusBadRequest)
+		return
+	}
+	if filepath.Base(name) != name {
+		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
+	path := filepath.Join("questions", name)
+	http.ServeFile(w, r, path)
 }
