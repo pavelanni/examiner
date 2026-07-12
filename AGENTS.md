@@ -1,5 +1,7 @@
 # Agent Instructions
 
+<!-- bd-doctor-divergence: ok -->
+
 This project uses **bd** (beads) for issue tracking. Run `bd onboard` to get started.
 
 ## Quick Reference
