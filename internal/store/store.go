@@ -189,6 +189,19 @@ func isAlterDuplicate(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
+// DeleteQuestionsByTexts removes questions matching course_id and text values.
+func (s *Store) DeleteQuestionsByTexts(courseID int, texts []string) error {
+	for _, text := range texts {
+		if text == "" {
+			continue
+		}
+		if _, err := s.db.Exec(`DELETE FROM questions WHERE course_id = ? AND text = ?`, courseID, text); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // InsertQuestion stores a question. Duplicate questions (same course_id + text) are silently skipped.
 func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	res, err := s.db.Exec(

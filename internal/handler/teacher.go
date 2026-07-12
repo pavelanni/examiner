@@ -19,18 +19,45 @@ import (
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
+func teacherQuestionFilePrefix(username string) string {
+	return fmt.Sprintf("teacher_%s_", username)
+}
+
+func teacherOwnsQuestionFile(username, filename string) bool {
+	return strings.HasPrefix(filepath.Base(filename), teacherQuestionFilePrefix(username))
+}
+
+func parseQuestionsFromJSON(data []byte) []model.QuestionImport {
+	var questions []model.QuestionImport
+	if err := json.Unmarshal(data, &questions); err == nil {
+		return questions
+	}
+	var wrapper struct {
+		Questions []model.QuestionImport `json:"questions"`
+	}
+	if err := json.Unmarshal(data, &wrapper); err == nil {
+		return wrapper.Questions
+	}
+	return nil
+}
+
 func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	files := []string{}
 	entries, err := os.ReadDir("questions")
 	if err == nil {
+		prefix := teacherQuestionFilePrefix(user.Username)
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
 			}
 			name := e.Name()
-			if filepath.Ext(name) == ".json" {
+			if filepath.Ext(name) == ".json" && strings.HasPrefix(name, prefix) {
 				files = append(files, name)
 			}
 		}
@@ -44,24 +71,25 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 
 	filename := r.URL.Query().Get("file")
 	var existingQuestions []model.QuestionImport
 
 	if filename != "" {
 		baseName := filepath.Base(filename)
+		if !teacherOwnsQuestionFile(user.Username, baseName) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
 		filePath := filepath.Join("questions", baseName)
 
 		fileBytes, err := os.ReadFile(filePath)
 		if err == nil {
-			if errUnmarshal := json.Unmarshal(fileBytes, &existingQuestions); errUnmarshal != nil {
-				var wrapper struct {
-					Questions []model.QuestionImport `json:"questions"`
-				}
-				if errWrap := json.Unmarshal(fileBytes, &wrapper); errWrap == nil {
-					existingQuestions = wrapper.Questions
-				}
-			}
+			existingQuestions = parseQuestionsFromJSON(fileBytes)
 		} else {
 			slog.Warn("failed to read file for editing", "file", filePath, "error", err)
 		}
@@ -98,9 +126,8 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var data []byte
-	var filename string
 
-	file, header, err := r.FormFile("questions_file")
+	file, _, err := r.FormFile("questions_file")
 	if err == nil {
 		defer file.Close()
 		b, err := io.ReadAll(file)
@@ -109,7 +136,6 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = b
-		filename = header.Filename
 	} else {
 		txt := r.FormValue("questions_json")
 		if txt == "" {
@@ -117,7 +143,6 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		data = []byte(txt)
-		filename = fmt.Sprintf("teacher_%d.json", time.Now().Unix())
 	}
 
 	// Fail closed: Schema validation is mandatory
@@ -182,26 +207,39 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	user := model.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	editingFile := r.FormValue("editing_file")
 	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
 
 	var safeName string
 	var outPath string
+	var oldQuestions []model.QuestionImport
 
 	if editingFile != "" {
-		safeName = filepath.Base(editingFile)
+		if !teacherOwnsQuestionFile(user.Username, editingFile) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		oldPath := filepath.Join("questions", filepath.Base(editingFile))
+		if oldBytes, err := os.ReadFile(oldPath); err == nil {
+			oldQuestions = parseQuestionsFromJSON(oldBytes)
+		}
 		if customFilename != "" {
 			base := filepath.Base(customFilename)
 			base = strings.TrimSuffix(base, ".json")
-			safeName = base + ".json"
+			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
+		} else {
+			safeName = filepath.Base(editingFile)
 		}
 		outPath = filepath.Join("questions", safeName)
-		filename = safeName
 	} else {
 		if customFilename != "" {
 			base := filepath.Base(customFilename)
 			base = strings.TrimSuffix(base, ".json")
-			safeName = base + ".json"
+			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
 		} else {
 			safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
 		}
@@ -212,6 +250,18 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		slog.Error("failed to save questions file", "error", err)
 		http.Error(w, "failed to save file", http.StatusInternalServerError)
 		return
+	}
+
+	if len(oldQuestions) > 0 {
+		oldTexts := make([]string, 0, len(oldQuestions))
+		for _, q := range oldQuestions {
+			oldTexts = append(oldTexts, q.Text)
+		}
+		if err := h.store.DeleteQuestionsByTexts(1, oldTexts); err != nil {
+			slog.Error("failed to remove old questions", "error", err)
+			http.Error(w, "failed to update questions", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	for _, qi := range questions {
@@ -247,6 +297,11 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {
+	user := model.UserFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
 	name := chi.URLParam(r, "name")
 	if name == "" {
 		http.Error(w, "missing name", http.StatusBadRequest)
@@ -254,6 +309,10 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 	}
 	if filepath.Base(name) != name {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
+	if !teacherOwnsQuestionFile(user.Username, name) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 	path := filepath.Join("questions", name)
