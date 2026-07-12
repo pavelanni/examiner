@@ -2,8 +2,10 @@ package handler
 
 import (
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -220,20 +222,18 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(oldQuestions) > 0 {
-		oldTexts := make([]string, 0, len(oldQuestions))
-		for _, q := range oldQuestions {
-			oldTexts = append(oldTexts, q.Text)
-		}
-		if err := h.store.DeleteQuestionsByTexts(1, oldTexts); err != nil {
-			slog.Error("failed to remove old questions", "error", err)
-			http.Error(w, "failed to update questions", http.StatusInternalServerError)
-			return
+	// Remove the old file when the edit flow renames it.
+	if editingFile != "" && safeName != filepath.Base(editingFile) {
+		oldPath := filepath.Join("questions", filepath.Base(editingFile))
+		if err := os.Remove(oldPath); err != nil {
+			slog.Warn("failed to remove old question file", "path", oldPath, "error", err)
 		}
 	}
 
+	newTexts := make(map[string]struct{}, len(questions))
 	for _, qi := range questions {
-		_, err := h.store.InsertQuestion(model.Question{
+		q := model.Question{
+			// TODO: derive course ID from context/config when multi-course support lands.
 			CourseID:    1,
 			Text:        qi.Text,
 			Difficulty:  qi.Difficulty,
@@ -241,10 +241,34 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			Rubric:      qi.Rubric,
 			ModelAnswer: qi.ModelAnswer,
 			MaxPoints:   qi.MaxPoints,
-		})
-		if err != nil {
-			slog.Error("failed to insert question", "error", err)
-			http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
+		}
+		if err := h.store.UpdateQuestionByCourseAndText(q); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				slog.Error("failed to update question", "error", err)
+				http.Error(w, "failed to update question: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+			if _, err := h.store.InsertQuestion(q); err != nil {
+				slog.Error("failed to insert question", "error", err)
+				http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
+				return
+			}
+		}
+		newTexts[q.Text] = struct{}{}
+	}
+
+	if len(oldQuestions) > 0 {
+		oldTexts := make([]string, 0, len(oldQuestions))
+		for _, q := range oldQuestions {
+			oldTexts = append(oldTexts, q.Text)
+		}
+		keepTexts := make([]string, 0, len(newTexts))
+		for text := range newTexts {
+			keepTexts = append(keepTexts, text)
+		}
+		if err := h.store.DeleteUnusedQuestionsByTexts(1, oldTexts, keepTexts); err != nil {
+			slog.Error("failed to remove old questions", "error", err)
+			http.Error(w, "failed to update questions", http.StatusInternalServerError)
 			return
 		}
 	}
