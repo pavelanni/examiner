@@ -189,15 +189,24 @@ func isAlterDuplicate(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "duplicate column")
 }
 
-// DeleteQuestionsByTexts removes questions matching course_id and text values.
-func (s *Store) DeleteQuestionsByTexts(courseID int, texts []string) error {
-	for _, text := range texts {
-		if text == "" {
-			continue
-		}
-		if _, err := s.db.Exec(`DELETE FROM questions WHERE course_id = ? AND text = ?`, courseID, text); err != nil {
-			return err
-		}
+// UpdateQuestionByCourseAndText updates a question matched by course_id and text.
+// It returns sql.ErrNoRows if no matching row exists.
+func (s *Store) UpdateQuestionByCourseAndText(q model.Question) error {
+	res, err := s.db.Exec(
+		`UPDATE questions
+		 SET difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?
+		 WHERE course_id = ? AND text = ?`,
+		q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.CourseID, q.Text,
+	)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }

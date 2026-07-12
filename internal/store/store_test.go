@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -483,6 +484,46 @@ func TestImportedFileHash(t *testing.T) {
 	hash, _ = s.GetImportedFileHash("/some/path.json")
 	if hash != "def456" {
 		t.Errorf("expected 'def456', got %q", hash)
+	}
+}
+
+func TestUpdateQuestionByCourseAndText(t *testing.T) {
+	s := newTestStore(t)
+
+	q := model.Question{
+		CourseID:    1,
+		Text:        "update me",
+		Difficulty:  model.DifficultyEasy,
+		Topic:       "go",
+		Rubric:      "original",
+		ModelAnswer: "original answer",
+		MaxPoints:   5,
+	}
+	id, err := s.InsertQuestion(q)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("expected inserted id")
+	}
+
+	q.Rubric = "updated"
+	q.MaxPoints = 10
+	if err := s.UpdateQuestionByCourseAndText(q); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+
+	updated, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if updated.Rubric != "updated" || updated.MaxPoints != 10 {
+		t.Fatalf("unexpected updated values: %+v", updated)
+	}
+
+	missing := model.Question{CourseID: 1, Text: "missing", Difficulty: model.DifficultyEasy, Topic: "x"}
+	if err := s.UpdateQuestionByCourseAndText(missing); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows, got %v", err)
 	}
 }
 
