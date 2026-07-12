@@ -233,6 +233,9 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	sum := sha256.Sum256(data)
 	hash := hex.EncodeToString(sum[:])
+
+	// Fix: Changed from 'filename' to 'safeName' to ensure the exact
+	// disk destination filename is tracked in the database index.
 	if err := h.store.SetImportedFileHash(safeName, hash); err != nil {
 		slog.Warn("failed to set import hash", "error", err)
 	}
