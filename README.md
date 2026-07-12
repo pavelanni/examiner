@@ -182,6 +182,56 @@ Admins can upload question JSON files at **Admin → Question upload**
 (`/admin/questions`). The file format is the same as the `--questions`
 flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
 
+### Teacher question authoring
+
+Teachers and admins can create and edit question files directly from the
+web UI. Log in as a user with the `teacher` or `admin` role and open
+**Profile** (`/teacher/profile`) to see your existing question files.
+
+From the profile page you can:
+
+- **Create a new question file** — opens the question builder
+  (`/teacher/create-test`).
+- **Edit an existing file** — opens the builder pre-loaded with that file's
+  questions.
+
+The builder lets you add questions one at a time, remove questions, and
+optionally upload a JSON file to seed a new file. When you save, the file
+is written to `questions/teacher_<username>_<name>.json` and the questions
+are imported into the database.
+
+Editing a file updates existing questions by their text instead of
+duplicating them. Questions that are already part of an exam session are
+left untouched, so old exams remain consistent.
+
+The uploaded JSON must match `schema/question_schema.json`. It can be a
+plain array of questions or a wrapper object:
+
+```json
+{
+  "test_name": "Midterm",
+  "test_description": "Mechanics review",
+  "default_topic": "Mechanics",
+  "questions": [
+    {
+      "text": "Explain Newton's second law.",
+      "difficulty": "easy",
+      "topic": "Mechanics",
+      "rubric": "Should state F=ma...",
+      "model_answer": "Newton's second law states that...",
+      "max_points": 10
+    }
+  ]
+}
+```
+
+| Route | Purpose |
+| ----- | ------- |
+| `/teacher/profile` | List and manage your question files |
+| `/teacher/create-test` | Build a new question file |
+| `/teacher/create-test?file=...` | Edit an existing question file |
+| `/teacher/tests/file/{name}` | Download a question JSON file |
+
 ## Security
 
 The application includes several layers of protection:
