@@ -211,6 +211,42 @@ func (s *Store) UpdateQuestionByCourseAndText(q model.Question) error {
 	return nil
 }
 
+// DeleteUnusedQuestionsByTexts deletes questions whose text is in oldTexts but not in keepTexts
+// and that are not referenced by any question_thread.
+func (s *Store) DeleteUnusedQuestionsByTexts(courseID int, oldTexts, keepTexts []string) error {
+	if len(oldTexts) == 0 {
+		return nil
+	}
+
+	args := []any{courseID}
+	args = append(args, stringsToAny(oldTexts)...)
+
+	var notInClause string
+	if len(keepTexts) > 0 {
+		notInClause = "AND text NOT IN (" + placeholders(len(keepTexts)) + ")"
+		args = append(args, stringsToAny(keepTexts)...)
+	}
+
+	query := `DELETE FROM questions
+		WHERE course_id = ?
+		  AND text IN (` + placeholders(len(oldTexts)) + `)
+		  ` + notInClause + `
+		  AND NOT EXISTS (
+		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
+		  )`
+
+	_, err := s.db.Exec(query, args...)
+	return err
+}
+
+func stringsToAny(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
+}
+
 // InsertQuestion stores a question. Duplicate questions (same course_id + text) are silently skipped.
 func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	res, err := s.db.Exec(

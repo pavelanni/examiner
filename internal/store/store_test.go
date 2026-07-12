@@ -527,6 +527,53 @@ func TestUpdateQuestionByCourseAndText(t *testing.T) {
 	}
 }
 
+func TestDeleteUnusedQuestionsByTexts(t *testing.T) {
+	s := newTestStore(t)
+
+	insert := func(text string) int64 {
+		id, err := s.InsertQuestion(model.Question{
+			CourseID:    1,
+			Text:        text,
+			Difficulty:  model.DifficultyEasy,
+			Topic:       "go",
+			Rubric:      "r",
+			ModelAnswer: "a",
+			MaxPoints:   1,
+		})
+		if err != nil {
+			t.Fatalf("insert %q: %v", text, err)
+		}
+		return id
+	}
+
+	idKept := insert("kept")
+	idRemoved := insert("removed")
+	idReferenced := insert("referenced")
+
+	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10, MaxFollowups: 0})
+	if err != nil {
+		t.Fatalf("create blueprint: %v", err)
+	}
+	_, err = s.CreateSession(bpID, 1, []int64{idReferenced})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+
+	if err := s.DeleteUnusedQuestionsByTexts(1, []string{"kept", "removed", "referenced"}, []string{"kept"}); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+
+	if _, err := s.GetQuestion(idRemoved); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected removed question to be deleted, got err=%v", err)
+	}
+	if _, err := s.GetQuestion(idKept); err != nil {
+		t.Fatalf("expected kept question to remain: %v", err)
+	}
+	if _, err := s.GetQuestion(idReferenced); err != nil {
+		t.Fatalf("expected referenced question to remain: %v", err)
+	}
+}
+
 func TestListDistinctTopics(t *testing.T) {
 	s := newTestStore(t)
 
