@@ -60,6 +60,7 @@ templ Nav(items []NavItem) {
 			}
 		</ul>
 	</nav>
+
 }
 
 type NavItem struct {
@@ -76,6 +77,7 @@ templ userNav() {
 					<li><a href={ templ.SafeURL(p(ctx, "/admin/users")) }>{ t(ctx, "Admin") }</a></li>
 				}
 				if user.Role == model.UserRoleTeacher || user.Role == model.UserRoleAdmin {
+					<li><a href={ templ.SafeURL(p(ctx, "/teacher/profile")) }>{ t(ctx, "Profile") }</a></li>
 					<li><a href={ templ.SafeURL(p(ctx, "/review")) }>{ t(ctx, "TeacherReview") }</a></li>
 				}
 			</ul>

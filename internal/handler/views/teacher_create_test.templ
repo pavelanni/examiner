@@ -1,0 +1,222 @@
+package views
+
+import (
+    "path/filepath"
+    "github.com/pavelanni/examiner/internal/model"
+)
+
+// Вспомогательная функция, которая берет два значения от JSONString и безопасно возвращает одно
+func safeJSONString(questions []model.QuestionImport) string {
+    str, err := templ.JSONString(questions)
+    if err != nil {
+        return "[]"
+    }
+    return str
+}
+
+templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string) {
+    @Layout(t(ctx, "TeacherProfile")) {
+        // Добавляем глобальные CSS Стили для автоматической нумерации блоков
+        <style>
+            #questions-list {
+                counter-reset: question-counter; /* Инициализируем счетчик */
+            }
+            .question-block {
+                counter-increment: question-counter; /* Увеличиваем счетчик при появлении каждого блока */
+            }
+            .question-title::before {
+                content: " #" counter(question-counter); /* Динамически подставляем номер */
+            }
+        </style>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+			if filename != "" {
+				// Отрезаем расширение файла (.json) в заголовке H1
+				<h1>{ t(ctx, "Edit Questions") } ({ filename[:len(filename)-len(filepath.Ext(filename))] })</h1>
+			} else {
+				<h1>{ t(ctx, "Create Questions") }</h1>
+			}
+			<a href={ templ.SafeURL(p(ctx, "/teacher/profile")) } class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
+		</div>
+        
+        <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()">
+            <input type="hidden" name="csrf_token" value={ csrf }/>
+            <input type="hidden" name="editing_file" value={ filename }/>
+            
+            <div style="margin-bottom: 20px;">
+                <label>
+                    <strong>{ t(ctx, "Exam Topic") }:</strong>
+                    if filename != "" {
+                        // Отрезаем расширение (.json), оставляя только чистое имя
+                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } placeholder="physics_exam" required />
+                    } else {
+                        <input type="text" name="custom_filename" placeholder="physics_exam" />
+                    }
+                </label>
+            </div>
+            
+            <input type="hidden" id="preloaded-data" value={ safeJSONString(existingQuestions) }/>
+            
+            <section>
+                <h2>{ t(ctx, "Questions List") }</h2>
+                <div id="questions-list"></div>
+                <p><button type="button" id="add-question">{ t(ctx, "Add Question") }</button></p>
+            </section>
+            
+            if filename == "" {
+                <div>
+                    <label>{ t(ctx, "OrUploadJson") }: <input type="file" id="questions-file" name="questions_file" accept="application/json"/></label>
+                </div>
+            }
+            
+            <textarea id="assembled-json" name="questions_json" style="display:none;"></textarea>
+            
+            <div>
+                <button type="submit" class="contrast">
+                    { t(ctx, "ApproveTest") }
+                </button>
+            </div>
+        </form>
+
+        <script>
+        function makeQuestionHTML(idx, data = {}) {
+            const text = data.text || '';
+            const topic = data.topic || '';
+            const diff = data.difficulty || 'easy';
+            const points = data.max_points !== undefined ? data.max_points : 1;
+            const rubric = data.rubric || '';
+            const answer = data.model_answer || '';
+
+            return `
+            <div class="question-block" data-idx="${idx}" style="border:1px solid #ddd;padding:16px;margin:12px 0;border-radius:4px;">
+                <div style="margin-bottom:12px; border-bottom: 1px dashed #eee; padding-bottom: 4px;">
+                    <h3 class="question-title" style="margin:0; font-size:1.15rem; color:#555;"> Question</h3>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label><strong>Question text:</strong><br/><input type="text" name="q_text_${idx}" value="${escapeHtml(text)}" style="width:100%" placeholder="e.g., What is polymorphism?"/></label>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label><strong>Topic (used for exam generation):</strong><br/><input type="text" name="q_topic_${idx}" value="${escapeHtml(topic)}" style="width:100%" placeholder="e.g., OOP, Databases, Go-basics"/></label>
+                </div>
+                <div style="display:flex; gap:16px; margin-bottom:8px;">
+                    <div style="flex:1;">
+                        <label>Difficulty:<br/>
+                            <select name="q_diff_${idx}" style="width:100%">
+                                <option value="easy" ${diff === 'easy' ? 'selected' : ''}>easy</option>
+                                <option value="medium" ${diff === 'medium' ? 'selected' : ''}>medium</option>
+                                <option value="hard" ${diff === 'hard' ? 'selected' : ''}>hard</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div style="flex:1;">
+                        <label>Max points:<br/><input type="number" min="1" max="100" name="q_points_${idx}" value="${points}" style="width:100%"/></label>
+                    </div>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label>Rubric (grading criteria for LLM):<br/><textarea name="q_rubric_${idx}" rows="2" style="width:100%" placeholder="e.g., 2 points for formula, 3 points for explanation...">${escapeHtml(rubric)}</textarea></label>
+                </div>
+                <div style="margin-bottom:8px;">
+                    <label>Model answer:<br/><textarea name="q_answer_${idx}" rows="2" style="width:100%" placeholder="Optional reference answer...">${escapeHtml(answer)}</textarea></label>
+                </div>
+                <p style="margin:0; text-align:right;"><button type="button" class="secondary" onclick="removeQuestion(${idx})" style="padding:4px 8px; font-size:0.9rem;">Remove</button></p>
+            </div>`;
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        let qCounter = 0;
+
+        function addQuestion(data = {}) {
+            const container = document.getElementById('questions-list');
+            if (!container) return null;
+            
+            const idx = qCounter++;
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = makeQuestionHTML(idx, data);
+            const block = wrapper.firstElementChild;
+            if (block) {
+                container.appendChild(block);
+            }
+            return idx;
+        }
+
+        function removeQuestion(idx) {
+            const el = document.querySelector('.question-block[data-idx="' + idx + '"]');
+            if (el && el.parentNode) {
+                el.parentNode.removeChild(el);
+            }
+        }
+
+        function initQuestionBuilder() {
+            const addButton = document.getElementById('add-question');
+            if (addButton) {
+                addButton.addEventListener('click', () => addQuestion());
+            }
+
+            let questionsObj = [];
+            const preloadedEl = document.getElementById('preloaded-data');
+            if (preloadedEl && preloadedEl.value) {
+                try {
+                    questionsObj = JSON.parse(preloadedEl.value);
+                } catch (e) {
+                    console.error("Failed to parse preloaded questions:", e);
+                }
+            }
+
+            if (Array.isArray(questionsObj) && questionsObj.length > 0) {
+                questionsObj.forEach(q => addQuestion(q));
+            } else {
+                addQuestion();
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initQuestionBuilder);
+        } else {
+            initQuestionBuilder();
+        }
+
+        function assembleAndSubmit() {
+            const fileInput = document.getElementById('questions-file');
+            const hasFile = fileInput && fileInput.files.length > 0;
+            const blocks = document.querySelectorAll('.question-block');
+            
+            const questions = [];
+            let hasIncompleteQuestion = false;
+
+            for (const b of blocks) {
+                const idx = b.getAttribute('data-idx');
+                const text = ((b.querySelector('[name="q_text_' + idx + '"]') || {}).value || '').trim();
+                const topic = ((b.querySelector('[name="q_topic_' + idx + '"]') || {}).value || '').trim();
+                const difficulty = (b.querySelector('[name="q_diff_' + idx + '"]') || {}).value || 'easy';
+                const max_points = parseInt((b.querySelector('[name="q_points_' + idx + '"]') || {}).value || '1', 10);
+                const rubric = ((b.querySelector('[name="q_rubric_' + idx + '"]') || {}).value || '').trim();
+                const model_answer = ((b.querySelector('[name="q_answer_' + idx + '"]') || {}).value || '').trim();
+                
+                if (text || topic) {
+                    if (!text || !topic) {
+                        hasIncompleteQuestion = true;
+                        break;
+                    }
+                    questions.push({ text, topic, difficulty, max_points, rubric, model_answer });
+                }
+            }
+
+            if (!hasFile && questions.length === 0) {
+                alert('Please fill at least one question.');
+                return false;
+            }
+
+            if (!hasFile && hasIncompleteQuestion) {
+                alert('Please complete all fields (Text and Topic) for the questions you started.');
+                return false;
+            }
+
+            document.getElementById('assembled-json').value = JSON.stringify(questions);
+            return true;
+        }
+        </script>
+    }
+}

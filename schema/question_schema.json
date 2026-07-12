@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Question import or test payload",
+  "oneOf": [
+    {
+      "type": "array",
+      "items": { "$ref": "#/definitions/question" }
+    },
+    {
+      "type": "object",
+      "required": ["questions"],
+      "properties": {
+        "test_name": { "type": "string" },
+        "test_description": { "type": "string" },
+        "default_topic": { "type": "string" },
+        "questions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/question" }
+        }
+      },
+      "additionalProperties": false
+    }
+  ],
+  "definitions": {
+    "question": {
+      "type": "object",
+      "required": ["text", "max_points"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
+        "topic": { "type": "string" },
+        "rubric": { "type": "string" },
+        "model_answer": { "type": "string" },
+        "max_points": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  }
+}
