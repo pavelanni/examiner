@@ -16,7 +16,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
 	"github.com/pavelanni/examiner/internal/model"
-	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 func teacherQuestionFilePrefix(username string) string {
@@ -129,7 +128,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	file, _, err := r.FormFile("questions_file")
 	if err == nil {
-		defer file.Close()
+		defer func() { _ = file.Close() }()
 		b, err := io.ReadAll(file)
 		if err != nil {
 			http.Error(w, "failed to read file", http.StatusInternalServerError)
@@ -145,44 +144,13 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		data = []byte(txt)
 	}
 
-	// Fail closed: Schema validation is mandatory
-	absSchema, err := filepath.Abs("schema/question_schema.json")
-	if err != nil {
-		slog.Error("failed to get absolute path for schema", "error", err)
-		http.Error(w, "internal server configuration error", http.StatusInternalServerError)
-		return
-	}
-
-	compiler := jsonschema.NewCompiler()
-	f, err := os.Open(absSchema)
-	if err != nil {
-		slog.Error("failed to open schema file", "error", err)
-		http.Error(w, "internal server configuration error", http.StatusInternalServerError)
-		return
-	}
-	defer f.Close()
-
-	schemaURL := "file://" + filepath.ToSlash(absSchema)
-	if err := compiler.AddResource(schemaURL, f); err != nil {
-		slog.Error("failed to add schema resource", "error", err)
-		http.Error(w, "internal server configuration error", http.StatusInternalServerError)
-		return
-	}
-
-	sch, err := compiler.Compile(schemaURL)
-	if err != nil {
-		slog.Error("failed to compile schema", "error", err)
-		http.Error(w, "internal server configuration error", http.StatusInternalServerError)
-		return
-	}
-
-	// Validate the JSON structure against the compiled schema
+	// Validate the JSON structure against the compiled schema.
 	var v interface{}
 	if err := json.Unmarshal(data, &v); err != nil {
 		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := sch.Validate(v); err != nil {
+	if err := h.questionSchema.Validate(v); err != nil {
 		http.Error(w, "schema validation failed: "+err.Error(), http.StatusBadRequest)
 		return
 	}

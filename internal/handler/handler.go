@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"time"
 
@@ -14,18 +16,42 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
+	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	store  *store.Store
-	llm    *llm.Client
-	config model.ExamConfig
+	store          *store.Store
+	llm            *llm.Client
+	config         model.ExamConfig
+	questionSchema *jsonschema.Schema
 }
 
 // New creates a new Handler.
 func New(s *store.Store, l *llm.Client, cfg model.ExamConfig) (*Handler, error) {
-	return &Handler{store: s, llm: l, config: cfg}, nil
+	schema, err := compileQuestionSchema()
+	if err != nil {
+		return nil, fmt.Errorf("compile question schema: %w", err)
+	}
+	return &Handler{store: s, llm: l, config: cfg, questionSchema: schema}, nil
+}
+
+func compileQuestionSchema() (*jsonschema.Schema, error) {
+	absSchema, err := filepath.Abs("schema/question_schema.json")
+	if err != nil {
+		return nil, err
+	}
+	compiler := jsonschema.NewCompiler()
+	f, err := os.Open(absSchema)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	schemaURL := "file://" + filepath.ToSlash(absSchema)
+	if err := compiler.AddResource(schemaURL, f); err != nil {
+		return nil, err
+	}
+	return compiler.Compile(schemaURL)
 }
 
 // calculateTimeRemaining returns remaining exam time.
