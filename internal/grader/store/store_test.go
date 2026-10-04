@@ -14,7 +14,7 @@ import (
 
 func TestFullGradingWorkflow(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// 1. Import sample exam
 	exp := sampleExport()
@@ -136,7 +136,7 @@ func TestNew(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatalf("database file not created: %v", err)
@@ -156,7 +156,7 @@ func newTestStore(t *testing.T) *store.Store {
 
 func TestCreateAndGetUser(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	id, err := s.CreateUser(model.User{
 		Username:     "teacher1",
@@ -187,7 +187,7 @@ func TestCreateAndGetUser(t *testing.T) {
 
 func TestUserCount(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	n, err := s.UserCount()
 	if err != nil {
@@ -200,7 +200,7 @@ func TestUserCount(t *testing.T) {
 
 func TestAuthSession(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if _, err := s.CreateUser(model.User{
 		Username:     "admin",
@@ -247,7 +247,7 @@ func TestAuthSession(t *testing.T) {
 
 func TestImportUsersCSV(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	csvData := "user_id,display_name\nT-001,Ivan Ivanov\nT-002,Petr Petrov\n"
 	creds, err := userutil.ImportCSV(strings.NewReader(csvData), s, userutil.ImportConfig{
@@ -291,7 +291,7 @@ func TestImportUsersCSV(t *testing.T) {
 
 func TestListStudentsForExam(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.ImportExam(sampleExport()); err != nil {
 		t.Fatalf("ImportExam: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestListStudentsForExam(t *testing.T) {
 
 func TestDeleteExam(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.ImportExam(sampleExport()); err != nil {
 		t.Fatalf("ImportExam: %v", err)
 	}
@@ -327,7 +327,7 @@ func TestDeleteExam(t *testing.T) {
 
 func TestGetExamByID(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.ImportExam(sampleExport()); err != nil {
 		t.Fatalf("ImportExam: %v", err)
 	}

@@ -276,7 +276,7 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var questions []model.Question
 	for rows.Next() {
 		var q model.Question
@@ -316,7 +316,7 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var questions []model.Question
 	for rows.Next() {
 		var q model.Question
@@ -455,7 +455,7 @@ func (s *Store) GetThreadsForSession(sessionID int64) ([]model.QuestionThread, e
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var threads []model.QuestionThread
 	for rows.Next() {
 		var t model.QuestionThread
@@ -508,7 +508,7 @@ func (s *Store) GetMessages(threadID int64) ([]model.Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var messages []model.Message
 	for rows.Next() {
 		var m model.Message
@@ -676,7 +676,7 @@ func (s *Store) listSessionsWithOrder(orderClause string) ([]model.ExamSession, 
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var sessions []model.ExamSession
 	for rows.Next() {
 		var sess model.ExamSession
@@ -697,7 +697,7 @@ func (s *Store) ListSessionsByUser(userID int64) ([]model.ExamSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var sessions []model.ExamSession
 	for rows.Next() {
 		var sess model.ExamSession
@@ -748,7 +748,7 @@ func (s *Store) ListDistinctTopics() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var topics []string
 	for rows.Next() {
 		var t string

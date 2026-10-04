@@ -110,7 +110,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no file uploaded", http.StatusBadRequest)
 		return
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {

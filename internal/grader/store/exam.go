@@ -63,7 +63,7 @@ func (s *Store) ListStudentsForExam(examID string) ([]StudentListItem, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list students for exam: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var items []StudentListItem
 	for rows.Next() {

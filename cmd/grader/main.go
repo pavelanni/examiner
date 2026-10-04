@@ -97,7 +97,7 @@ func serveCmd(v *viper.Viper) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			// Seed admin user if no users exist.
 			count, err := s.UserCount()
@@ -158,7 +158,7 @@ func importCmd(v *viper.Viper) *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			failed := 0
 			for _, path := range args {
@@ -211,7 +211,7 @@ are generated automatically. A credentials CSV is written to
 			if err != nil {
 				return fmt.Errorf("open database: %w", err)
 			}
-			defer s.Close()
+			defer func() { _ = s.Close() }()
 
 			// Create credentials file first to fail early before creating accounts.
 			credsPath := strings.TrimSuffix(args[0], ".csv") + "-creds.csv"
@@ -219,13 +219,13 @@ are generated automatically. A credentials CSV is written to
 			if err != nil {
 				return fmt.Errorf("create credentials file: %w", err)
 			}
-			defer cf.Close()
+			defer func() { _ = cf.Close() }()
 
 			f, err := os.Open(args[0])
 			if err != nil {
 				return fmt.Errorf("open CSV: %w", err)
 			}
-			defer f.Close()
+			defer func() { _ = f.Close() }()
 
 			creds, err := userutil.ImportCSV(f, s, userutil.ImportConfig{
 				Role:           model.UserRoleTeacher,
@@ -239,6 +239,9 @@ are generated automatically. A credentials CSV is written to
 
 			if err := userutil.WriteCredentialsCSV(cf, creds); err != nil {
 				return fmt.Errorf("write credentials: %w", err)
+			}
+			if err := cf.Close(); err != nil {
+				return fmt.Errorf("close credentials file: %w", err)
 			}
 
 			slog.Info("credentials written", "path", credsPath)

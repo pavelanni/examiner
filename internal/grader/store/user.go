@@ -68,7 +68,7 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 	var users []model.User
 	for rows.Next() {
 		var u model.User

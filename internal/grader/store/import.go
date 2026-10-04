@@ -138,7 +138,7 @@ func (s *Store) ListExams() ([]ExamSummary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("list exams: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var exams []ExamSummary
 	for rows.Next() {

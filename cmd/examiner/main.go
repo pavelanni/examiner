@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -180,7 +179,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Seed default admin user if no users exist.
 	if err := seedAdmin(db, v.GetString("admin-password")); err != nil {
@@ -282,7 +281,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Read metadata from DB as defaults; CLI flags override.
 	info, err := db.GetExamInfo()
@@ -346,25 +345,27 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}
 
+	data = append(data, '\n') // trailing newline
+
 	outPath := v.GetString("output")
-	var w io.Writer
 	if outPath == "" || outPath == "-" {
-		w = os.Stdout
-	} else {
-		f, err := os.Create(outPath)
-		if err != nil {
-			return fmt.Errorf("create output file: %w", err)
+		if _, err := os.Stdout.Write(data); err != nil {
+			return fmt.Errorf("write output: %w", err)
 		}
-		defer f.Close()
-		w = f
+		return nil
 	}
 
-	_, err = w.Write(data)
+	f, err := os.Create(outPath)
 	if err != nil {
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer func() { _ = f.Close() }() // safety net for early returns; checked below
+	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("write output: %w", err)
 	}
-	// Ensure trailing newline.
-	_, _ = fmt.Fprintln(w)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close output file: %w", err)
+	}
 
 	return nil
 }
@@ -517,7 +518,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Store exam metadata.
 	if err := db.SetExamInfo(model.ExamInfo{
@@ -564,7 +565,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open roster: %w", err)
 	}
-	defer rosterFile.Close()
+	defer func() { _ = rosterFile.Close() }()
 
 	prefix := strings.ToLower(manifest.Subject)
 	if len(prefix) > 4 {
@@ -585,7 +586,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create credentials file: %w", err)
 	}
-	defer credsFile.Close()
+	defer func() { _ = credsFile.Close() }()
 
 	adminCred := userutil.Credential{
 		DisplayName: "Administrator",
@@ -595,6 +596,12 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	allCreds := append([]userutil.Credential{adminCred}, studentCreds...)
 	if err := userutil.WriteCredentialsCSV(credsFile, allCreds); err != nil {
 		return fmt.Errorf("write credentials CSV: %w", err)
+	}
+	if err := credsFile.Close(); err != nil {
+		return fmt.Errorf("close credentials file: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("close database: %w", err)
 	}
 
 	slog.Info("exam prepared",

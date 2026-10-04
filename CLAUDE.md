@@ -7,7 +7,7 @@
 - Build: `task build` (runs templ generate automatically)
 - Run locally: `task run -- --lang ru --shuffle`
 - Tests: `task test`
-- Lint: `task lint` (requires golangci-lint)
+- Lint: `task lint` (requires golangci-lint v2, config in `.golangci.yml`; developed with 2.14.0). Check `Close()` errors on files you write; `_ = x.Close()` is fine for read-only resources
 
 ## Deployment
 

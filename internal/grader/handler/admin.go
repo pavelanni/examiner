@@ -44,7 +44,7 @@ func (h *Handler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 
 		data, err := io.ReadAll(f)
-		f.Close()
+		_ = f.Close()
 		if err != nil {
 			errors = append(errors, fmt.Sprintf("%s: failed to read: %v", fh.Filename, err))
 			continue
@@ -144,7 +144,7 @@ func (h *Handler) handleImportUsers(w http.ResponseWriter, r *http.Request) {
 		h.renderUsersPage(w, r, "Failed to open file: "+err.Error())
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	creds, err := userutil.ImportCSV(f, h.store, userutil.ImportConfig{
 		Role:           model.UserRoleTeacher,
