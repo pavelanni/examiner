@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -65,20 +66,20 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(csrfCookieName)
 		if err != nil || cookie.Value == "" {
 			slog.Warn("CSRF cookie missing")
-			http.Error(w, "csrf token missing", http.StatusForbidden)
+			h.csrfFailure(w, r)
 			return
 		}
 
 		formToken := r.FormValue("csrf_token")
 		if formToken == "" {
 			slog.Warn("CSRF form token missing")
-			http.Error(w, "csrf token missing", http.StatusForbidden)
+			h.csrfFailure(w, r)
 			return
 		}
 
 		if len(formToken) != len(cookie.Value) || subtle.ConstantTimeCompare([]byte(formToken), []byte(cookie.Value)) != 1 {
 			slog.Warn("CSRF token mismatch")
-			http.Error(w, "invalid csrf token", http.StatusForbidden)
+			h.csrfFailure(w, r)
 			return
 		}
 
@@ -86,6 +87,24 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 		ctx := model.ContextWithCSRFToken(r.Context(), cookie.Value)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// csrfFailure tells the user their form was rejected. htmx swaps ignore 4xx
+// responses, so for htmx requests the localized message goes out as plain text
+// and the layout's htmx:responseError listener shows it as a banner. Other
+// requests get a full error page with a reload link.
+func (h *Handler) csrfFailure(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, appI18n.T(r.Context(), "CSRFError"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	if err := views.CSRFErrorPage().Render(r.Context(), w); err != nil {
+		slog.Error("render CSRF error page", "error", err)
+	}
 }
 
 // requireAuth is middleware that checks for a valid session cookie.

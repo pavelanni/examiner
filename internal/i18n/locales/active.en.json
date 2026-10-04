@@ -108,5 +108,8 @@
   {"id": "GradingInProgress", "other": "Your exam is being graded. Please wait, this may take a moment..."},
   {"id": "Preliminary", "other": "preliminary"},
   {"id": "ResultsAwaitingReview", "other": "Results will appear here after a teacher reviews your answers."},
-  {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"}
+  {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"},
+  {"id": "CSRFErrorTitle", "other": "Could not submit the form"},
+  {"id": "CSRFError", "other": "Your session has expired or the page is out of date. Your answer was not saved. Reload the page and try again."},
+  {"id": "CSRFErrorReload", "other": "Reload"}
 ]

@@ -16,6 +16,21 @@ templ Layout(title string) {
 			<title>{ title }</title>
 			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
 			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+			<script>
+				// htmx does not swap 4xx responses; surface their text (e.g. a CSRF
+				// rejection) as a banner so the user knows the request failed.
+				document.addEventListener("htmx:responseError", function (e) {
+					var msg = e.detail.xhr.responseText;
+					if (e.detail.xhr.status !== 403 || !msg || msg.length > 300) { return; }
+					var el = document.getElementById("htmx-error") || document.createElement("p");
+					el.id = "htmx-error";
+					el.setAttribute("role", "alert");
+					el.className = "time-exceeded-banner";
+					el.style.display = "block";
+					el.textContent = msg;
+					document.querySelector("main").prepend(el);
+				});
+			</script>
 			<style>
 				.thread { border: 1px solid var(--pico-muted-border-color); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem; }
 				.message { padding: 0.5rem 1rem; margin: 0.5rem 0; border-radius: 6px; }
