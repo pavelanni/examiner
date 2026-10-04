@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/sqlitedb"
 
 	_ "modernc.org/sqlite"
 )
@@ -19,7 +20,7 @@ type Store struct {
 
 // New creates a new Store with the given database path.
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", sqlitedb.DSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
@@ -30,6 +31,7 @@ func New(dbPath string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	sqlitedb.WarnForeignKeys(db)
 	return s, nil
 }
 

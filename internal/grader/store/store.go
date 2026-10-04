@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 
+	"github.com/pavelanni/examiner/internal/sqlitedb"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -14,7 +16,7 @@ type Store struct {
 
 // New opens (or creates) the grader database and runs migrations.
 func New(dbPath string) (*Store, error) {
-	db, err := sql.Open("sqlite", dbPath+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", sqlitedb.DSN(dbPath))
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
@@ -22,15 +24,12 @@ func New(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)
 	}
-	if _, err := db.Exec(`PRAGMA foreign_keys = ON`); err != nil {
-		_ = db.Close()
-		return nil, fmt.Errorf("enable foreign keys: %w", err)
-	}
 	s := &Store{db: db}
 	if err := s.migrate(); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	sqlitedb.WarnForeignKeys(db)
 	return s, nil
 }
 
