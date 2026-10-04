@@ -90,3 +90,33 @@ func TestConcurrentWrites(t *testing.T) {
 		t.Errorf("rows = %d, want %d", count, writers)
 	}
 }
+
+func TestCheckForeignKeys(t *testing.T) {
+	db := openTestDB(t)
+	// Insert a dangling child with enforcement off on a dedicated
+	// connection, as an old database would contain.
+	ctx := context.Background()
+	c, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	for _, q := range []string{
+		`CREATE TABLE p (id INTEGER PRIMARY KEY)`,
+		`CREATE TABLE c (id INTEGER PRIMARY KEY, pid INTEGER REFERENCES p(id))`,
+		`PRAGMA foreign_keys = OFF`,
+		`INSERT INTO c (pid) VALUES (42)`,
+	} {
+		if _, err := c.ExecContext(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+
+	vs, err := sqlitedb.CheckForeignKeys(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(vs) != 1 || vs[0].Table != "c" || vs[0].Parent != "p" {
+		t.Errorf("violations = %+v, want one for c -> p", vs)
+	}
+}

@@ -29,6 +29,7 @@ func New(dbPath string) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	sqlitedb.WarnForeignKeys(db)
 	return s, nil
 }
 

@@ -91,6 +91,7 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 - `internal/i18n/` — internationalization (English, Russian)
 - `internal/llm/` — OpenAI-compatible LLM client
 - `internal/model/` — domain types
+- `internal/sqlitedb/` — shared SQLite DSN (pragmas) and foreign-key check
 - `internal/store/` — SQLite storage layer
 - `web/` — static assets (htmx, Pico CSS)
 

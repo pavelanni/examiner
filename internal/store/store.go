@@ -31,6 +31,7 @@ func New(dbPath string) (*Store, error) {
 	if err := s.migrate(); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)
 	}
+	sqlitedb.WarnForeignKeys(db)
 	return s, nil
 }
 

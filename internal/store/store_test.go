@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"errors"
+	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -674,5 +676,55 @@ func TestMigrateSplitsLegacyFollowup(t *testing.T) {
 	thread, _ := s.GetThread(threadID)
 	if thread.FollowupCount != 1 {
 		t.Errorf("FollowupCount = %d, want 1 after backfill", thread.FollowupCount)
+	}
+}
+
+// TestConcurrentAddMessage is the failure mode from #40: many students
+// saving answers at once must not hit "database is locked". It uses a file
+// database because every ":memory:" pool connection is a separate database.
+func TestConcurrentAddMessage(t *testing.T) {
+	s, err := New(filepath.Join(t.TempDir(), "exam.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	q := insertTestQuestion(t, s, "Q1", "easy", "t")
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q})
+	threads, err := s.GetThreadsForSession(sessID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	threadID := threads[0].ID
+
+	const writers = 50
+	var wg sync.WaitGroup
+	errs := make(chan error, writers)
+	for range writers {
+		wg.Go(func() {
+			// A follow-up also updates the shared thread row.
+			_, err := s.AddMessage(model.Message{ThreadID: threadID, Role: model.RoleLLM, Content: "a", Followup: "f"})
+			if err != nil {
+				errs <- err
+			}
+		})
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Errorf("AddMessage: %v", err)
+	}
+
+	msgs, err := s.GetMessages(threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(msgs) != writers {
+		t.Errorf("messages = %d, want %d", len(msgs), writers)
+	}
+	thread, _ := s.GetThread(threadID)
+	if thread.FollowupCount != writers {
+		t.Errorf("followup_count = %d, want %d", thread.FollowupCount, writers)
 	}
 }
