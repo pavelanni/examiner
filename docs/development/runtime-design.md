@@ -1,0 +1,342 @@
+# Exam runtime design
+
+Status: **draft** (2026-10-03). Supersedes the "container per group"
+decision in [multi-session.md](multi-session.md).
+
+## Context
+
+The issue list this design works from comes from the students' analysis
+of the trial exam on 2026-07-17 and of the code: issues #37–#59,
+collected in epic #60 together with their own plan and the mapping to
+the ТЗ acceptance criteria. Their root-cause findings stand unchanged.
+This doc differs from their plan in architecture, not in diagnosis (see
+[Comparison with the plan in #60](#comparison-with-the-plan-in-60)).
+
+The analysis showed that the current exam binary mixes two kinds of
+work:
+
+- **Running an exam conversation:** answers, LLM feedback, follow-ups
+  and grading. This part is specific to Examiner and is where most of
+  the trial-exam bugs were (#37, #38, #39).
+- **Managing exams:** login, topics, question banks, retakes, teacher
+  review and grade-sheet export. This is a standard web application.
+
+The goal is production for 50–100 concurrent students within weeks,
+on Podman hosts (a public cloud VM or university servers). There is
+no Kubernetes or OpenShift.
+
+## Decision summary
+
+The system splits into three components with one job each:
+
+| Component | Job | Lifetime | State |
+| --------- | --- | -------- | ----- |
+| **Exam runtime** (this repo's binary) | Runs one exam conversation per session: shows questions, evaluates answers, asks follow-ups, grades | N stateless replicas behind Caddy | None of its own; reads and writes through `SessionStore` |
+| **Management** (grows from `cmd/grader`) | Users, topics, tests, question bank, choosing and pinning each session's questions, retakes, review, export | One long-running service | PostgreSQL; the only source of truth |
+| **LLM gateway** ([LiteLLM proxy](https://docs.litellm.ai/docs/simple_proxy)) | Maps model aliases to providers; retries, fallbacks, concurrency limits | One long-running container | Config file (no DB at first) |
+
+```text
+             browser
+     login, choose test │      exam pages (token-scoped)
+            ┌───────────┴────────────┐
+            ▼                        ▼
+      Management  ◀── SessionStore ── Exam runtime ×N ──▶ LiteLLM ──▶ local vLLM / Ollama
+      (PostgreSQL)        API          (stateless)         gateway ──▶ external API
+```
+
+## Alternatives considered
+
+| Option | Why not |
+| ------ | ------- |
+| Container per student session | Needs a dynamic reverse-proxy route and auth handoff for each session, and must resume after a crash anyway. It also doesn't fix the real bottleneck, which is the LLM; per-container limits can't cap total LLM concurrency. |
+| Container per exam group (the 2026-02-28 decision) | Static setup per group; doesn't support always-available self-tests; each group has its own SQLite database, so results have to be merged by export. |
+| Keep one monolith | Possible, but management features (#42–#46, #52–#54) would keep growing the exam path, which must stay small and reliable. |
+
+## Delivery risk and code layout
+
+Most ТЗ acceptance criteria (validation, access control, question
+counts, pinned question sets, Teacher Review, export) land in
+management. If management had to be designed and built from scratch,
+it would put "production in weeks" at risk.
+
+It doesn't have to be. The repo already has two binaries, and the
+second one is most of management already:
+
+| Binary | Today | Becomes |
+| ------ | ----- | ------- |
+| `cmd/examiner` | Exam flow, LLM, plus login, teacher and admin pages | **Runtime.** Teacher, admin and question pages move to management. |
+| `cmd/grader` (PR #32) | Login, users and roster import, exam result import, review, scoring, finalize, reports | **Management v1.** Gains the question bank, session creation, the SessionSpec and the `SessionStore` API; its store moves to PostgreSQL. |
+
+Both stay in one repo and share packages:
+
+| Package | Used by |
+| ------- | ------- |
+| `internal/model` (domain types, SessionSpec) | Both |
+| `internal/i18n` | Both |
+| `internal/llm`, prompts | Runtime only |
+| `internal/handler` (exam part) | Runtime |
+| `internal/grader/*`, plus the teacher and question code moved from `internal/handler` | Management |
+
+Once the `SessionStore` interface exists, the work splits into two
+parallel tracks, one per binary (see
+[Migration plan](#migration-plan)). A separate repo, or a rewrite of
+management in another stack, stays possible later because the contract
+between them is an HTTP API, not shared database tables.
+
+## SessionSpec
+
+Management creates a session and gives the runtime its **SessionSpec**.
+The runtime never chooses questions: the set is pinned when the
+session is created. This is all of #46's "fix the variant" requirement,
+and it makes a restarted replica show exactly the same exam.
+
+| Field | Type | Notes |
+| ----- | ---- | ----- |
+| `spec_version` | int | Starts at 1 |
+| `session_id` | UUID | Generated by management |
+| `student_ref` | opaque string | **No real name.** Management maps it to the student. |
+| `mode` | `self_test` \| `required` | Only sets defaults in management; the runtime acts on the fields below |
+| `lang` | `en` \| `ru` | UI and prompt language |
+| `questions[]` | list | Pinned and ordered: `id`, `text`, `topic`, `difficulty`, `max_points`, `rubric`, `model_answer` |
+| `max_followups` | int ≥ 0 | Per question; enforced by the server (#39) |
+| `time_limit` | duration | 0 means no limit |
+| `prompt_variant` | `strict` \| `standard` \| `lenient` | |
+| `llm_model` | string | LiteLLM alias, such as `exam-local` or `selftest-cheap` |
+| `score_visibility` | `live` \| `final` \| `none` | `live`: per-answer score during the exam plus the final grade. `final`: final grade only, after submitting. `none`: nothing until teacher review. |
+
+Defaults are set by management: `live` for self-tests and `final` for
+required tests, each changeable per test. Any score shown before teacher
+review is labeled **preliminary**.
+
+## Entering the runtime
+
+1. The student picks a test in management. Management creates the
+   session and signs a short-lived **entry token** (Ed25519 JWT, about
+   60 s) that holds only `session_id`, `student_ref` and `exp`.
+1. Management redirects the browser to `/exam/enter?token=…`.
+1. The runtime checks the signature with management's **public key**,
+   so the runtime can't create tokens itself. It sets an `HttpOnly`
+   cookie scoped to the session and redirects to `/exam/{session_id}`
+   to remove the token from the URL.
+   The token is not single-use. A replay within its 60 s lifetime
+   only resumes the same session it names, so the exposure is small.
+   Because it travels in a query string, Caddy's access log must drop
+   the `token` parameter (a `log` filter on `request.uri` with
+   `query { delete token }`), and the runtime must never log the
+   query string of `/exam/enter`.
+1. The runtime fetches the SessionSpec from management server-to-server.
+
+The token must **not** carry the SessionSpec: JWT payloads can be read
+in the browser, and the spec contains rubrics and model answers.
+
+## Persistence: `SessionStore`
+
+Any replica must be able to serve any request, so the runtime keeps
+nothing in memory between requests. Every request loads session state
+from, and saves it to, a `SessionStore` interface:
+
+| Operation | Purpose |
+| --------- | ------- |
+| `GetSession(id)` | Spec plus conversation plus status |
+| `AppendMessage(id, question, msg)` | Saves each answer **as soon as it arrives** and each LLM reply; idempotent by message key (#49) |
+| `Transition(id, from, to)` | Atomic status change with a precondition. Entering grading claims an attempt and returns a fencing token; grading done and failed require the current token (#48) |
+| `SaveGrade(id, token, result)` | Final LLM grade per question and in total; rejects writes from stale attempts |
+
+Two implementations:
+
+- **SQLite** (transitional): the current store with the #40 DSN fix.
+  Single replica only. Lets runtime work ship before management exists.
+- **Management HTTP API**: the target. Management is the only source
+  of truth, so the runtime never sees the database schema or
+  credentials. At 100 students with 20–90 s of thinking per answer,
+  this is a few requests per second.
+
+The messages stored use the same roles as the export format in
+[multi-session.md](multi-session.md) (`student`, `assistant`), but
+feedback and follow-up questions are **separate fields** (#37, #39).
+
+## Grading
+
+Students see the final grade, so the runtime does final grading:
+
+1. "Submit" calls `Transition(in_progress → submitted)` and returns at
+   once (#48). Replies with 409 if the session isn't in progress.
+1. The replica that handled the submit grades in the background, one
+   question at a time, and calls `SaveGrade`, then
+   `Transition(→ graded)`, or `grading_failed` after retries. A score
+   of 0 is never written on error.
+1. The results page polls with htmx until the session is `graded` or
+   `grading_failed`.
+
+**Recovery:** if a replica dies while grading, the session stays in
+`submitted`. Management finds sessions stuck longer than a timeout and
+calls the runtime's internal `POST /internal/sessions/{id}/grade`. The
+same endpoint is the teacher's "regrade" button. Recovery and regrade
+use the same claim flow, so a stale attempt that wakes up later cannot
+overwrite grades or complete the session. Management schedules
+retries, and the runtime only executes them, so the runtime stays
+stateless.
+
+## LLM gateway
+
+- The runtime calls one OpenAI-compatible URL (LiteLLM) and sends
+  `llm_model` from the SessionSpec. Switching providers or models
+  is a LiteLLM config change.
+- LiteLLM handles retries, `fallbacks` (#51) and
+  `max_parallel_requests` (#47). The runtime keeps only a **timeout per
+  call**, derived from the request context, so a stuck gateway can't
+  hang a request handler.
+- LiteLLM reports LLM latency, error and token metrics (#50).
+- Deployed as a Quadlet unit, **image pinned by digest**. The proxy
+  holds every provider key, and LiteLLM had a supply-chain incident in
+  2026.
+- No LiteLLM database at first. Virtual keys and per-student budgets
+  (useful for self-tests) need PostgreSQL and can share management's
+  instance later.
+
+## Runtime HTTP surface
+
+| Route | Who | Purpose |
+| ----- | --- | ------- |
+| `GET /exam/enter` | browser with entry token | Start or resume a session |
+| `GET /exam/{id}` | session cookie | Exam page |
+| `POST /exam/{id}/answer/{q}` | session cookie | Save the answer, then evaluate in the background (#49) |
+| `POST /exam/{id}/submit` | session cookie | Submit (#48) |
+| `GET /exam/{id}/results` | session cookie | Results, according to `score_visibility` |
+| `POST /internal/sessions/{id}/grade` | management (internal network, token) | Grade or regrade |
+| `GET /healthz`, `/readyz`, `/metrics` | internal | Ops (#50) |
+
+The answer and submit routes must validate a CSRF token (the current
+per-session scheme carries over) or the `Origin` header against the
+runtime's origin, and reject requests that fail. `HttpOnly` alone does
+not stop cross-site requests.
+
+To be removed from the runtime: `/login`, `/review/*`, `/teacher/*`,
+`/admin/*` and the question-loading code. They move to management.
+
+## Issue mapping
+
+| Issue | Component | Note |
+| ----- | --------- | ---- |
+| #37, #38, #39 | Runtime | Prompt and follow-up logic; carries over unchanged |
+| #40 | Runtime (transitional) | Needed for the transitional SQLite store |
+| #41 | — | Goes away with teacher pages |
+| #42, #43, #44 | Management | Question bank |
+| #45, #46 | Management | Choosing and pinning questions → SessionSpec |
+| #47 | Gateway + runtime | Retries and limits in LiteLLM; timeouts in runtime |
+| #48, #49 | Runtime + management | Background grading in runtime; recovery scheduled by management |
+| #50 | All three | Each reports its own metrics |
+| #51 | Gateway | LiteLLM fallbacks |
+| #52, #53 | Management | Review and export |
+| #54 | Both | Runtime: session token scope. Management: roles. |
+| #55, #56 | Management | PostgreSQL backup and restore |
+| #57 | All three | Server timeouts, graceful shutdown, network |
+| #58 | All three | Load test of the runtime pool, with fake and real LLM |
+| #59 | All three | Write after the behavior settles |
+
+## ТЗ acceptance criteria
+
+The criteria from ТЗ section 5, as listed in #60, and where each one is
+met after the split:
+
+| Criterion | Issues | Component |
+| --------- | ------ | --------- |
+| Question validation | #42, #43 | Management |
+| Access rights | #44, #54 | Management (roles); runtime (session token scope) |
+| Question count per difficulty | #45 | Management |
+| Pinned individual question set | #46 | Management pins it in the SessionSpec; runtime shows only those questions |
+| Teacher Review | #52 | Management |
+| LLM robustness under load | #37, #39, #40, #47, #48, #49 | Runtime and gateway |
+| Grade-sheet export | #53 | Management |
+| Backup and restore tested | #55, #56 | Management (PostgreSQL) |
+| Load test | #58 | All three |
+| Documentation | #59 | All three |
+| All P0 defects fixed | all P0 issues | All three |
+
+## Comparison with the plan in #60
+
+The students' plan improves the current monolith in five stages that
+follow the ТЗ stages. This design keeps their diagnosis and most of
+their task list, and changes where the work happens:
+
+| Topic | Plan in #60 | This design |
+| ----- | ----------- | ----------- |
+| First fixes | #40, #39, #37, #41 | Same core: #37, #39 first, #40 with the `SessionStore` step |
+| Architecture | One monolith, improved step by step | Runtime, management and gateway |
+| Questions and access (#42–#46, #54) | Stage 2, inside the exam app | Management track, nearly unchanged |
+| LLM robustness (#47, #51) | Retries, limits and failover in Go | LiteLLM config; runtime keeps timeouts |
+| Background grading (#48) | SQLite queue inside the app | Runtime grades; management schedules recovery |
+| Database | SQLite; PostgreSQL only if the load test fails | PostgreSQL for management from the start |
+| Load test, then #51 and docs | Last | Last |
+
+Their stage 2 becomes the management track and their stages 3–4 mostly
+become the runtime track, so the two tracks can be worked on in
+parallel by different people.
+
+## Migration plan
+
+Each step ships independently. The runtime runs with the SQLite store
+on a single replica until the management API is ready.
+
+### Shared start (runtime)
+
+1. **Prompts and follow-up limit** (#37, #39): store feedback and
+   follow-up separately; server-side follow-up limit; full answer
+   history in prompts.
+1. **Score visibility** (`score_visibility` as a config flag for now,
+   later a SessionSpec field): per-answer and final preliminary scores
+   for self-tests.
+1. **`SessionStore` interface and SessionSpec types** in
+   `internal/model`: move the exam handlers off `store.Store`; SQLite
+   implementation with the #40 fix. This is the contract both tracks
+   build against.
+
+### Runtime track (`cmd/examiner`)
+
+1. **LiteLLM** (#47, #51): Quadlet unit, model alias, per-call timeouts.
+1. **Non-blocking answers and background grading** (#48, #49) with
+   htmx polling; atomic status transitions.
+1. **Entry token**: `/exam/enter`; remove login, review, teacher and
+   admin routes once management serves them.
+
+### Management track (`cmd/grader`)
+
+1. **Move the store to PostgreSQL**, with migrations.
+1. **Question bank**: move the teacher and question pages from
+   `cmd/examiner`; validation and atomic import (#42), duplicate
+   protection (#43), ownership (#44).
+1. **Tests and sessions**: per-difficulty selection (#45), pinned sets
+   and retakes (#46), SessionSpec creation, entry tokens.
+1. **`SessionStore` HTTP API** and recovery of stuck grading (#48).
+1. **Review and export** (#52, #53) on top of the existing grader pages.
+1. **Backup and restore** for PostgreSQL (#55, #56).
+
+### Joining the tracks
+
+1. Runtime switches to the HTTP `SessionStore`; its SQLite store is
+   removed.
+1. Scale the runtime to N replicas; load test with a fake and a real
+   LLM (#58); trial run; docs (#59).
+
+## Open questions
+
+| Question | Options |
+| -------- | ------- |
+| Anonymous review (ТЗ п. 3.5, #52) vs. the teacher seeing the real name | Grade blind first, then show the name at the "finalize" step so the teacher can adjust for semester work. Needs agreement with the authors of the ТЗ. |
+| What happens to the runtime when management is down | Exams stop, since login is in management too. Accept for now, or add a short write-behind buffer in the runtime later. |
+| Self-tests without an account | The `student_ref` could be a throwaway ID; affects LiteLLM budgets |
+| Management's detailed design | Its own design doc: question bank, topics, test types, retakes, roles |
+
+## Decisions
+
+| Date | Decision | Rationale |
+| ---- | -------- | --------- |
+| 2026-10-03 | Split into stateless runtime, management and LLM gateway | Keeps the exam path small; scales by adding replicas; management features stop growing the exam code |
+| 2026-10-03 | Replica pool, not a container per session | Avoids per-session routing and auth handoff; the LLM, not Go, is the bottleneck |
+| 2026-10-03 | `cmd/examiner` becomes the runtime | It already holds the exam flow and the LLM code worth keeping |
+| 2026-10-03 | `cmd/grader` grows into management v1; both binaries stay in one repo | It already has login, users, review, scoring and reports; reusing it and the shared types lowers delivery risk |
+| 2026-10-03 | PostgreSQL for management from the start | No single-writer limit; other apps (reporting) will read the same database later, so start early rather than migrate later |
+| 2026-10-03 | LiteLLM as the gateway | Model aliases per test or student, retries and fallbacks as config; a common pattern, good for teaching |
+| 2026-10-03 | The runtime doesn't know real names | Only `student_ref`; management shows names to teachers |
+| 2026-10-03 | Runtime does final grading; visibility is configurable | Self-tests need instant results; required tests may show a preliminary grade |
+| 2026-10-03 | Podman only; no Kubernetes or OpenShift | Fits the university and cloud hosts available |

@@ -1,5 +1,10 @@
 # Multi-session exam deployment
 
+> **Superseded in part (2026-10-03):** the container-per-group
+> deployment is replaced by a stateless runtime pool; see
+> [runtime-design.md](runtime-design.md). The export format and the
+> self-assessment notes below still inform that design.
+
 This document describes the plan for running multiple concurrent
 exam sessions, each with its own container, and consolidating
 results into a separate grading application.
@@ -164,6 +169,10 @@ during the exam.
 
 ## Deployment workflow
 
+> **Historical:** superseded by the runtime pool in
+> [runtime-design.md](runtime-design.md). Do not follow this
+> procedure for new deployments.
+
 Containers are started one-by-one. The deploy script finds an
 available port for each instance.
 
@@ -215,6 +224,11 @@ Steps 1--4 are additive and preserve backward compatibility
 with `v0.1.0`. Step 5 is a cleanup. Step 6 is a new project.
 
 ## Future: Kubernetes migration
+
+> **Historical:** this per-group mapping is superseded. The runtime
+> is a stateless replica pool, so Kubernetes would run one Deployment
+> with N replicas, not one Deployment per group. See
+> [runtime-design.md](runtime-design.md).
 
 The container-per-group model maps directly to Kubernetes
 primitives:
