@@ -196,6 +196,31 @@ func TestLongAnswersAreCappedAndEarlyPartsShrinkFirst(t *testing.T) {
 	}
 }
 
+func TestManyLongPartsStayWithinDialogueLimit(t *testing.T) {
+	// 17 answers and 16 follow-ups, all at the per-part cap: with a fixed
+	// minimum kept per earlier part, the floor alone exceeded the limit.
+	q := model.Question{Text: "Q", MaxPoints: 1}
+	var msgs []model.Message
+	for i := 0; i < 16; i++ {
+		msgs = append(msgs,
+			model.Message{Role: model.RoleStudent, Content: strings.Repeat("Ж", prompts.MaxAnswerRunes)},
+			model.Message{Role: model.RoleLLM, Content: "f", Followup: strings.Repeat("Щ", prompts.MaxAnswerRunes)},
+		)
+	}
+	msgs = append(msgs, model.Message{Role: model.RoleStudent, Content: strings.Repeat("Ж", prompts.MaxAnswerRunes)})
+
+	prompt, err := prompts.BuildGradePrompt(prompts.PromptStandard, q, msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total := strings.Count(prompt, "Ж") + strings.Count(prompt, "Щ"); total > prompts.MaxDialogueRunes {
+		t.Errorf("dialogue text is %d runes, exceeds limit %d", total, prompts.MaxDialogueRunes)
+	}
+	if got := strings.Count(prompt, `<answer n="17">`); got != 1 {
+		t.Error("the latest answer must still be present")
+	}
+}
+
 func TestShortDialogueIsNotTruncated(t *testing.T) {
 	prompt, err := prompts.BuildGradePrompt(prompts.PromptStandard, trialQuestion, trialDialogue)
 	if err != nil {

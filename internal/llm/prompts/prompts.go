@@ -186,10 +186,6 @@ type dialoguePart struct {
 	truncated bool
 }
 
-// minPartRunes is how much of a part survives when the dialogue as a whole
-// is over MaxDialogueRunes.
-const minPartRunes = 200
-
 const truncatedMarker = "\n[truncated]"
 
 // buildDialogue renders the conversation for the model: every student answer
@@ -197,8 +193,10 @@ const truncatedMarker = "\n[truncated]"
 // followed it as <followup n="i">. The examiner's feedback is left out on
 // purpose: the model must grade the student's words, not its own earlier
 // remarks. Each part is capped at MaxAnswerRunes; if the whole is still over
-// MaxDialogueRunes, the earliest parts are shortened first, so the latest
-// answers are the ones that survive.
+// MaxDialogueRunes, the earliest parts are shortened first (down to nothing
+// if need be), so the latest answers are the ones that survive. The last part
+// is never shortened, and MaxAnswerRunes < MaxDialogueRunes, so the limit
+// always holds.
 func buildDialogue(messages []model.Message) string {
 	var parts []dialoguePart
 	answers := 0
@@ -220,7 +218,7 @@ func buildDialogue(messages []model.Message) string {
 		total += len(p.text)
 	}
 	for i := 0; i < len(parts)-1 && total > MaxDialogueRunes; i++ {
-		keep := max(minPartRunes, len(parts[i].text)-(total-MaxDialogueRunes))
+		keep := max(0, len(parts[i].text)-(total-MaxDialogueRunes))
 		if keep < len(parts[i].text) {
 			total -= len(parts[i].text) - keep
 			parts[i].text = parts[i].text[:keep]
