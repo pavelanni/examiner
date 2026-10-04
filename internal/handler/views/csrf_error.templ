@@ -6,7 +6,7 @@ templ CSRFErrorPage() {
 	@Layout(t(ctx, "AppTitle")) {
 		<article>
 			<header>{ t(ctx, "CSRFErrorTitle") }</header>
-			<p>{ t(ctx, "CSRFError") }</p>
+			<p>{ t(ctx, "CSRFPageError") }</p>
 			<a href={ templ.SafeURL(p(ctx, "/")) } role="button">{ t(ctx, "Home") }</a>
 		</article>
 	}

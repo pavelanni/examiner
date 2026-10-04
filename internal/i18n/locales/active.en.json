@@ -110,5 +110,6 @@
   {"id": "ResultsAwaitingReview", "other": "Results will appear here after a teacher reviews your answers."},
   {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"},
   {"id": "CSRFErrorTitle", "other": "Could not submit the form"},
-  {"id": "CSRFError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Press the button again; if it fails, reload the page."}
+  {"id": "CSRFError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Press the button again; if it fails, reload the page."},
+  {"id": "CSRFPageError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Go back, reload the page and try again."}
 ]

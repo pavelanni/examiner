@@ -55,7 +55,11 @@ func TestCSRFFailureIsVisible(t *testing.T) {
 				if rec.Code != http.StatusForbidden {
 					t.Fatalf("status %d, want 403", rec.Code)
 				}
-				want := i18n.T(i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("en")), "CSRFError")
+				key := "CSRFPageError"
+				if htmx {
+					key = "CSRFError"
+				}
+				want := i18n.T(i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("en")), key)
 				if !strings.Contains(rec.Body.String(), want) {
 					t.Errorf("body %q does not contain the user-facing message", rec.Body.String())
 				}
@@ -65,6 +69,16 @@ func TestCSRFFailureIsVisible(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestCSRFMissingCookieIssuesOne(t *testing.T) {
+	rec := csrfPost(t, "", "tok", true)
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == csrfCookieName && c.Value != "" {
+			return
+		}
+	}
+	t.Error("rejection without a CSRF cookie should set a fresh one so a retry can succeed")
 }
 
 func TestCSRFValidTokenPasses(t *testing.T) {

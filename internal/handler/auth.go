@@ -29,31 +29,39 @@ func generateCSRFToken() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
+// issueCSRFCookie generates a CSRF token and sets it as a cookie on w.
+func (h *Handler) issueCSRFCookie(w http.ResponseWriter) (string, error) {
+	token, err := generateCSRFToken()
+	if err != nil {
+		return "", err
+	}
+	cookiePath := "/"
+	if h.config.BasePath != "" {
+		cookiePath = h.config.BasePath + "/"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     cookiePath,
+		HttpOnly: false,
+		Secure:   h.config.SecureCookies,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return token, nil
+}
+
 func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookiePath := "/"
-		if h.config.BasePath != "" {
-			cookiePath = h.config.BasePath + "/"
-		}
-
 		if r.Method == "GET" || r.Method == "HEAD" {
 			// Reuse existing CSRF token if present; generate only on first visit.
 			cookie, err := r.Cookie(csrfCookieName)
 			if err != nil || cookie.Value == "" {
-				token, err := generateCSRFToken()
+				token, err := h.issueCSRFCookie(w)
 				if err != nil {
 					slog.Error("failed to generate CSRF token", "error", err)
 					http.Error(w, "internal error", http.StatusInternalServerError)
 					return
 				}
-				http.SetCookie(w, &http.Cookie{
-					Name:     csrfCookieName,
-					Value:    token,
-					Path:     cookiePath,
-					HttpOnly: false,
-					Secure:   h.config.SecureCookies,
-					SameSite: http.SameSiteLaxMode,
-				})
 				ctx := model.ContextWithCSRFToken(r.Context(), token)
 				next.ServeHTTP(w, r.WithContext(ctx))
 			} else {
@@ -66,6 +74,10 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(csrfCookieName)
 		if err != nil || cookie.Value == "" {
 			slog.Warn("CSRF cookie missing")
+			// Give the browser a cookie so an in-place htmx retry can succeed.
+			if _, err := h.issueCSRFCookie(w); err != nil {
+				slog.Error("failed to generate CSRF token", "error", err)
+			}
 			h.csrfFailure(w, r)
 			return
 		}
