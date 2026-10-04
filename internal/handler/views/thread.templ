@@ -39,6 +39,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 				hx-post={ p(ctx, fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID)) }
 				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
 				hx-swap="innerHTML"
+				hx-disabled-elt="find .answer-input, find .answer-submit"
 			>
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<textarea

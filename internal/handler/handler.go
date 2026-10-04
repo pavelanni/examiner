@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,16 +21,28 @@ import (
 	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
+// Evaluator is the part of the LLM client the exam handlers depend on.
+// *llm.Client implements it; tests use a fake.
+type Evaluator interface {
+	EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*llm.GradeResult, string, error)
+	GradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64) (*llm.GradeResult, error)
+}
+
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
 	store          *store.Store
-	llm            *llm.Client
+	llm            Evaluator
 	config         model.ExamConfig
 	questionSchema *jsonschema.Schema
+
+	// threadLocks holds one *sync.Mutex per thread ID so that only one answer
+	// per thread is processed at a time. In-process only: it is enough while
+	// the runtime is a single replica; the SessionStore transition replaces it.
+	threadLocks sync.Map
 }
 
 // New creates a new Handler.
-func New(s *store.Store, l *llm.Client, cfg model.ExamConfig) (*Handler, error) {
+func New(s *store.Store, l Evaluator, cfg model.ExamConfig) (*Handler, error) {
 	schema, err := compileQuestionSchema()
 	if err != nil {
 		return nil, fmt.Errorf("compile question schema: %w", err)
@@ -310,6 +324,16 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// One answer per thread at a time: a double click or a second tab gets
+	// 409 instead of racing the first request past the follow-up limit.
+	lock, _ := h.threadLocks.LoadOrStore(threadID, &sync.Mutex{})
+	mu := lock.(*sync.Mutex)
+	if !mu.TryLock() {
+		http.Error(w, "an answer to this question is already being evaluated", http.StatusConflict)
+		return
+	}
+	defer mu.Unlock()
+
 	thread, err := h.store.GetThread(threadID)
 	if err != nil {
 		slog.Error("failed to get thread", "thread_id", threadID, "error", err)
@@ -319,6 +343,11 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	if thread.SessionID != sessionID {
 		http.Error(w, "thread does not belong to session", http.StatusForbidden)
+		return
+	}
+
+	if thread.Status == model.ThreadCompleted {
+		http.Error(w, "this question is already completed", http.StatusConflict)
 		return
 	}
 
@@ -351,6 +380,21 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		slog.Error("LLM evaluation failed", "error", err)
 		http.Error(w, "LLM evaluation failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// The limit lives in the prompt only as a request; enforce it here.
+	if result.NeedFollowup && strings.TrimSpace(result.FollowupQ) == "" {
+		result.NeedFollowup = false
+	}
+	if result.NeedFollowup && thread.FollowupCount >= bp.MaxFollowups {
+		slog.Warn("LLM requested follow-up beyond limit",
+			"session_id", sessionID,
+			"thread_id", threadID,
+			"followup_count", thread.FollowupCount,
+			"max_followups", bp.MaxFollowups,
+		)
+		result.NeedFollowup = false
+		result.FollowupQ = ""
 	}
 
 	llmMsg := model.Message{
