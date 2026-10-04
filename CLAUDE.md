@@ -102,6 +102,21 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 - **Decisions and rationale:** Hindsight memory. Record architecture
   decisions there (and as ADRs in `docs/`), not in issues.
 
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (`gh` CLI). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`,
+`ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
 ## Tech notes
 
 - Go 1.25, pure Go SQLite (modernc.org, no CGO)
