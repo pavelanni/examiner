@@ -282,6 +282,7 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 		SessionView:   *view,
 		TimeRemaining: timeRemaining,
 		TimeExceeded:  timeRemaining == 0,
+		ShowLiveScore: h.config.ScoreVisibility.ShowLiveScore(),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -421,6 +422,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		ThreadID: threadID,
 		Role:     model.RoleLLM,
 		Content:  result.Feedback,
+		Score:    &result.Score,
 	}
 	if result.NeedFollowup {
 		llmMsg.Followup = result.FollowupQ
@@ -466,7 +468,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	timeExceeded := calculateTimeRemaining(sess, bp) == 0
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded).Render(r.Context(), w); err != nil {
+	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded, h.config.ScoreVisibility.ShowLiveScore()).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -599,7 +601,7 @@ func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ResultsPage(*view).Render(r.Context(), w); err != nil {
+	if err := views.ResultsPage(*view, h.config.ScoreVisibility.ResultsPolicy(view.Session.Status)).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

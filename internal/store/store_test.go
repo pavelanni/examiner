@@ -728,3 +728,32 @@ func TestConcurrentAddMessage(t *testing.T) {
 		t.Errorf("followup_count = %d, want %d", thread.FollowupCount, writers)
 	}
 }
+
+func TestMessageScoreRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	q := insertTestQuestion(t, s, "Q1", "easy", "t")
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q})
+	threads, _ := s.GetThreadsForSession(sessID)
+	tid := threads[0].ID
+
+	score := 7.5
+	for _, m := range []model.Message{
+		{ThreadID: tid, Role: model.RoleStudent, Content: "answer"},
+		{ThreadID: tid, Role: model.RoleLLM, Content: "feedback", Score: &score},
+	} {
+		if _, err := s.AddMessage(m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	msgs, err := s.GetMessages(tid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if msgs[0].Score != nil {
+		t.Errorf("student message score = %v, want nil", *msgs[0].Score)
+	}
+	if msgs[1].Score == nil || *msgs[1].Score != 7.5 {
+		t.Errorf("LLM message score = %v, want 7.5", msgs[1].Score)
+	}
+}

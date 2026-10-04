@@ -167,6 +167,9 @@ type Message struct {
 	Followup   string    `json:"followup,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	TokenCount int       `json:"token_count"`
+	// Score is the LLM's score for the answer this message evaluates. It is
+	// display-only (see ScoreVisibility); the final score comes from grading.
+	Score *float64 `json:"score,omitempty"`
 }
 
 // FollowupMarker joins feedback and follow-up in the combined display form,
@@ -212,6 +215,8 @@ type ExamConfig struct {
 	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
 	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
 	PromptVariant string // Grading prompt variant (strict, standard, lenient)
+
+	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
 }
 
 // QuestionImport is used for loading questions from JSON.
@@ -245,4 +250,6 @@ type ExamPageView struct {
 	SessionView
 	TimeRemaining time.Duration
 	TimeExceeded  bool
+	// ShowLiveScore shows each LLM reply's score during the exam.
+	ShowLiveScore bool
 }

@@ -112,6 +112,8 @@ func newAnswerEnv(t *testing.T, maxFollowups int, ev Evaluator) *answerEnv {
 		})
 	})
 	r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
+	r.Get("/exam/{sessionID}", h.handleExamPage)
+	r.Get("/results/{sessionID}", h.handleStudentResults)
 
 	return &answerEnv{h: h, store: s, router: r, sessID: sessID, threadID: threads[0].ID}
 }

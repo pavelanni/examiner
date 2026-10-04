@@ -77,6 +77,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	f.String("log-level", "info", "Log level (debug, info, warn, error)")
@@ -191,6 +192,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
+	scoreVisibility, err := model.ParseScoreVisibility(strings.ToLower(strings.TrimSpace(v.GetString("score-visibility"))))
+	if err != nil {
+		return fmt.Errorf("score-visibility: %w", err)
+	}
+
 	// Initialize i18n.
 	lang := v.GetString("lang")
 	if err := appI18n.Init(lang); err != nil {
@@ -232,6 +238,8 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		BasePath:      basePath,
 		SecureCookies: v.GetBool("secure-cookies"),
 		PromptVariant: promptVariant,
+
+		ScoreVisibility: scoreVisibility,
 	}
 
 	h, err := handler.New(db, llmClient, examCfg)
@@ -267,6 +275,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"difficulty", examCfg.Difficulty,
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,
+		"score_visibility", string(examCfg.ScoreVisibility),
 		"shuffle", examCfg.Shuffle,
 		"base_path", basePath,
 	)

@@ -75,6 +75,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
+| `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
 | `--shuffle` | | `false` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
