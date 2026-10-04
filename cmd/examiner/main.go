@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -346,25 +345,27 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}
 
+	data = append(data, '\n') // trailing newline
+
 	outPath := v.GetString("output")
-	var w io.Writer
 	if outPath == "" || outPath == "-" {
-		w = os.Stdout
-	} else {
-		f, err := os.Create(outPath)
-		if err != nil {
-			return fmt.Errorf("create output file: %w", err)
+		if _, err := os.Stdout.Write(data); err != nil {
+			return fmt.Errorf("write output: %w", err)
 		}
-		defer func() { _ = f.Close() }()
-		w = f
+		return nil
 	}
 
-	_, err = w.Write(data)
+	f, err := os.Create(outPath)
 	if err != nil {
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer func() { _ = f.Close() }() // safety net for early returns; checked below
+	if _, err := f.Write(data); err != nil {
 		return fmt.Errorf("write output: %w", err)
 	}
-	// Ensure trailing newline.
-	_, _ = fmt.Fprintln(w)
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("close output file: %w", err)
+	}
 
 	return nil
 }
@@ -598,6 +599,9 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	}
 	if err := credsFile.Close(); err != nil {
 		return fmt.Errorf("close credentials file: %w", err)
+	}
+	if err := db.Close(); err != nil {
+		return fmt.Errorf("close database: %w", err)
 	}
 
 	slog.Info("exam prepared",
