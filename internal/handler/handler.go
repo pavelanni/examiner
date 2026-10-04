@@ -35,10 +35,12 @@ type Handler struct {
 	config         model.ExamConfig
 	questionSchema *jsonschema.Schema
 
-	// threadLocks holds one *sync.Mutex per thread ID so that only one answer
-	// per thread is processed at a time. In-process only: it is enough while
-	// the runtime is a single replica; the SessionStore transition replaces it.
-	threadLocks sync.Map
+	// inFlight is the set of thread IDs with an answer being processed, so
+	// only one answer per thread runs at a time. Entries are removed when the
+	// request ends. In-process only: enough for a single replica; the
+	// SessionStore transition replaces it.
+	inFlightMu sync.Mutex
+	inFlight   map[int64]struct{}
 }
 
 // New creates a new Handler.
@@ -288,6 +290,26 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// beginAnswer marks the thread as busy; it returns false if it already is.
+func (h *Handler) beginAnswer(threadID int64) bool {
+	h.inFlightMu.Lock()
+	defer h.inFlightMu.Unlock()
+	if _, busy := h.inFlight[threadID]; busy {
+		return false
+	}
+	if h.inFlight == nil {
+		h.inFlight = make(map[int64]struct{})
+	}
+	h.inFlight[threadID] = struct{}{}
+	return true
+}
+
+func (h *Handler) endAnswer(threadID int64) {
+	h.inFlightMu.Lock()
+	defer h.inFlightMu.Unlock()
+	delete(h.inFlight, threadID)
+}
+
 func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
 	threadID, _ := strconv.ParseInt(chi.URLParam(r, "threadID"), 10, 64)
@@ -326,13 +348,11 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	// One answer per thread at a time: a double click or a second tab gets
 	// 409 instead of racing the first request past the follow-up limit.
-	lock, _ := h.threadLocks.LoadOrStore(threadID, &sync.Mutex{})
-	mu := lock.(*sync.Mutex)
-	if !mu.TryLock() {
+	if !h.beginAnswer(threadID) {
 		http.Error(w, "an answer to this question is already being evaluated", http.StatusConflict)
 		return
 	}
-	defer mu.Unlock()
+	defer h.endAnswer(threadID)
 
 	thread, err := h.store.GetThread(threadID)
 	if err != nil {

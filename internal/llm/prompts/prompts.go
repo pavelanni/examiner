@@ -206,13 +206,13 @@ func buildDialogue(messages []model.Message) string {
 		switch {
 		case m.Role == model.RoleStudent:
 			answers++
-			parts = append(parts, newPart("answer", answers, m.Content, true))
+			parts = append(parts, newAnswer(answers, m.Content))
 		case m.Role == model.RoleLLM && m.Followup != "":
-			parts = append(parts, newPart("followup", answers, m.Followup, false))
+			parts = append(parts, newFollowup(answers, m.Followup))
 		}
 	}
 	if len(parts) == 0 {
-		parts = append(parts, newPart("answer", 1, "", true))
+		parts = append(parts, newAnswer(1, ""))
 	}
 
 	total := 0
@@ -240,6 +240,12 @@ func buildDialogue(messages []model.Message) string {
 	sb.WriteString("</dialogue>")
 	return sb.String()
 }
+
+// newAnswer builds a student answer part; an empty answer becomes a placeholder.
+func newAnswer(n int, text string) dialoguePart { return newPart("answer", n, text, true) }
+
+// newFollowup builds the examiner's follow-up question that came after answer n.
+func newFollowup(n int, text string) dialoguePart { return newPart("followup", n, text, false) }
 
 func newPart(tag string, n int, text string, placeholder bool) dialoguePart {
 	text = strings.TrimSpace(reservedTagRegex.ReplaceAllString(text, ""))

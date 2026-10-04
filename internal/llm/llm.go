@@ -72,6 +72,14 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
+// appendTrigger adds the single user message that follows the system prompt.
+func appendTrigger(msgs []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+	return append(msgs, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: dialogueTrigger,
+	})
+}
+
 // EvaluateAnswer sends the dialogue so far (all student answers and the
 // follow-up questions, built into the prompt) to the LLM for evaluation.
 // It returns the LLM's response which may include a follow-up question.
@@ -85,10 +93,7 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 	}
 
-	chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: dialogueTrigger,
-	})
+	chatMsgs = appendTrigger(chatMsgs)
 
 	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:    c.model,
@@ -140,10 +145,7 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 	}
 
-	chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
-		Role:    openai.ChatMessageRoleUser,
-		Content: dialogueTrigger,
-	})
+	chatMsgs = appendTrigger(chatMsgs)
 
 	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:    c.model,
