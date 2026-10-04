@@ -42,7 +42,7 @@ func (s *Store) ExportAllSessions() ([]model.StudentResult, error) {
 			for _, m := range tv.Messages {
 				conv = append(conv, model.ConversationMsg{
 					Role:    string(m.Role),
-					Content: m.Content,
+					Content: m.Text(),
 					At:      m.CreatedAt,
 				})
 			}

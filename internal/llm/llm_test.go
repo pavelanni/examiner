@@ -29,16 +29,16 @@ func TestCountFollowups(t *testing.T) {
 			{Role: model.RoleStudent, Content: "answer"},
 			{Role: model.RoleStudent, Content: "more"},
 		}, 0},
-		{"all LLM", []model.Message{
-			{Role: model.RoleLLM, Content: "q1"},
-			{Role: model.RoleLLM, Content: "q2"},
+		{"all LLM with follow-ups", []model.Message{
+			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
+			{Role: model.RoleLLM, Content: "f2", Followup: "q2"},
 		}, 2},
-		{"mixed", []model.Message{
+		{"feedback without follow-up is not counted", []model.Message{
 			{Role: model.RoleStudent, Content: "a1"},
-			{Role: model.RoleLLM, Content: "q1"},
+			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
 			{Role: model.RoleStudent, Content: "a2"},
-			{Role: model.RoleLLM, Content: "q2"},
-		}, 2},
+			{Role: model.RoleLLM, Content: "final feedback"},
+		}, 1},
 	}
 
 	for _, tt := range tests {
@@ -86,11 +86,11 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 	t.Run("cannot followup", func(t *testing.T) {
 		messages := []model.Message{
 			{Role: model.RoleStudent, Content: "a1"},
-			{Role: model.RoleLLM, Content: "q1"},
+			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
 			{Role: model.RoleStudent, Content: "a2"},
-			{Role: model.RoleLLM, Content: "q2"},
+			{Role: model.RoleLLM, Content: "f2", Followup: "q2"},
 			{Role: model.RoleStudent, Content: "a3"},
-			{Role: model.RoleLLM, Content: "q3"},
+			{Role: model.RoleLLM, Content: "f3", Followup: "q3"},
 		}
 		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, messages, 3)
 		if err != nil {
@@ -131,7 +131,7 @@ func TestBuildGradingSystemPrompt(t *testing.T) {
 
 	messages := []model.Message{
 		{Role: model.RoleStudent, Content: "answer"},
-		{Role: model.RoleLLM, Content: "followup"},
+		{Role: model.RoleLLM, Content: "feedback", Followup: "followup"},
 		{Role: model.RoleStudent, Content: "response"},
 	}
 

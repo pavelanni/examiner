@@ -14,6 +14,11 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
+// dialogueTrigger is the only user message sent with a prompt. The dialogue
+// itself is part of the system prompt; sending it again as chat history
+// would show the model every answer twice.
+const dialogueTrigger = "Evaluate the dialogue in the instructions above and respond with the JSON object only."
+
 const (
 	maxFeedbackLen = 5000
 	maxFollowupLen = 5000
@@ -67,8 +72,17 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// EvaluateAnswer sends the student's answer (and any prior conversation) to the LLM
-// for evaluation. It returns the LLM's response which may include a follow-up question.
+// appendTrigger adds the single user message that follows the system prompt.
+func appendTrigger(msgs []openai.ChatCompletionMessage) []openai.ChatCompletionMessage {
+	return append(msgs, openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleUser,
+		Content: dialogueTrigger,
+	})
+}
+
+// EvaluateAnswer sends the dialogue so far (all student answers and the
+// follow-up questions, built into the prompt) to the LLM for evaluation.
+// It returns the LLM's response which may include a follow-up question.
 func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*GradeResult, string, error) {
 	systemPrompt, err := prompts.BuildEvalPrompt(c.promptVariant, question, messages, maxFollowups)
 	if err != nil {
@@ -79,16 +93,7 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 	}
 
-	for _, m := range messages {
-		role := openai.ChatMessageRoleUser
-		if m.Role == model.RoleLLM {
-			role = openai.ChatMessageRoleAssistant
-		}
-		chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
-			Role:    role,
-			Content: m.Content,
-		})
-	}
+	chatMsgs = appendTrigger(chatMsgs)
 
 	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:    c.model,
@@ -140,16 +145,7 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 		{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 	}
 
-	for _, m := range messages {
-		role := openai.ChatMessageRoleUser
-		if m.Role == model.RoleLLM {
-			role = openai.ChatMessageRoleAssistant
-		}
-		chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
-			Role:    role,
-			Content: m.Content,
-		})
-	}
+	chatMsgs = appendTrigger(chatMsgs)
 
 	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model:    c.model,

@@ -119,8 +119,8 @@ SQLite with WAL mode. Schema is auto-migrated on startup.
 | `questions` | Question bank | `text`, `difficulty`, `topic`, `rubric`, `model_answer`, `max_points` |
 | `exam_blueprints` | Exam configuration | `name`, `time_limit`, `max_followups` |
 | `exam_sessions` | One per exam attempt | `blueprint_id`, `status`, `started_at`, `submitted_at` |
-| `question_threads` | One per question per session | `session_id`, `question_id`, `status` |
-| `messages` | Conversation messages | `thread_id`, `role`, `content`, `created_at` |
+| `question_threads` | One per question per session | `session_id`, `question_id`, `status`, `followup_count` |
+| `messages` | Conversation messages | `thread_id`, `role`, `content` (feedback), `followup`, `created_at` |
 | `question_scores` | Per-question scores | `thread_id`, `llm_score`, `llm_feedback`, `teacher_score` |
 | `grades` | Per-session grades | `session_id`, `llm_grade`, `final_grade` |
 
@@ -151,6 +151,19 @@ to talk to any OpenAI-compatible endpoint.
    Reviews the full conversation and produces a final score.
    Temperature: 0.1 (more deterministic for grading).
 
+### Dialogue in the prompt
+
+Both calls get the whole thread in the system prompt, once, as a
+`<dialogue>` block: every student answer as `<answer n="i">`, and the
+examiner's follow-up question after it as `<followup n="i">`. The LLM's
+own feedback is not included, so it grades the student's words, not its
+earlier remarks. The prompts tell the model the answers are cumulative:
+an item named in any answer counts as named. The only chat message sent
+besides the system prompt is a short trigger. Each answer is capped at
+4000 characters; if the dialogue is still over 10000, the earliest parts
+are shortened first (`prompts.buildDialogue`). Student text has the
+prompt's structural tags stripped.
+
 ### Follow-up logic
 
 The blueprint's `max_followups` field controls how many follow-up
@@ -161,6 +174,14 @@ based on whether follow-ups remain:
   is incomplete or ambiguous
 - If at the limit: prompt explicitly instructs the LLM
   not to ask further questions
+
+The prompt is only a request. `handleAnswer` enforces the limit on the
+server: if the thread's `followup_count` has reached `max_followups`,
+the follow-up is dropped, a warning is logged and the thread is
+completed. The limit is per question (thread), and `0` means no
+follow-ups at all. Answers to a completed thread get HTTP 409, and
+only one answer per thread is processed at a time (a concurrent one
+also gets 409).
 
 ## Templating with Templ
 

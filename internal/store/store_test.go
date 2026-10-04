@@ -606,3 +606,73 @@ func TestListDistinctTopics(t *testing.T) {
 		t.Errorf("expected [advanced basics concurrency], got %v", topics)
 	}
 }
+
+func TestFollowupStoredSeparately(t *testing.T) {
+	s := newTestStore(t)
+
+	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	q := insertTestQuestion(t, s, "Q1", "easy", "t")
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q})
+	threads, _ := s.GetThreadsForSession(sessID)
+	threadID := threads[0].ID
+
+	for _, msg := range []model.Message{
+		{ThreadID: threadID, Role: model.RoleStudent, Content: "answer"},
+		{ThreadID: threadID, Role: model.RoleLLM, Content: "feedback 1", Followup: "question 1?"},
+		{ThreadID: threadID, Role: model.RoleStudent, Content: "answer 2"},
+		{ThreadID: threadID, Role: model.RoleLLM, Content: "final feedback"},
+	} {
+		if _, err := s.AddMessage(msg); err != nil {
+			t.Fatalf("AddMessage: %v", err)
+		}
+	}
+
+	msgs, err := s.GetMessages(threadID)
+	if err != nil {
+		t.Fatalf("GetMessages: %v", err)
+	}
+	if msgs[1].Content != "feedback 1" || msgs[1].Followup != "question 1?" {
+		t.Errorf("feedback/followup not stored separately: %+v", msgs[1])
+	}
+	if msgs[3].Followup != "" {
+		t.Errorf("final message should have no followup, got %q", msgs[3].Followup)
+	}
+
+	thread, err := s.GetThread(threadID)
+	if err != nil {
+		t.Fatalf("GetThread: %v", err)
+	}
+	if thread.FollowupCount != 1 {
+		t.Errorf("FollowupCount = %d, want 1 (only messages with a follow-up count)", thread.FollowupCount)
+	}
+}
+
+func TestMigrateSplitsLegacyFollowup(t *testing.T) {
+	s := newTestStore(t)
+
+	bpID, _ := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	q := insertTestQuestion(t, s, "Q1", "easy", "t")
+	sessID, _ := s.CreateSession(bpID, 1, []int64{q})
+	threads, _ := s.GetThreadsForSession(sessID)
+	threadID := threads[0].ID
+
+	// Legacy row: feedback and follow-up merged into one string, no counter.
+	if _, err := s.db.Exec(
+		`INSERT INTO messages (thread_id, role, content, created_at) VALUES (?, 'assistant', ?, CURRENT_TIMESTAMP)`,
+		threadID, "old feedback\n\n**Follow-up question:** old question?",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.migrate(); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	msgs, _ := s.GetMessages(threadID)
+	if msgs[0].Content != "old feedback" || msgs[0].Followup != "old question?" {
+		t.Errorf("legacy row not split: %+v", msgs[0])
+	}
+	thread, _ := s.GetThread(threadID)
+	if thread.FollowupCount != 1 {
+		t.Errorf("FollowupCount = %d, want 1 after backfill", thread.FollowupCount)
+	}
+}

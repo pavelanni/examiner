@@ -72,7 +72,7 @@ func serveCmd() *cobra.Command {
 	f.IntP("num-questions", "n", 0, "Number of questions per exam (0 = all available)")
 	f.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
 	f.StringP("topic", "t", "", "Filter questions by topic")
-	f.Int("max-followups", 3, "Maximum follow-up questions per answer")
+	f.Int("max-followups", 3, "Maximum follow-up questions per question (enforced by the server)")
 	f.Int("time-limit", 0, "Exam time limit in minutes (0 = no limit)")
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")

@@ -74,7 +74,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--num-questions` | `-n` | `0` (all) | Number of questions per exam |
 | `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
-| `--max-followups` | | `3` | Max follow-up questions per answer |
+| `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--shuffle` | | `false` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |

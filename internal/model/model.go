@@ -152,16 +152,34 @@ type QuestionThread struct {
 	SessionID  int64        `json:"session_id"`
 	QuestionID int64        `json:"question_id"`
 	Status     ThreadStatus `json:"status"`
+	// FollowupCount is the number of follow-up questions asked in this thread.
+	FollowupCount int `json:"followup_count"`
 }
 
 // Message represents a chat message in a question thread.
 type Message struct {
-	ID         int64     `json:"id"`
-	ThreadID   int64     `json:"thread_id"`
-	Role       Role      `json:"role"`
-	Content    string    `json:"content"`
+	ID       int64 `json:"id"`
+	ThreadID int64 `json:"thread_id"`
+	Role     Role  `json:"role"`
+	// Content is the message text. For LLM messages it is the feedback only.
+	Content string `json:"content"`
+	// Followup is the follow-up question attached to an LLM message, if any.
+	Followup   string    `json:"followup,omitempty"`
 	CreatedAt  time.Time `json:"created_at"`
 	TokenCount int       `json:"token_count"`
+}
+
+// FollowupMarker joins feedback and follow-up in the combined display form,
+// which is also how follow-ups were stored before they got their own column.
+const FollowupMarker = "\n\n**Follow-up question:** "
+
+// Text returns the message as shown to users and exported: the content
+// followed by the follow-up question, if there is one.
+func (m Message) Text() string {
+	if m.Followup == "" {
+		return m.Content
+	}
+	return m.Content + FollowupMarker + m.Followup
 }
 
 // QuestionScore holds the score for a question thread.
