@@ -151,6 +151,20 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Store LLM feedback and follow-up question separately, and count
+	// follow-ups per thread (no-ops if the columns already exist).
+	_, err = s.db.Exec(`ALTER TABLE messages ADD COLUMN followup TEXT NOT NULL DEFAULT ''`)
+	if err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	_, err = s.db.Exec(`ALTER TABLE question_threads ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0`)
+	if err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	if err := s.splitLegacyFollowups(); err != nil {
+		return err
+	}
+
 	// Ensure non-empty external_id values are unique.
 	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_external_id_nonempty ON users(external_id) WHERE external_id != ''`)
 	if err != nil {
@@ -450,7 +464,7 @@ func (s *Store) UpdateSessionStatus(id int64, status model.SessionStatus) error 
 // GetThreadsForSession returns all threads for a session.
 func (s *Store) GetThreadsForSession(sessionID int64) ([]model.QuestionThread, error) {
 	rows, err := s.db.Query(
-		`SELECT id, session_id, question_id, status FROM question_threads WHERE session_id = ? ORDER BY id`, sessionID,
+		`SELECT id, session_id, question_id, status, followup_count FROM question_threads WHERE session_id = ? ORDER BY id`, sessionID,
 	)
 	if err != nil {
 		return nil, err
@@ -459,7 +473,7 @@ func (s *Store) GetThreadsForSession(sessionID int64) ([]model.QuestionThread, e
 	var threads []model.QuestionThread
 	for rows.Next() {
 		var t model.QuestionThread
-		if err := rows.Scan(&t.ID, &t.SessionID, &t.QuestionID, &t.Status); err != nil {
+		if err := rows.Scan(&t.ID, &t.SessionID, &t.QuestionID, &t.Status, &t.FollowupCount); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)
@@ -471,8 +485,8 @@ func (s *Store) GetThreadsForSession(sessionID int64) ([]model.QuestionThread, e
 func (s *Store) GetThread(id int64) (model.QuestionThread, error) {
 	var t model.QuestionThread
 	err := s.db.QueryRow(
-		`SELECT id, session_id, question_id, status FROM question_threads WHERE id = ?`, id,
-	).Scan(&t.ID, &t.SessionID, &t.QuestionID, &t.Status)
+		`SELECT id, session_id, question_id, status, followup_count FROM question_threads WHERE id = ?`, id,
+	).Scan(&t.ID, &t.SessionID, &t.QuestionID, &t.Status, &t.FollowupCount)
 	return t, err
 }
 
@@ -482,11 +496,19 @@ func (s *Store) UpdateThreadStatus(id int64, status model.ThreadStatus) error {
 	return err
 }
 
-// AddMessage inserts a message into a thread.
+// AddMessage inserts a message into a thread. A message that carries a
+// follow-up question also increments the thread's followup_count, in the
+// same transaction.
 func (s *Store) AddMessage(msg model.Message) (int64, error) {
-	res, err := s.db.Exec(
-		`INSERT INTO messages (thread_id, role, content, created_at, token_count) VALUES (?, ?, ?, ?, ?)`,
-		msg.ThreadID, msg.Role, msg.Content, time.Now(), msg.TokenCount,
+	tx, err := s.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	res, err := tx.Exec(
+		`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count) VALUES (?, ?, ?, ?, ?, ?)`,
+		msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount,
 	)
 	if err != nil {
 		slog.Error("failed to add message", "thread_id", msg.ThreadID, "role", msg.Role, "error", err)
@@ -496,14 +518,42 @@ func (s *Store) AddMessage(msg model.Message) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
+	if msg.Followup != "" {
+		if _, err := tx.Exec(`UPDATE question_threads SET followup_count = followup_count + 1 WHERE id = ?`, msg.ThreadID); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
 	slog.Debug("added message", "id", id, "thread_id", msg.ThreadID, "role", msg.Role)
 	return id, nil
+}
+
+// splitLegacyFollowups moves follow-up questions that were stored appended to
+// the feedback ("feedback\n\n**Follow-up question:** text") into the followup
+// column, then recomputes every thread's followup_count. Safe to run on every
+// start: once split, rows no longer contain the marker.
+func (s *Store) splitLegacyFollowups() error {
+	_, err := s.db.Exec(`
+		UPDATE messages SET
+			followup = substr(content, instr(content, ?) + length(?)),
+			content  = substr(content, 1, instr(content, ?) - 1)
+		WHERE role = 'assistant' AND followup = '' AND instr(content, ?) > 0`,
+		model.FollowupMarker, model.FollowupMarker, model.FollowupMarker, model.FollowupMarker)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`
+		UPDATE question_threads SET followup_count =
+			(SELECT COUNT(*) FROM messages WHERE messages.thread_id = question_threads.id AND messages.followup != '')`)
+	return err
 }
 
 // GetMessages returns all messages for a thread.
 func (s *Store) GetMessages(threadID int64) ([]model.Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, created_at, token_count FROM messages WHERE thread_id = ? ORDER BY id`, threadID,
+		`SELECT id, thread_id, role, content, followup, created_at, token_count FROM messages WHERE thread_id = ? ORDER BY id`, threadID,
 	)
 	if err != nil {
 		return nil, err
@@ -512,7 +562,7 @@ func (s *Store) GetMessages(threadID int64) ([]model.Message, error) {
 	var messages []model.Message
 	for rows.Next() {
 		var m model.Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.CreatedAt, &m.TokenCount); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Followup, &m.CreatedAt, &m.TokenCount); err != nil {
 			return nil, err
 		}
 		messages = append(messages, m)

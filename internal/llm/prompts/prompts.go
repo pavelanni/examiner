@@ -180,7 +180,7 @@ func extractStudentAnswer(messages []model.Message) string {
 	var lastStudent string
 	for _, m := range messages {
 		if m.Role == model.RoleStudent {
-			lastStudent = m.Content
+			lastStudent = m.Text()
 		}
 	}
 	return lastStudent
@@ -193,7 +193,7 @@ func extractConversation(messages []model.Message) string {
 		if m.Role == model.RoleLLM {
 			role = "Assistant"
 		}
-		sb.WriteString(role + ": " + m.Content + "\n\n")
+		sb.WriteString(role + ": " + m.Text() + "\n\n")
 	}
 	return sb.String()
 }

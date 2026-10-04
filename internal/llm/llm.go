@@ -86,7 +86,7 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		}
 		chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
 			Role:    role,
-			Content: m.Content,
+			Content: m.Text(),
 		})
 	}
 
@@ -147,7 +147,7 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 		}
 		chatMsgs = append(chatMsgs, openai.ChatCompletionMessage{
 			Role:    role,
-			Content: m.Content,
+			Content: m.Text(),
 		})
 	}
 

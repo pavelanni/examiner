@@ -353,16 +353,16 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	llmText := result.Feedback
-	if result.NeedFollowup && result.FollowupQ != "" {
-		llmText += "\n\n**Follow-up question:** " + result.FollowupQ
-	}
-
-	_, err = h.store.AddMessage(model.Message{
+	llmMsg := model.Message{
 		ThreadID: threadID,
 		Role:     model.RoleLLM,
-		Content:  llmText,
-	})
+		Content:  result.Feedback,
+	}
+	if result.NeedFollowup {
+		llmMsg.Followup = result.FollowupQ
+	}
+
+	_, err = h.store.AddMessage(llmMsg)
 	if err != nil {
 		slog.Error("failed to add LLM message", "thread_id", threadID, "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
