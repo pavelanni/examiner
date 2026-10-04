@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"strings"
 )
 
 // DSN returns a modernc.org/sqlite connection string for path.
@@ -29,7 +30,11 @@ func DSN(path string) string {
 	q.Add("_pragma", "synchronous(NORMAL)")
 	q.Add("_pragma", "foreign_keys(1)")
 	q.Set("_txlock", "immediate")
-	return path + "?" + q.Encode()
+	sep := "?"
+	if strings.Contains(path, "?") {
+		sep = "&" // path is a URI that already has parameters
+	}
+	return path + sep + q.Encode()
 }
 
 // ForeignKeyViolation is one row reported by PRAGMA foreign_key_check.

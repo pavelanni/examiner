@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 
@@ -118,5 +119,15 @@ func TestCheckForeignKeys(t *testing.T) {
 	}
 	if len(vs) != 1 || vs[0].Table != "c" || vs[0].Parent != "p" {
 		t.Errorf("violations = %+v, want one for c -> p", vs)
+	}
+}
+
+func TestDSNPreservesExistingQuery(t *testing.T) {
+	if got := sqlitedb.DSN("exam.db"); !strings.HasPrefix(got, "exam.db?_pragma=") {
+		t.Errorf("plain path: got %q", got)
+	}
+	got := sqlitedb.DSN("file:exam.db?cache=shared")
+	if !strings.HasPrefix(got, "file:exam.db?cache=shared&_pragma=") || strings.Count(got, "?") != 1 {
+		t.Errorf("URI path: got %q", got)
 	}
 }
