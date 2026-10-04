@@ -9,14 +9,20 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"unicode/utf8"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-var (
-	studentAnswerRegex      = regexp.MustCompile(`(?i)</?\s*student-answer\b[^>]*>`)
-	systemInstructionsRegex = regexp.MustCompile(`(?i)</?\s*system-instructions\b[^>]*>`)
+// reservedTagRegex matches the tags the prompts use for structure. They are
+// stripped from student text so it cannot close its own block or forge
+// a follow-up or a second answer.
+var reservedTagRegex = regexp.MustCompile(`(?i)</?\s*(student-answer|system-instructions|dialogue|answer|followup)\b[^>]*>`)
+
+const (
+	// MaxAnswerRunes caps each student answer and each follow-up question.
+	MaxAnswerRunes = 4000
+	// MaxDialogueRunes caps the whole dialogue; earlier parts shrink first.
+	MaxDialogueRunes = 10000
 )
 
 // PromptVariant represents a grading prompt variant.
@@ -55,7 +61,7 @@ type EvalData struct {
 	MaxPoints    int
 	Rubric       string
 	ModelAnswer  string
-	Answer       string
+	Dialogue     string // student answers and examiner follow-ups, see buildDialogue
 	CanFollowup  bool
 }
 
@@ -65,7 +71,7 @@ type GradeData struct {
 	MaxPoints    int
 	Rubric       string
 	ModelAnswer  string
-	Answer       string
+	Dialogue     string // student answers and examiner follow-ups, see buildDialogue
 }
 
 // Load loads prompt templates from the embedded filesystem.
@@ -124,7 +130,6 @@ func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []
 		return "", errors.New("invalid prompt variant: " + string(variant))
 	}
 
-	answer := extractStudentAnswer(messages)
 	canFollowup := CountFollowups(messages) < maxFollowups
 
 	data := EvalData{
@@ -132,7 +137,7 @@ func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []
 		MaxPoints:    question.MaxPoints,
 		Rubric:       question.Rubric,
 		ModelAnswer:  question.ModelAnswer,
-		Answer:       sanitizeAnswer(answer),
+		Dialogue:     buildDialogue(messages),
 		CanFollowup:  canFollowup,
 	}
 
@@ -157,15 +162,12 @@ func BuildGradePrompt(variant PromptVariant, question model.Question, messages [
 		return "", errors.New("invalid prompt variant: " + string(variant))
 	}
 
-	answer := extractConversation(messages)
-	answer = sanitizeAnswer(answer)
-
 	data := GradeData{
 		QuestionText: question.Text,
 		MaxPoints:    question.MaxPoints,
 		Rubric:       question.Rubric,
 		ModelAnswer:  question.ModelAnswer,
-		Answer:       answer,
+		Dialogue:     buildDialogue(messages),
 	}
 
 	var buf bytes.Buffer
@@ -176,53 +178,91 @@ func BuildGradePrompt(variant PromptVariant, question model.Question, messages [
 	return buf.String(), nil
 }
 
-func extractStudentAnswer(messages []model.Message) string {
-	var lastStudent string
-	for _, m := range messages {
-		if m.Role == model.RoleStudent {
-			lastStudent = m.Text()
-		}
-	}
-	return lastStudent
+// dialoguePart is one <answer> or <followup> element of the dialogue.
+type dialoguePart struct {
+	tag       string // "answer" or "followup"
+	n         int    // number of the student answer it belongs to
+	text      []rune
+	truncated bool
 }
 
-func extractConversation(messages []model.Message) string {
-	var sb strings.Builder
+// minPartRunes is how much of a part survives when the dialogue as a whole
+// is over MaxDialogueRunes.
+const minPartRunes = 200
+
+const truncatedMarker = "\n[truncated]"
+
+// buildDialogue renders the conversation for the model: every student answer
+// in order as <answer n="i">, with the examiner's follow-up question that
+// followed it as <followup n="i">. The examiner's feedback is left out on
+// purpose: the model must grade the student's words, not its own earlier
+// remarks. Each part is capped at MaxAnswerRunes; if the whole is still over
+// MaxDialogueRunes, the earliest parts are shortened first, so the latest
+// answers are the ones that survive.
+func buildDialogue(messages []model.Message) string {
+	var parts []dialoguePart
+	answers := 0
 	for _, m := range messages {
-		role := "Student"
-		if m.Role == model.RoleLLM {
-			role = "Assistant"
+		switch {
+		case m.Role == model.RoleStudent:
+			answers++
+			parts = append(parts, newPart("answer", answers, m.Content, true))
+		case m.Role == model.RoleLLM && m.Followup != "":
+			parts = append(parts, newPart("followup", answers, m.Followup, false))
 		}
-		sb.WriteString(role + ": " + m.Text() + "\n\n")
 	}
+	if len(parts) == 0 {
+		parts = append(parts, newPart("answer", 1, "", true))
+	}
+
+	total := 0
+	for _, p := range parts {
+		total += len(p.text)
+	}
+	for i := 0; i < len(parts)-1 && total > MaxDialogueRunes; i++ {
+		keep := max(minPartRunes, len(parts[i].text)-(total-MaxDialogueRunes))
+		if keep < len(parts[i].text) {
+			total -= len(parts[i].text) - keep
+			parts[i].text = parts[i].text[:keep]
+			parts[i].truncated = true
+		}
+	}
+
+	var sb strings.Builder
+	sb.WriteString("<dialogue>\n")
+	for _, p := range parts {
+		fmt.Fprintf(&sb, "<%s n=\"%d\">\n%s", p.tag, p.n, string(p.text))
+		if p.truncated {
+			sb.WriteString(truncatedMarker)
+		}
+		fmt.Fprintf(&sb, "\n</%s>\n", p.tag)
+	}
+	sb.WriteString("</dialogue>")
 	return sb.String()
 }
 
-// CountFollowups returns the number of LLM messages (follow-up questions) in the conversation.
+func newPart(tag string, n int, text string, placeholder bool) dialoguePart {
+	text = strings.TrimSpace(reservedTagRegex.ReplaceAllString(text, ""))
+	if text == "" && placeholder {
+		text = "[No answer provided]"
+	}
+	runes := []rune(text)
+	p := dialoguePart{tag: tag, n: n, text: runes}
+	if len(runes) > MaxAnswerRunes {
+		p.text = runes[:MaxAnswerRunes]
+		p.truncated = true
+	}
+	return p
+}
+
+// CountFollowups returns the number of follow-up questions the examiner has
+// asked in the conversation. Feedback messages without a question don't count.
 func CountFollowups(messages []model.Message) int {
 	count := 0
 	for _, m := range messages {
-		if m.Role == model.RoleLLM {
+		if m.Role == model.RoleLLM && m.Followup != "" {
 			count++
 		}
 	}
 	return count
-}
-
-func sanitizeAnswer(answer string) string {
-	answer = studentAnswerRegex.ReplaceAllString(answer, "")
-	answer = systemInstructionsRegex.ReplaceAllString(answer, "")
-	answer = strings.TrimSpace(answer)
-
-	if answer == "" {
-		return "[No answer provided]"
-	}
-
-	if utf8.RuneCountInString(answer) > 10000 {
-		runes := []rune(answer)
-		runes = runes[:10000]
-		answer = string(runes) + "\n\n[Answer truncated due to length]"
-	}
-
-	return answer
 }

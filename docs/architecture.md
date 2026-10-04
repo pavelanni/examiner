@@ -151,6 +151,19 @@ to talk to any OpenAI-compatible endpoint.
    Reviews the full conversation and produces a final score.
    Temperature: 0.1 (more deterministic for grading).
 
+### Dialogue in the prompt
+
+Both calls get the whole thread in the system prompt, once, as a
+`<dialogue>` block: every student answer as `<answer n="i">`, and the
+examiner's follow-up question after it as `<followup n="i">`. The LLM's
+own feedback is not included, so it grades the student's words, not its
+earlier remarks. The prompts tell the model the answers are cumulative:
+an item named in any answer counts as named. The only chat message sent
+besides the system prompt is a short trigger. Each answer is capped at
+4000 characters; if the dialogue is still over 10000, the earliest parts
+are shortened first (`prompts.buildDialogue`). Student text has the
+prompt's structural tags stripped.
+
 ### Follow-up logic
 
 The blueprint's `max_followups` field controls how many follow-up
