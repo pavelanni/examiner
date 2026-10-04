@@ -15,19 +15,15 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 		})
 		<h1>{ td(ctx, "ResultsSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
 		if policy.Preliminary {
-			<div role="alert" style="background: var(--pico-primary-background); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
-				{ t(ctx, "ResultsDisclaimer") }
-			</div>
+			@resultsNotice(t(ctx, "ResultsDisclaimer"))
 		}
 		if policy.Hidden {
-			<div role="alert" style="background: var(--pico-primary-background); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
-				{ t(ctx, "ResultsAwaitingReview") }
-			</div>
+			@resultsNotice(t(ctx, "ResultsAwaitingReview"))
 		}
 		<p>{ t(ctx, "StatusLabel") } <strong>{ string(view.Session.Status) }</strong></p>
 		if view.Grade != nil && !policy.Hidden {
 			<div class="score-box">
-				if policy.LLMScores {
+				if policy.LLMResults {
 					<p>
 						{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }
 						if policy.Preliminary {
@@ -66,8 +62,13 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 				}
 				if tv.Score != nil && !policy.Hidden {
 					<div class="score-box">
-						if policy.LLMScores {
-							<p><strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
+						if policy.LLMResults {
+							<p>
+								<strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }
+								if policy.Preliminary {
+									<em>({ t(ctx, "Preliminary") })</em>
+								}
+							</p>
 							<p><strong>{ t(ctx, "LLMFeedback") }</strong> { tv.Score.LLMFeedback }</p>
 						}
 						if tv.Score.TeacherScore != nil {
@@ -81,4 +82,10 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 			</div>
 		}
 	}
+}
+
+templ resultsNotice(msg string) {
+	<div role="alert" style="background: var(--pico-primary-background); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
+		{ msg }
+	</div>
 }

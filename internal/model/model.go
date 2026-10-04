@@ -250,6 +250,6 @@ type ExamPageView struct {
 	SessionView
 	TimeRemaining time.Duration
 	TimeExceeded  bool
-	// ShowLiveScore shows each LLM reply's score during the exam.
-	ShowLiveScore bool
+	// LiveScore says whether each LLM reply shows its score.
+	LiveScore LiveScorePolicy
 }

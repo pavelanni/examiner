@@ -107,6 +107,6 @@
   {"id": "ViewResults", "other": "Results"},
   {"id": "GradingInProgress", "other": "Your exam is being graded. Please wait, this may take a moment..."},
   {"id": "Preliminary", "other": "preliminary"},
-  {"id": "ResultsAwaitingReview", "other": "Your answers are graded. The results will appear here after a teacher reviews them."},
+  {"id": "ResultsAwaitingReview", "other": "Results will appear here after a teacher reviews your answers."},
   {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"}
 ]

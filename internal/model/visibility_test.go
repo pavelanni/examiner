@@ -21,14 +21,15 @@ func TestResultsPolicy(t *testing.T) {
 		status SessionStatus
 		want   ResultsPolicy
 	}{
-		{ScoreLive, StatusGraded, ResultsPolicy{LLMScores: true, Preliminary: true}},
-		{ScoreLive, StatusReviewed, ResultsPolicy{LLMScores: true}},
-		{ScoreFinal, StatusGraded, ResultsPolicy{LLMScores: true, Preliminary: true}},
-		{ScoreFinal, StatusReviewed, ResultsPolicy{LLMScores: true}},
-		{"", StatusGraded, ResultsPolicy{LLMScores: true, Preliminary: true}}, // zero value = final
+		{ScoreLive, StatusGraded, ResultsPolicy{LLMResults: true, Preliminary: true}},
+		{ScoreLive, StatusReviewed, ResultsPolicy{LLMResults: true}},
+		{ScoreFinal, StatusGraded, ResultsPolicy{LLMResults: true, Preliminary: true}},
+		{ScoreFinal, StatusReviewed, ResultsPolicy{LLMResults: true}},
+		{"", StatusGraded, ResultsPolicy{LLMResults: true, Preliminary: true}}, // zero value = final
 		{ScoreNone, StatusGraded, ResultsPolicy{Hidden: true}},
 		{ScoreNone, StatusReviewed, ResultsPolicy{}},
-		{ScoreNone, StatusSubmitted, ResultsPolicy{}}, // nothing graded yet, nothing to hide
+		{ScoreNone, StatusGrading, ResultsPolicy{Hidden: true}},
+		{ScoreNone, StatusSubmitted, ResultsPolicy{Hidden: true}},
 	}
 	for _, tt := range tests {
 		if got := tt.v.ResultsPolicy(tt.status); got != tt.want {
@@ -37,8 +38,22 @@ func TestResultsPolicy(t *testing.T) {
 	}
 }
 
-func TestShowLiveScore(t *testing.T) {
-	if !ScoreLive.ShowLiveScore() || ScoreFinal.ShowLiveScore() || ScoreNone.ShowLiveScore() || ScoreVisibility("").ShowLiveScore() {
-		t.Error("only live shows live scores")
+func TestLiveScorePolicy(t *testing.T) {
+	tests := []struct {
+		v      ScoreVisibility
+		status SessionStatus
+		want   LiveScorePolicy
+	}{
+		{ScoreLive, StatusInProgress, LiveScorePolicy{Show: true, Preliminary: true}},
+		{ScoreLive, StatusGraded, LiveScorePolicy{Show: true, Preliminary: true}},
+		{ScoreLive, StatusReviewed, LiveScorePolicy{Show: true}}, // label drops after review
+		{ScoreFinal, StatusInProgress, LiveScorePolicy{Preliminary: true}},
+		{ScoreNone, StatusInProgress, LiveScorePolicy{Preliminary: true}},
+		{"", StatusInProgress, LiveScorePolicy{Preliminary: true}},
+	}
+	for _, tt := range tests {
+		if got := tt.v.LiveScorePolicy(tt.status); got != tt.want {
+			t.Errorf("%q/%s: got %+v, want %+v", tt.v, tt.status, got, tt.want)
+		}
 	}
 }

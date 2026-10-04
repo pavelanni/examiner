@@ -282,7 +282,7 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 		SessionView:   *view,
 		TimeRemaining: timeRemaining,
 		TimeExceeded:  timeRemaining == 0,
-		ShowLiveScore: h.config.ScoreVisibility.ShowLiveScore(),
+		LiveScore:     h.config.ScoreVisibility.LiveScorePolicy(view.Session.Status),
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -468,7 +468,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	timeExceeded := calculateTimeRemaining(sess, bp) == 0
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded, h.config.ScoreVisibility.ShowLiveScore()).Render(r.Context(), w); err != nil {
+	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded, h.config.ScoreVisibility.LiveScorePolicy(sess.Status)).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

@@ -48,7 +48,7 @@ templ ExamPage(view model.ExamPageView) {
 		}
 		for i, tv := range view.Threads {
 			<div class="thread" id={ fmt.Sprintf("thread-%d", tv.Thread.ID) }>
-				@ThreadContent(tv.Thread, tv.Question, tv.Messages, view.Session.ID, i, view.Session, view.TimeExceeded, view.ShowLiveScore)
+				@ThreadContent(tv.Thread, tv.Question, tv.Messages, view.Session.ID, i, view.Session, view.TimeExceeded, view.LiveScore)
 			</div>
 		}
 		if view.Session.Status == model.StatusInProgress {

@@ -69,7 +69,7 @@ const (
 	llmGradeMark    = "75.0%"
 	finalGradeMark  = "80.0%"
 	teacherMark     = "6.0 / 10"
-	awaitingMark    = "after a teacher reviews"
+	awaitingMark    = "after a teacher reviews your"
 )
 
 // gradedEnv returns an environment whose session is graded, with scores saved.
@@ -109,10 +109,14 @@ func TestResultsVisibility(t *testing.T) {
 	for _, vis := range []model.ScoreVisibility{model.ScoreLive, model.ScoreFinal, ""} {
 		t.Run("graded/"+string(vis), func(t *testing.T) {
 			body := results(gradedEnv(t, vis))
-			for _, want := range []string{llmScoreMark, llmFeedbackMark, llmGradeMark, "preliminary"} {
+			for _, want := range []string{llmScoreMark, llmFeedbackMark, llmGradeMark} {
 				if !strings.Contains(body, want) {
 					t.Errorf("missing %q", want)
 				}
+			}
+			// Both the suggested grade and the per-question score are labeled.
+			if n := strings.Count(body, "(preliminary)"); n != 2 {
+				t.Errorf("preliminary labels = %d, want 2", n)
 			}
 		})
 	}
@@ -156,4 +160,39 @@ func TestResultsVisibility(t *testing.T) {
 			t.Error("reviewed results must not be labeled preliminary")
 		}
 	})
+
+	t.Run("none shows the notice while still grading", func(t *testing.T) {
+		env := gradedEnv(t, model.ScoreNone)
+		if err := env.store.UpdateSessionStatus(env.sessID, model.StatusGrading); err != nil {
+			t.Fatal(err)
+		}
+		body := results(env)
+		if !strings.Contains(body, awaitingMark) {
+			t.Error("missing awaiting-review notice")
+		}
+		if strings.Contains(body, llmScoreMark) || strings.Contains(body, `class="score-box"`) {
+			t.Error("score box rendered while results are withheld")
+		}
+	})
+}
+
+// The "preliminary" label on a live score goes away once the teacher has
+// reviewed, as it does on the results page.
+func TestLiveScoreLabelDropsAfterReview(t *testing.T) {
+	env := newAnswerEnv(t, 3, &fakeLLM{})
+	env.h.config.ScoreVisibility = model.ScoreLive
+	env.post("my answer")
+	page := fmt.Sprintf("/exam/%d", env.sessID)
+
+	if body := env.get(t, page); !strings.Contains(body, liveScore) || !strings.Contains(body, "(preliminary)") {
+		t.Fatal("before review: want a labeled live score")
+	}
+	review(t, env)
+	body := env.get(t, page)
+	if !strings.Contains(body, liveScore) {
+		t.Error("after review: live score should still show")
+	}
+	if strings.Contains(body, "preliminary") {
+		t.Error("after review: label should be gone")
+	}
 }
