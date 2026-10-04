@@ -17,17 +17,22 @@ templ Layout(title string) {
 			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
 			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 			<script>
-				// htmx does not swap 4xx responses; surface their text (e.g. a CSRF
-				// rejection) as a banner so the user knows the request failed.
+				// htmx does not swap 4xx responses. The server marks CSRF rejections
+				// with X-CSRF-Error; for those, resync the forms with the current
+				// cookie token (so pressing submit again works without losing the
+				// typed answer) and show the message as a banner.
 				document.addEventListener("htmx:responseError", function (e) {
-					var msg = e.detail.xhr.responseText;
-					if (e.detail.xhr.status !== 403 || !msg || msg.length > 300) { return; }
-					var el = document.getElementById("htmx-error") || document.createElement("p");
-					el.id = "htmx-error";
+					var xhr = e.detail.xhr;
+					if (xhr.status !== 403 || !xhr.getResponseHeader("X-CSRF-Error")) { return; }
+					var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
+					if (m) {
+						document.querySelectorAll('input[name="csrf_token"]').forEach(function (i) { i.value = m[1]; });
+					}
+					var el = document.getElementById("form-error") || document.createElement("p");
+					el.id = "form-error";
 					el.setAttribute("role", "alert");
-					el.className = "time-exceeded-banner";
-					el.style.display = "block";
-					el.textContent = msg;
+					el.className = "form-error";
+					el.textContent = xhr.responseText;
 					document.querySelector("main").prepend(el);
 				});
 			</script>
@@ -48,6 +53,7 @@ templ Layout(title string) {
 				#exam-timer { font-weight: bold; font-size: 1.2em; }
 				#exam-timer.time-warning { color: orange; }
 				#exam-timer.time-exceeded { color: red; }
+				.form-error { background: #fee; border: 1px solid red; padding: 1em; margin: 1em 0; border-radius: 4px; }
 				.time-exceeded-banner { display: none; background: #fee; border: 1px solid red; padding: 1em; margin: 1em 0; border-radius: 4px; }
 			</style>
 		</head>

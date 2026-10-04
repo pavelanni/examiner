@@ -7,7 +7,7 @@ templ CSRFErrorPage() {
 		<article>
 			<header>{ t(ctx, "CSRFErrorTitle") }</header>
 			<p>{ t(ctx, "CSRFError") }</p>
-			<a href={ templ.SafeURL(p(ctx, "/")) } role="button">{ t(ctx, "CSRFErrorReload") }</a>
+			<a href={ templ.SafeURL(p(ctx, "/")) } role="button">{ t(ctx, "Home") }</a>
 		</article>
 	}
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,8 +10,6 @@ import (
 
 	"github.com/pavelanni/examiner/internal/i18n"
 )
-
-const csrfMessage = "Your session has expired"
 
 func csrfPost(t *testing.T, cookie, form string, htmx bool) *httptest.ResponseRecorder {
 	t.Helper()
@@ -56,8 +55,12 @@ func TestCSRFFailureIsVisible(t *testing.T) {
 				if rec.Code != http.StatusForbidden {
 					t.Fatalf("status %d, want 403", rec.Code)
 				}
-				if !strings.Contains(rec.Body.String(), csrfMessage) {
+				want := i18n.T(i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("en")), "CSRFError")
+				if !strings.Contains(rec.Body.String(), want) {
 					t.Errorf("body %q does not contain the user-facing message", rec.Body.String())
+				}
+				if got := rec.Header().Get("X-CSRF-Error") != ""; got != htmx {
+					t.Errorf("X-CSRF-Error marker present = %v, want %v", got, htmx)
 				}
 			})
 		}

@@ -91,11 +91,13 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 
 // csrfFailure tells the user their form was rejected. htmx swaps ignore 4xx
 // responses, so for htmx requests the localized message goes out as plain text
-// and the layout's htmx:responseError listener shows it as a banner. Other
-// requests get a full error page with a reload link.
+// marked with X-CSRF-Error, and the layout's htmx:responseError listener shows
+// it as a banner. Other 403s on the same routes lack the marker and are left
+// alone. Other requests get a full error page with a link home.
 func (h *Handler) csrfFailure(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-CSRF-Error", "1")
 		w.WriteHeader(http.StatusForbidden)
 		_, _ = io.WriteString(w, appI18n.T(r.Context(), "CSRFError"))
 		return
