@@ -159,6 +159,10 @@ func (s *Store) migrate() error {
 	if err != nil && !isAlterDuplicate(err) {
 		return err
 	}
+	_, err = s.db.Exec(`ALTER TABLE messages ADD COLUMN score REAL`)
+	if err != nil && !isAlterDuplicate(err) {
+		return err
+	}
 	_, err = s.db.Exec(`ALTER TABLE question_threads ADD COLUMN followup_count INTEGER NOT NULL DEFAULT 0`)
 	if err != nil && !isAlterDuplicate(err) {
 		return err
@@ -509,8 +513,8 @@ func (s *Store) AddMessage(msg model.Message) (int64, error) {
 	defer func() { _ = tx.Rollback() }()
 
 	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count) VALUES (?, ?, ?, ?, ?, ?)`,
-		msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount,
+		`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count, score) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount, msg.Score,
 	)
 	if err != nil {
 		slog.Error("failed to add message", "thread_id", msg.ThreadID, "role", msg.Role, "error", err)
@@ -555,7 +559,7 @@ func (s *Store) splitLegacyFollowups() error {
 // GetMessages returns all messages for a thread.
 func (s *Store) GetMessages(threadID int64) ([]model.Message, error) {
 	rows, err := s.db.Query(
-		`SELECT id, thread_id, role, content, followup, created_at, token_count FROM messages WHERE thread_id = ? ORDER BY id`, threadID,
+		`SELECT id, thread_id, role, content, followup, created_at, token_count, score FROM messages WHERE thread_id = ? ORDER BY id`, threadID,
 	)
 	if err != nil {
 		return nil, err
@@ -564,7 +568,7 @@ func (s *Store) GetMessages(threadID int64) ([]model.Message, error) {
 	var messages []model.Message
 	for rows.Next() {
 		var m model.Message
-		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Followup, &m.CreatedAt, &m.TokenCount); err != nil {
+		if err := rows.Scan(&m.ID, &m.ThreadID, &m.Role, &m.Content, &m.Followup, &m.CreatedAt, &m.TokenCount, &m.Score); err != nil {
 			return nil, err
 		}
 		messages = append(messages, m)

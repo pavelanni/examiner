@@ -120,7 +120,7 @@ SQLite with WAL mode. Schema is auto-migrated on startup.
 | `exam_blueprints` | Exam configuration | `name`, `time_limit`, `max_followups` |
 | `exam_sessions` | One per exam attempt | `blueprint_id`, `status`, `started_at`, `submitted_at` |
 | `question_threads` | One per question per session | `session_id`, `question_id`, `status`, `followup_count` |
-| `messages` | Conversation messages | `thread_id`, `role`, `content` (feedback), `followup`, `created_at` |
+| `messages` | Conversation messages | `thread_id`, `role`, `content` (feedback), `followup`, `score` (LLM score, display only), `created_at` |
 | `question_scores` | Per-question scores | `thread_id`, `llm_score`, `llm_feedback`, `teacher_score` |
 | `grades` | Per-session grades | `session_id`, `llm_grade`, `final_grade` |
 
@@ -290,6 +290,7 @@ how each exam session is assembled:
 | `Difficulty` | `--difficulty` | Filter question bank by difficulty |
 | `Topic` | `--topic` | Filter question bank by topic |
 | `MaxFollowups` | `--max-followups` | Cap follow-up questions per thread |
+| `ScoreVisibility` | `--score-visibility` | When students see AI scores (`live`, `final`, `none`) |
 | `Shuffle` | `--shuffle` | Randomize question selection and order |
 
 When `handleStartExam` is called, it:

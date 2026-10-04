@@ -7,20 +7,30 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ ResultsPage(view model.SessionView) {
+templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 	@Layout(td(ctx, "ResultsTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ td(ctx, "ResultsSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
-		<div role="alert" style="background: var(--pico-primary-background); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
-			{ t(ctx, "ResultsDisclaimer") }
-		</div>
+		if policy.Preliminary {
+			@resultsNotice(t(ctx, "ResultsDisclaimer"))
+		}
+		if policy.Hidden {
+			@resultsNotice(t(ctx, "ResultsAwaitingReview"))
+		}
 		<p>{ t(ctx, "StatusLabel") } <strong>{ string(view.Session.Status) }</strong></p>
-		if view.Grade != nil {
+		if view.Grade != nil && !policy.Hidden {
 			<div class="score-box">
-				<p>{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }</p>
+				if policy.LLMResults {
+					<p>
+						{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }
+						if policy.Preliminary {
+							<em>({ t(ctx, "Preliminary") })</em>
+						}
+					</p>
+				}
 				if view.Grade.FinalGrade != nil {
 					<p>{ td(ctx, "FinalGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", *view.Grade.FinalGrade)}) }</p>
 				}
@@ -50,10 +60,17 @@ templ ResultsPage(view model.SessionView) {
 						}
 					</div>
 				}
-				if tv.Score != nil {
+				if tv.Score != nil && !policy.Hidden {
 					<div class="score-box">
-						<p><strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
-						<p><strong>{ t(ctx, "LLMFeedback") }</strong> { tv.Score.LLMFeedback }</p>
+						if policy.LLMResults {
+							<p>
+								<strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }
+								if policy.Preliminary {
+									<em>({ t(ctx, "Preliminary") })</em>
+								}
+							</p>
+							<p><strong>{ t(ctx, "LLMFeedback") }</strong> { tv.Score.LLMFeedback }</p>
+						}
 						if tv.Score.TeacherScore != nil {
 							<p><strong>{ t(ctx, "TeacherScore") }</strong> { fmt.Sprintf("%.1f", *tv.Score.TeacherScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
 							if tv.Score.TeacherComment != "" {
@@ -65,4 +82,10 @@ templ ResultsPage(view model.SessionView) {
 			</div>
 		}
 	}
+}
+
+templ resultsNotice(msg string) {
+	<div role="alert" style="background: var(--pico-primary-background); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
+		{ msg }
+	</div>
 }
