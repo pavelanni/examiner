@@ -118,6 +118,12 @@ review is labeled **preliminary**.
    so the runtime can't create tokens itself. It sets an `HttpOnly`
    cookie scoped to the session and redirects to `/exam/{session_id}`
    to remove the token from the URL.
+   The token is not single-use. A replay within its 60 s lifetime
+   only resumes the same session it names, so the exposure is small.
+   Because it travels in a query string, Caddy's access log must drop
+   the `token` parameter (a `log` filter on `request.uri` with
+   `query { delete token }`), and the runtime must never log the
+   query string of `/exam/enter`.
 1. The runtime fetches the SessionSpec from management server-to-server.
 
 The token must **not** carry the SessionSpec: JWT payloads can be read
@@ -133,8 +139,8 @@ from, and saves it to, a `SessionStore` interface:
 | --------- | ------- |
 | `GetSession(id)` | Spec plus conversation plus status |
 | `AppendMessage(id, question, msg)` | Saves each answer **as soon as it arrives** and each LLM reply; idempotent by message key (#49) |
-| `Transition(id, from, to)` | Atomic status change with a precondition (submit, grading done, grading failed) (#48) |
-| `SaveGrade(id, result)` | Final LLM grade per question and in total |
+| `Transition(id, from, to)` | Atomic status change with a precondition. Entering grading claims an attempt and returns a fencing token; grading done and failed require the current token (#48) |
+| `SaveGrade(id, token, result)` | Final LLM grade per question and in total; rejects writes from stale attempts |
 
 Two implementations:
 
@@ -165,7 +171,9 @@ Students see the final grade, so the runtime does final grading:
 **Recovery:** if a replica dies while grading, the session stays in
 `submitted`. Management finds sessions stuck longer than a timeout and
 calls the runtime's internal `POST /internal/sessions/{id}/grade`. The
-same endpoint is the teacher's "regrade" button. Management schedules
+same endpoint is the teacher's "regrade" button. Recovery and regrade
+use the same claim flow, so a stale attempt that wakes up later cannot
+overwrite grades or complete the session. Management schedules
 retries, and the runtime only executes them, so the runtime stays
 stateless.
 
@@ -197,6 +205,11 @@ stateless.
 | `GET /exam/{id}/results` | session cookie | Results, according to `score_visibility` |
 | `POST /internal/sessions/{id}/grade` | management (internal network, token) | Grade or regrade |
 | `GET /healthz`, `/readyz`, `/metrics` | internal | Ops (#50) |
+
+The answer and submit routes must validate a CSRF token (the current
+per-session scheme carries over) or the `Origin` header against the
+runtime's origin, and reject requests that fail. `HttpOnly` alone does
+not stop cross-site requests.
 
 To be removed from the runtime: `/login`, `/review/*`, `/teacher/*`,
 `/admin/*` and the question-loading code. They move to management.
