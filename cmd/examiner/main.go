@@ -180,7 +180,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Seed default admin user if no users exist.
 	if err := seedAdmin(db, v.GetString("admin-password")); err != nil {
@@ -282,7 +282,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Read metadata from DB as defaults; CLI flags override.
 	info, err := db.GetExamInfo()
@@ -355,7 +355,7 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		if err != nil {
 			return fmt.Errorf("create output file: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		w = f
 	}
 
@@ -517,7 +517,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create database: %w", err)
 	}
-	defer db.Close()
+	defer func() { _ = db.Close() }()
 
 	// Store exam metadata.
 	if err := db.SetExamInfo(model.ExamInfo{
@@ -564,7 +564,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("open roster: %w", err)
 	}
-	defer rosterFile.Close()
+	defer func() { _ = rosterFile.Close() }()
 
 	prefix := strings.ToLower(manifest.Subject)
 	if len(prefix) > 4 {
@@ -585,7 +585,7 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create credentials file: %w", err)
 	}
-	defer credsFile.Close()
+	defer func() { _ = credsFile.Close() }()
 
 	adminCred := userutil.Credential{
 		DisplayName: "Administrator",
@@ -595,6 +595,9 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	allCreds := append([]userutil.Credential{adminCred}, studentCreds...)
 	if err := userutil.WriteCredentialsCSV(credsFile, allCreds); err != nil {
 		return fmt.Errorf("write credentials CSV: %w", err)
+	}
+	if err := credsFile.Close(); err != nil {
+		return fmt.Errorf("close credentials file: %w", err)
 	}
 
 	slog.Info("exam prepared",

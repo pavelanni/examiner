@@ -46,7 +46,7 @@ func sampleExport() model.ExamExport {
 
 func TestImportExam(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	exp := sampleExport()
 	err := s.ImportExam(exp)
@@ -71,7 +71,7 @@ func TestImportExam(t *testing.T) {
 
 func TestImportExamDuplicate(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	exp := sampleExport()
 	if err := s.ImportExam(exp); err != nil {

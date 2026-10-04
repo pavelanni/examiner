@@ -8,7 +8,7 @@ import (
 
 func TestGetReviewData(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.ImportExam(sampleExport()); err != nil {
 		t.Fatalf("ImportExam: %v", err)
 	}
@@ -53,7 +53,7 @@ func TestGetReviewData(t *testing.T) {
 
 func TestUpdateTeacherScore(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if err := s.ImportExam(sampleExport()); err != nil {
 		t.Fatalf("ImportExam: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestUpdateTeacherScore(t *testing.T) {
 
 func TestFinalizeGrade(t *testing.T) {
 	s := newTestStore(t)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	if _, err := s.CreateUser(model.User{
 		Username:     "teacher",
 		PasswordHash: "hash",

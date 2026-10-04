@@ -103,7 +103,7 @@ func (s *Store) GetReviewData(sessionID int64) (*ReviewData, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query questions: %w", err)
 	}
-	defer qRows.Close()
+	defer func() { _ = qRows.Close() }()
 
 	for qRows.Next() {
 		var rq ReviewQuestion
@@ -136,7 +136,7 @@ func (s *Store) GetReviewData(sessionID int64) (*ReviewData, error) {
 			var cm ConversationMessage
 			var ts *time.Time
 			if err := mRows.Scan(&cm.Role, &cm.Content, &ts); err != nil {
-				mRows.Close()
+				_ = mRows.Close()
 				return nil, fmt.Errorf("scan message: %w", err)
 			}
 			if ts != nil {
@@ -144,7 +144,7 @@ func (s *Store) GetReviewData(sessionID int64) (*ReviewData, error) {
 			}
 			rd.Questions[i].Messages = append(rd.Questions[i].Messages, cm)
 		}
-		mRows.Close()
+		_ = mRows.Close()
 		if err := mRows.Err(); err != nil {
 			return nil, fmt.Errorf("messages rows: %w", err)
 		}
