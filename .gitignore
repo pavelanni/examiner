@@ -31,10 +31,3 @@ examiner
 # Test output
 coverage.out
 coverage.html
-
-# Dolt database files (added by bd init)
-.dolt/
-
-# Beads / Dolt files (added by bd init)
-.beads-credential-key
-.beads/proxieddb/
