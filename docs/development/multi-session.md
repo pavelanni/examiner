@@ -1,5 +1,10 @@
 # Multi-session exam deployment
 
+> **Superseded in part (2026-10-03):** the container-per-group
+> deployment is replaced by a stateless runtime pool; see
+> [runtime-design.md](runtime-design.md). The export format and the
+> self-assessment notes below still inform that design.
+
 This document describes the plan for running multiple concurrent
 exam sessions, each with its own container, and consolidating
 results into a separate grading application.
