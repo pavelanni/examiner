@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"io"
 	"log/slog"
 	"net/http"
 
@@ -28,31 +29,39 @@ func generateCSRFToken() (string, error) {
 	return base64.URLEncoding.EncodeToString(b), nil
 }
 
+// issueCSRFCookie generates a CSRF token and sets it as a cookie on w.
+func (h *Handler) issueCSRFCookie(w http.ResponseWriter) (string, error) {
+	token, err := generateCSRFToken()
+	if err != nil {
+		return "", err
+	}
+	cookiePath := "/"
+	if h.config.BasePath != "" {
+		cookiePath = h.config.BasePath + "/"
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     csrfCookieName,
+		Value:    token,
+		Path:     cookiePath,
+		HttpOnly: false,
+		Secure:   h.config.SecureCookies,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return token, nil
+}
+
 func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookiePath := "/"
-		if h.config.BasePath != "" {
-			cookiePath = h.config.BasePath + "/"
-		}
-
 		if r.Method == "GET" || r.Method == "HEAD" {
 			// Reuse existing CSRF token if present; generate only on first visit.
 			cookie, err := r.Cookie(csrfCookieName)
 			if err != nil || cookie.Value == "" {
-				token, err := generateCSRFToken()
+				token, err := h.issueCSRFCookie(w)
 				if err != nil {
 					slog.Error("failed to generate CSRF token", "error", err)
 					http.Error(w, "internal error", http.StatusInternalServerError)
 					return
 				}
-				http.SetCookie(w, &http.Cookie{
-					Name:     csrfCookieName,
-					Value:    token,
-					Path:     cookiePath,
-					HttpOnly: false,
-					Secure:   h.config.SecureCookies,
-					SameSite: http.SameSiteLaxMode,
-				})
 				ctx := model.ContextWithCSRFToken(r.Context(), token)
 				next.ServeHTTP(w, r.WithContext(ctx))
 			} else {
@@ -65,20 +74,24 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 		cookie, err := r.Cookie(csrfCookieName)
 		if err != nil || cookie.Value == "" {
 			slog.Warn("CSRF cookie missing")
-			http.Error(w, "csrf token missing", http.StatusForbidden)
+			// Give the browser a cookie so an in-place htmx retry can succeed.
+			if _, err := h.issueCSRFCookie(w); err != nil {
+				slog.Error("failed to generate CSRF token", "error", err)
+			}
+			h.csrfFailure(w, r)
 			return
 		}
 
 		formToken := r.FormValue("csrf_token")
 		if formToken == "" {
 			slog.Warn("CSRF form token missing")
-			http.Error(w, "csrf token missing", http.StatusForbidden)
+			h.csrfFailure(w, r)
 			return
 		}
 
 		if len(formToken) != len(cookie.Value) || subtle.ConstantTimeCompare([]byte(formToken), []byte(cookie.Value)) != 1 {
 			slog.Warn("CSRF token mismatch")
-			http.Error(w, "invalid csrf token", http.StatusForbidden)
+			h.csrfFailure(w, r)
 			return
 		}
 
@@ -86,6 +99,26 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 		ctx := model.ContextWithCSRFToken(r.Context(), cookie.Value)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// csrfFailure tells the user their form was rejected. htmx swaps ignore 4xx
+// responses, so for htmx requests the localized message goes out as plain text
+// marked with X-CSRF-Error, and the layout's htmx:responseError listener shows
+// it as a banner. Other 403s on the same routes lack the marker and are left
+// alone. Other requests get a full error page with a link home.
+func (h *Handler) csrfFailure(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-CSRF-Error", "1")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = io.WriteString(w, appI18n.T(r.Context(), "CSRFError"))
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	if err := views.CSRFErrorPage().Render(r.Context(), w); err != nil {
+		slog.Error("render CSRF error page", "error", err)
+	}
 }
 
 // requireAuth is middleware that checks for a valid session cookie.
