@@ -285,7 +285,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath, "count", len(questions))
 
 	// Automatically redirect to teacher's profile
-	http.Redirect(w, r, "/teacher/profile", http.StatusSeeOther)
+	http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)
 }
 
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {
