@@ -224,8 +224,12 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	seen := make(map[string]bool, len(questions))
 	unique := questions[:0]
 	for _, q := range questions {
-		if !seen[q.Text] {
-			seen[q.Text] = true
+		key := q.TextNorm
+		if key == "" {
+			key = model.NormalizeQuestionText(q.Text)
+		}
+		if !seen[key] {
+			seen[key] = true
 			unique = append(unique, q)
 		}
 	}

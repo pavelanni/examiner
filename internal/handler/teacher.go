@@ -2,10 +2,8 @@ package handler
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -231,23 +229,46 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	newTexts := make(map[string]struct{}, len(questions))
+	seenInUpload := make(map[string]struct{})
 	for _, qi := range questions {
+		norm := model.NormalizeQuestionText(qi.Text)
+		key := qi.Topic + "\x00" + norm
+
+		// Deduplicate within the uploaded questions
+		if _, seen := seenInUpload[key]; seen {
+			continue
+		}
+		seenInUpload[key] = struct{}{}
+
 		q := model.Question{
-			// TODO: derive course ID from context/config when multi-course support lands.
 			CourseID:    1,
 			Text:        qi.Text,
+			TextNorm:    norm,
 			Difficulty:  qi.Difficulty,
 			Topic:       qi.Topic,
 			Rubric:      qi.Rubric,
 			ModelAnswer: qi.ModelAnswer,
 			MaxPoints:   qi.MaxPoints,
 		}
-		if err := h.store.UpdateQuestionByCourseAndText(q); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
+
+		// Check if question already exists in this topic by normalized text
+		existing, err := h.store.FindQuestionByTopicAndTextNorm(q.Topic, norm)
+		if err != nil {
+			slog.Error("failed to lookup question", "error", err)
+			http.Error(w, "failed to save questions: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		if existing != nil {
+			// Idempotent update: update existing question by ID
+			q.ID = existing.ID
+			if err := h.store.UpdateQuestion(q); err != nil {
 				slog.Error("failed to update question", "error", err)
 				http.Error(w, "failed to update question: "+err.Error(), http.StatusInternalServerError)
 				return
 			}
+		} else {
+			// New question: insert
 			if _, err := h.store.InsertQuestion(q); err != nil {
 				slog.Error("failed to insert question", "error", err)
 				http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
