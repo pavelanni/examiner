@@ -120,6 +120,7 @@ type Question struct {
 	ID          int64      `json:"id"`
 	CourseID    int64      `json:"course_id"`
 	Text        string     `json:"text"`
+	TextNorm    string     `json:"text_norm,omitempty"`
 	Difficulty  Difficulty `json:"difficulty"`
 	Topic       string     `json:"topic"`
 	Rubric      string     `json:"rubric"`

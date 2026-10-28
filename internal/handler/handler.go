@@ -6,8 +6,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,7 +16,6 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
-	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
 
 // Evaluator is the part of the LLM client the exam handlers depend on.
@@ -30,10 +27,9 @@ type Evaluator interface {
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	store          *store.Store
-	llm            Evaluator
-	config         model.ExamConfig
-	questionSchema *jsonschema.Schema
+	store  *store.Store
+	llm    Evaluator
+	config model.ExamConfig
 
 	// inFlight is the set of thread IDs with an answer being processed, so
 	// only one answer per thread runs at a time. Entries are removed when the
@@ -43,31 +39,10 @@ type Handler struct {
 	inFlight   map[int64]struct{}
 }
 
-// New creates a new Handler.
+// New creates a new Handler. The error is kept for callers; nothing in
+// construction can fail today.
 func New(s *store.Store, l Evaluator, cfg model.ExamConfig) (*Handler, error) {
-	schema, err := compileQuestionSchema()
-	if err != nil {
-		return nil, fmt.Errorf("compile question schema: %w", err)
-	}
-	return &Handler{store: s, llm: l, config: cfg, questionSchema: schema}, nil
-}
-
-func compileQuestionSchema() (*jsonschema.Schema, error) {
-	absSchema, err := filepath.Abs("schema/question_schema.json")
-	if err != nil {
-		return nil, err
-	}
-	compiler := jsonschema.NewCompiler()
-	f, err := os.Open(absSchema)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = f.Close() }()
-	schemaURL := "file://" + filepath.ToSlash(absSchema)
-	if err := compiler.AddResource(schemaURL, f); err != nil {
-		return nil, err
-	}
-	return compiler.Compile(schemaURL)
+	return &Handler{store: s, llm: l, config: cfg}, nil
 }
 
 // calculateTimeRemaining returns remaining exam time.
@@ -220,12 +195,16 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deduplicate questions by text (guards against legacy DB duplicates).
+	// Deduplicate by normalized text (guards against legacy DB duplicates).
 	seen := make(map[string]bool, len(questions))
 	unique := questions[:0]
 	for _, q := range questions {
-		if !seen[q.Text] {
-			seen[q.Text] = true
+		key := q.TextNorm
+		if key == "" {
+			key = model.NormalizeQuestionText(q.Text)
+		}
+		if !seen[key] {
+			seen[key] = true
 			unique = append(unique, q)
 		}
 	}
