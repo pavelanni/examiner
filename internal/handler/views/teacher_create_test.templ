@@ -14,7 +14,7 @@ func safeJSONString(questions []model.QuestionImport) string {
     return str
 }
 
-templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string) {
+templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string, customName string, published bool, errs []string) {
     @Layout(t(ctx, "TeacherProfile")) {
         // Добавляем глобальные CSS Стили для автоматической нумерации блоков
         <style>
@@ -38,8 +38,9 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
 			}
 			<a href={ templ.SafeURL(p(ctx, "/teacher/profile")) } class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
 		</div>
+		@importMessages(errs, nil)
         
-        <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()">
+        <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()" data-msg-incomplete={ t(ctx, "QBuilderIncomplete") } data-msg-empty={ t(ctx, "QBuilderEmpty") }>
             <input type="hidden" name="csrf_token" value={ csrf }/>
             <input type="hidden" name="editing_file" value={ filename }/>
             
@@ -48,9 +49,9 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                     <strong>{ t(ctx, "Exam Topic") }:</strong>
                     if filename != "" {
                         // Отрезаем расширение (.json), оставляя только чистое имя
-                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } placeholder="physics_exam" required />
+                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } maxlength="100" placeholder="physics_exam" required />
                     } else {
-                        <input type="text" name="custom_filename" placeholder="physics_exam" />
+                        <input type="text" name="custom_filename" value={ customName } maxlength="100" placeholder="physics_exam" />
                     }
                 </label>
             </div>
@@ -69,6 +70,10 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                 </div>
             }
             
+            <div style="margin: 12px 0;">
+                <label><input type="checkbox" name="publish" value="1" checked?={ published }/> { t(ctx, "QPublishLabel") }</label>
+            </div>
+
             <textarea id="assembled-json" name="questions_json" style="display:none;"></textarea>
             
             <div>
@@ -109,14 +114,14 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                         </label>
                     </div>
                     <div style="flex:1;">
-                        <label>Max points:<br/><input type="number" min="1" max="100" name="q_points_${idx}" value="${points}" style="width:100%"/></label>
+                        <label>Max points:<br/><input type="number" min="1" step="1" name="q_points_${idx}" value="${points}" style="width:100%"/></label>
                     </div>
                 </div>
                 <div style="margin-bottom:8px;">
                     <label>Rubric (grading criteria for LLM):<br/><textarea name="q_rubric_${idx}" rows="2" style="width:100%" placeholder="e.g., 2 points for formula, 3 points for explanation...">${escapeHtml(rubric)}</textarea></label>
                 </div>
                 <div style="margin-bottom:8px;">
-                    <label>Model answer:<br/><textarea name="q_answer_${idx}" rows="2" style="width:100%" placeholder="Optional reference answer...">${escapeHtml(answer)}</textarea></label>
+                    <label>Model answer:<br/><textarea name="q_answer_${idx}" rows="2" style="width:100%" placeholder="Reference answer the grader compares against">${escapeHtml(answer)}</textarea></label>
                 </div>
                 <p style="margin:0; text-align:right;"><button type="button" class="secondary" onclick="removeQuestion(${idx})" style="padding:4px 8px; font-size:0.9rem;">Remove</button></p>
             </div>`;
@@ -191,12 +196,15 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                 const text = ((b.querySelector('[name="q_text_' + idx + '"]') || {}).value || '').trim();
                 const topic = ((b.querySelector('[name="q_topic_' + idx + '"]') || {}).value || '').trim();
                 const difficulty = (b.querySelector('[name="q_diff_' + idx + '"]') || {}).value || 'easy';
-                const max_points = parseInt((b.querySelector('[name="q_points_' + idx + '"]') || {}).value || '1', 10);
+                const pointsRaw = ((b.querySelector('[name="q_points_' + idx + '"]') || {}).value || '').trim();
+                const max_points = Number(pointsRaw);
                 const rubric = ((b.querySelector('[name="q_rubric_' + idx + '"]') || {}).value || '').trim();
                 const model_answer = ((b.querySelector('[name="q_answer_' + idx + '"]') || {}).value || '').trim();
-                
+
+                // A block counts as started once text or topic is filled;
+                // untouched blocks are ignored. The server validates again.
                 if (text || topic) {
-                    if (!text || !topic) {
+                    if (!text || !topic || !rubric || !model_answer || pointsRaw === '' || !Number.isInteger(max_points) || max_points < 1) {
                         hasIncompleteQuestion = true;
                         break;
                     }
@@ -204,13 +212,14 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                 }
             }
 
-            if (!hasFile && questions.length === 0) {
-                alert('Please fill at least one question.');
+            const form = document.getElementById('test-builder-form');
+            if (!hasFile && questions.length === 0 && !hasIncompleteQuestion) {
+                alert(form.dataset.msgEmpty);
                 return false;
             }
 
             if (!hasFile && hasIncompleteQuestion) {
-                alert('Please complete all fields (Text and Topic) for the questions you started.');
+                alert(form.dataset.msgIncomplete);
                 return false;
             }
 

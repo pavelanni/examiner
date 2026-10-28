@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -30,6 +29,7 @@ func insertTestQuestion(t *testing.T, s *Store, text, difficulty, topic string) 
 		Rubric:      "rubric for " + text,
 		ModelAnswer: "answer for " + text,
 		MaxPoints:   10,
+		Published:   true,
 	})
 	if err != nil {
 		t.Fatalf("insertTestQuestion: %v", err)
@@ -489,100 +489,13 @@ func TestImportedFileHash(t *testing.T) {
 	}
 }
 
-func TestUpdateQuestionByCourseAndText(t *testing.T) {
-	s := newTestStore(t)
-
-	q := model.Question{
-		CourseID:    1,
-		Text:        "update me",
-		Difficulty:  model.DifficultyEasy,
-		Topic:       "go",
-		Rubric:      "original",
-		ModelAnswer: "original answer",
-		MaxPoints:   5,
-	}
-	id, err := s.InsertQuestion(q)
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if id == 0 {
-		t.Fatal("expected inserted id")
-	}
-
-	q.Rubric = "updated"
-	q.MaxPoints = 10
-	if err := s.UpdateQuestionByCourseAndText(q); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-
-	updated, err := s.GetQuestion(id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if updated.Rubric != "updated" || updated.MaxPoints != 10 {
-		t.Fatalf("unexpected updated values: %+v", updated)
-	}
-
-	missing := model.Question{CourseID: 1, Text: "missing", Difficulty: model.DifficultyEasy, Topic: "x"}
-	if err := s.UpdateQuestionByCourseAndText(missing); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expected sql.ErrNoRows, got %v", err)
-	}
-}
-
-func TestDeleteUnusedQuestionsByTexts(t *testing.T) {
-	s := newTestStore(t)
-
-	insert := func(text string) int64 {
-		id, err := s.InsertQuestion(model.Question{
-			CourseID:    1,
-			Text:        text,
-			Difficulty:  model.DifficultyEasy,
-			Topic:       "go",
-			Rubric:      "r",
-			ModelAnswer: "a",
-			MaxPoints:   1,
-		})
-		if err != nil {
-			t.Fatalf("insert %q: %v", text, err)
-		}
-		return id
-	}
-
-	idKept := insert("kept")
-	idRemoved := insert("removed")
-	idReferenced := insert("referenced")
-
-	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10, MaxFollowups: 0})
-	if err != nil {
-		t.Fatalf("create blueprint: %v", err)
-	}
-	_, err = s.CreateSession(bpID, 1, []int64{idReferenced})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	if err := s.DeleteUnusedQuestionsByTexts(1, []string{"kept", "removed", "referenced"}, []string{"kept"}); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-
-	if _, err := s.GetQuestion(idRemoved); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expected removed question to be deleted, got err=%v", err)
-	}
-	if _, err := s.GetQuestion(idKept); err != nil {
-		t.Fatalf("expected kept question to remain: %v", err)
-	}
-	if _, err := s.GetQuestion(idReferenced); err != nil {
-		t.Fatalf("expected referenced question to remain: %v", err)
-	}
-}
-
-func TestListDistinctTopics(t *testing.T) {
+func TestListPublishedTopics(t *testing.T) {
 	s := newTestStore(t)
 
 	// Empty DB.
-	topics, err := s.ListDistinctTopics()
+	topics, err := s.ListPublishedTopics()
 	if err != nil {
-		t.Fatalf("ListDistinctTopics: %v", err)
+		t.Fatalf("ListPublishedTopics: %v", err)
 	}
 	if len(topics) != 0 {
 		t.Errorf("expected 0 topics, got %d", len(topics))
@@ -590,7 +503,7 @@ func TestListDistinctTopics(t *testing.T) {
 
 	// Single topic.
 	insertTestQuestion(t, s, "Q1", "easy", "basics")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 1 || topics[0] != "basics" {
 		t.Errorf("expected [basics], got %v", topics)
 	}
@@ -599,7 +512,7 @@ func TestListDistinctTopics(t *testing.T) {
 	insertTestQuestion(t, s, "Q2", "easy", "basics")
 	insertTestQuestion(t, s, "Q3", "easy", "concurrency")
 	insertTestQuestion(t, s, "Q4", "easy", "advanced")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 3 {
 		t.Errorf("expected 3 distinct topics, got %d: %v", len(topics), topics)
 	}

@@ -205,6 +205,25 @@ Editing a file updates existing questions by their text instead of
 duplicating them. Questions that are already part of an exam session are
 left untouched, so old exams remain consistent.
 
+Every question has an owner: the teacher who saved it, or the admin for
+questions imported by an admin or loaded with `--questions`. A teacher
+can change and remove only their own questions; an admin can change any
+question. If a teacher's file contains a question that already belongs to
+someone else (same topic, same text), the whole save is rejected and the
+page lists those questions. Removing a question from your file never
+deletes another teacher's question.
+
+The **Publish** checkbox in the builder decides whether the file's
+questions go into students' exams and are visible to other teachers.
+Students' topic list and exams use published questions only. A new file
+is published by default; an existing file keeps its current state.
+
+Questions created before ownership existed get an owner at startup: a
+question found in exactly one `questions/teacher_<username>_*.json` file
+goes to that teacher, every other one to the admin. The log line
+"question claimed by several teachers" names questions that were in more
+than one teacher's file.
+
 The uploaded JSON must match `schema/question_schema.json`. It can be a
 plain array of questions or a wrapper object:
 
@@ -225,6 +244,23 @@ plain array of questions or a wrapper object:
   ]
 }
 ```
+
+Every question must follow these rules, whether it comes from the
+builder, a teacher upload, the admin import or the `--questions` flag:
+
+| Field | Rule |
+| ----- | ---- |
+| `text`, `topic`, `rubric`, `model_answer` | Required, not empty or whitespace only |
+| `difficulty` | `easy`, `medium` or `hard` |
+| `max_points` | Whole number greater than 0 (`"5"`, `2.5` and `10.0` are rejected) |
+
+Other fields are rejected. A file with any error is not imported at all:
+the page lists every error with the question number and field, for
+example "Question 3, field max_points: must be an integer greater than
+0". At startup, an invalid `--questions` file stops the server with the
+same list. A question that matches an existing one in the same topic
+(ignoring case, spacing and trailing punctuation) is skipped with a
+warning; when a teacher saves their own file, it is updated instead.
 
 | Route | Purpose |
 | ----- | ------- |

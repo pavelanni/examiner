@@ -4,6 +4,7 @@
   "oneOf": [
     {
       "type": "array",
+      "minItems": 1,
       "items": { "$ref": "#/definitions/question" }
     },
     {
@@ -15,6 +16,7 @@
         "default_topic": { "type": "string" },
         "questions": {
           "type": "array",
+          "minItems": 1,
           "items": { "$ref": "#/definitions/question" }
         }
       },
@@ -22,16 +24,17 @@
     }
   ],
   "definitions": {
+    "nonEmptyString": { "type": "string", "minLength": 1, "pattern": "\\S" },
     "question": {
       "type": "object",
-      "required": ["text", "max_points"],
+      "required": ["text", "difficulty", "topic", "rubric", "model_answer", "max_points"],
       "properties": {
-        "text": { "type": "string", "minLength": 1 },
+        "text": { "$ref": "#/definitions/nonEmptyString" },
         "difficulty": { "type": "string", "enum": ["easy", "medium", "hard"] },
-        "topic": { "type": "string" },
-        "rubric": { "type": "string" },
-        "model_answer": { "type": "string" },
-        "max_points": { "type": "integer", "minimum": 0 }
+        "topic": { "$ref": "#/definitions/nonEmptyString" },
+        "rubric": { "$ref": "#/definitions/nonEmptyString" },
+        "model_answer": { "$ref": "#/definitions/nonEmptyString" },
+        "max_points": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     }

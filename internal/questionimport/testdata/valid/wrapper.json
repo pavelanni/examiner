@@ -1,0 +1,1 @@
+{"test_name": "Midterm", "test_description": "d", "default_topic": "Mechanics", "questions": [{"text": "Explain Newton's second law.", "difficulty": "easy", "topic": "Mechanics", "rubric": "States F=ma.", "model_answer": "F = ma.", "max_points": 5}]}
