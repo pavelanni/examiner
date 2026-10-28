@@ -13,38 +13,12 @@ import (
 	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
-	jsonschema "github.com/santhosh-tekuri/jsonschema/v5"
 )
-
-func compileTestQuestionSchema(t *testing.T) *jsonschema.Schema {
-	t.Helper()
-	absSchema, err := filepath.Abs("../../schema/question_schema.json")
-	if err != nil {
-		t.Fatalf("filepath.Abs: %v", err)
-	}
-	compiler := jsonschema.NewCompiler()
-	f, err := os.Open(absSchema)
-	if err != nil {
-		t.Fatalf("os.Open(%s): %v", absSchema, err)
-	}
-	defer func() { _ = f.Close() }()
-	schemaURL := "file://" + filepath.ToSlash(absSchema)
-	if err := compiler.AddResource(schemaURL, f); err != nil {
-		t.Fatalf("AddResource: %v", err)
-	}
-	schema, err := compiler.Compile(schemaURL)
-	if err != nil {
-		t.Fatalf("Compile schema: %v", err)
-	}
-	return schema
-}
 
 func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	if err := i18n.Init("en"); err != nil {
 		t.Fatalf("i18n.Init: %v", err)
 	}
-
-	schema := compileTestQuestionSchema(t)
 
 	tmpDir := t.TempDir()
 	t.Chdir(tmpDir)
@@ -58,7 +32,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	h := &Handler{store: s, questionSchema: schema}
+	h := &Handler{store: s}
 	teacher := &model.User{ID: 2, Username: "alice", DisplayName: "Alice", Role: model.UserRoleTeacher}
 
 	postTeacherJSON := func(questionsJSON, customFilename, editingFile, lang string) *httptest.ResponseRecorder {
@@ -232,9 +206,6 @@ func TestTeacherUploadRedirectRespectsBasePath(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	// Change to repository root so compileQuestionSchema() finds schema/question_schema.json.
-	t.Chdir(filepath.Join("..", ".."))
-
 	basePath := "/ru"
 	cfg := model.ExamConfig{
 		BasePath: basePath,
@@ -290,7 +261,6 @@ func TestTeacherUploadRenameUsesBaseName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	t.Chdir(filepath.Join("..", ".."))
 	h, err := New(s, nil, model.ExamConfig{})
 	if err != nil {
 		t.Fatal(err)
