@@ -188,6 +188,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("seed admin: %w", err)
 	}
 
+	// Give owners to questions created before ownership existed (#44).
+	if err := backfillQuestionOwners(db, "questions"); err != nil {
+		return fmt.Errorf("backfill question owners: %w", err)
+	}
+
 	// Initialize i18n before loading questions, so validation errors are
 	// reported in the instance's language.
 	lang := v.GetString("lang")
@@ -575,6 +580,10 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 	})
 	if err != nil {
 		return fmt.Errorf("create admin user: %w", err)
+	}
+
+	if err := backfillQuestionOwners(db, filepath.Dir(questionsPath)); err != nil {
+		return fmt.Errorf("backfill question owners: %w", err)
 	}
 
 	// Load questions.
