@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/pavelanni/examiner/internal/access"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/questionimport"
 	"github.com/pavelanni/examiner/internal/store"
@@ -35,7 +35,7 @@ func backfillQuestionOwners(db *store.Store, dir string) error {
 		if e.IsDir() || filepath.Ext(name) != ".json" {
 			continue
 		}
-		owner := fileOwner(users, name)
+		owner := access.QuestionFileOwner(users, name)
 		if owner == nil {
 			continue
 		}
@@ -56,20 +56,4 @@ func backfillQuestionOwners(db *store.Store, dir string) error {
 		}
 	}
 	return db.ClaimQuestionOwners(claims)
-}
-
-// fileOwner returns the user whose username gives the longest
-// teacher_<username>_ prefix of name, or nil. Usernames and file names
-// may both contain "_", so the longest match wins.
-func fileOwner(users []model.User, name string) *model.User {
-	var best *model.User
-	for i := range users {
-		if !strings.HasPrefix(name, "teacher_"+users[i].Username+"_") {
-			continue
-		}
-		if best == nil || len(users[i].Username) > len(best.Username) {
-			best = &users[i]
-		}
-	}
-	return best
 }

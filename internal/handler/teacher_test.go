@@ -301,7 +301,11 @@ func TestTeacherUploadRenameUsesBaseName(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/teacher/tests", &body)
 	req.Header.Set("Content-Type", form.FormDataContentType())
-	req = req.WithContext(model.ContextWithUser(req.Context(), &model.User{Username: "alice", Role: model.UserRoleTeacher}))
+	alice := &model.User{Username: "alice", PasswordHash: "x", Role: model.UserRoleTeacher, Active: true}
+	if alice.ID, err = s.CreateUser(*alice); err != nil {
+		t.Fatal(err)
+	}
+	req = req.WithContext(model.ContextWithUser(req.Context(), alice))
 	rec := httptest.NewRecorder()
 	h.handleTeacherUpload(rec, req)
 	if rec.Code != http.StatusSeeOther {

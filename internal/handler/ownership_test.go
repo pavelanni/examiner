@@ -293,3 +293,86 @@ func TestAdminImportConflictImpossible(t *testing.T) {
 		t.Errorf("status %d; want 200 with a duplicate warning", rec.Code)
 	}
 }
+
+func TestAdminSaveKeepsTeacherPublication(t *testing.T) {
+	h, s := teacherEnv(t)
+	draft := ownedQ("Teacher draft", 2)
+	draft.Published = false
+	insertQ(t, s, draft)
+	insertQ(t, s, ownedQ("Teacher live", 2))
+	// The admin saves with the box checked, then with it unchecked.
+	teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Teacher draft", "fixed"), "custom_filename": "a1", "publish": "1"})
+	teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Teacher live", "fixed"), "custom_filename": "a2"})
+	if q := questionByText(t, s, "Teacher draft"); q.Published || q.Rubric != "fixed" {
+		t.Errorf("draft = %+v; want rubric updated, still unpublished", q)
+	}
+	if q := questionByText(t, s, "Teacher live"); !q.Published || q.Rubric != "fixed" {
+		t.Errorf("live = %+v; want rubric updated, still published", q)
+	}
+}
+
+// prefixEnv has users ivan and ivan_mid and a file of ivan_mid's on disk.
+func prefixEnv(t *testing.T) (*Handler, *store.Store, *model.User) {
+	t.Helper()
+	h, s := teacherEnv(t)
+	for _, name := range []string{"ivan", "ivan_mid"} {
+		if _, err := s.CreateUser(model.User{Username: name, DisplayName: name, PasswordHash: "x", Role: model.UserRoleTeacher, Active: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ivan, err := s.GetUserByUsername("ivan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join("questions", "teacher_ivan_mid_exam.json"), []byte(oneQ("Mid Q", "r")), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return h, s, ivan
+}
+
+func TestPrefixSiblingCannotTouchFile(t *testing.T) {
+	h, _, ivan := prefixEnv(t)
+	const file = "teacher_ivan_mid_exam.json"
+
+	rec := teacherSaveAs(t, h, ivan, map[string]string{"questions_json": oneQ("Ivan Q", "r"), "editing_file": file, "custom_filename": "other"})
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("save over sibling's file: status %d, want 403", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join("questions", file)); err != nil {
+		t.Errorf("sibling's file removed: %v", err)
+	}
+
+	r := chi.NewRouter()
+	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/tests/file/"+file, nil), ivan))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("download sibling's file: status %d, want 403", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.handleTeacherCreateTest(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/create-test?file="+file, nil), ivan))
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("open sibling's file: status %d, want 403", rec.Code)
+	}
+
+	rec = httptest.NewRecorder()
+	h.handleTeacherProfile(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/profile", nil), ivan))
+	if strings.Contains(rec.Body.String(), "ivan_mid_exam") {
+		t.Error("ivan's profile lists ivan_mid's file")
+	}
+}
+
+func TestTeacherCannotSaveIntoOthersPrefix(t *testing.T) {
+	h, s, ivan := prefixEnv(t)
+	rec := teacherSaveAs(t, h, ivan, map[string]string{"questions_json": oneQ("Ivan Q", "r"), "custom_filename": "mid_notes"})
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "another user") {
+		t.Errorf("status %d; want 400 explaining the name belongs to another user", rec.Code)
+	}
+	if _, err := os.Stat(filepath.Join("questions", "teacher_ivan_mid_notes.json")); err == nil {
+		t.Error("file created in another user's namespace")
+	}
+	if questionByText(t, s, "Ivan Q") != nil {
+		t.Error("questions saved although the name was rejected")
+	}
+}

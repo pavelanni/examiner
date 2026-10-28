@@ -32,3 +32,33 @@ func TestCanEditQuestion(t *testing.T) {
 		})
 	}
 }
+
+func TestQuestionFileOwner(t *testing.T) {
+	users := []model.User{
+		{ID: 1, Username: "ivan", Role: model.UserRoleTeacher},
+		{ID: 2, Username: "ivan_mid", Role: model.UserRoleTeacher},
+		{ID: 3, Username: "olga", Role: model.UserRoleStudent},
+		{ID: 4, Username: "admin", Role: model.UserRoleAdmin},
+	}
+	tests := []struct {
+		file string
+		want int64 // 0 = nobody
+	}{
+		{"teacher_ivan_x.json", 1},
+		{"teacher_ivan_mid_exam.json", 2},
+		{"teacher_ivan_middle.json", 1},
+		{"teacher_olga_x.json", 0}, // students own no question files
+		{"teacher_admin_x.json", 4},
+		{"teacher_ghost_x.json", 0},
+		{"other.json", 0},
+	}
+	for _, tt := range tests {
+		var got int64
+		if u := QuestionFileOwner(users, tt.file); u != nil {
+			got = u.ID
+		}
+		if got != tt.want {
+			t.Errorf("QuestionFileOwner(%q) = %d, want %d", tt.file, got, tt.want)
+		}
+	}
+}
