@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
+	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
 )
 
@@ -21,6 +22,9 @@ func loadEnv(t *testing.T) (context.Context, *store.Store) {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	if _, err := s.CreateUser(model.User{Username: "admin", DisplayName: "Administrator", PasswordHash: "x", Role: model.UserRoleAdmin, Active: true}); err != nil {
+		t.Fatal(err)
+	}
 	return appI18n.WithLocalizer(context.Background(), appI18n.NewLocalizer("en")), s
 }
 
@@ -100,5 +104,45 @@ func TestLoadQuestionsUnchangedSkips(t *testing.T) {
 	}
 	if n := count(t, s); n != 1 {
 		t.Errorf("count = %d, want 1", n)
+	}
+}
+
+func TestLoadQuestionsSkipsTeacherOwned(t *testing.T) {
+	ctx, s := loadEnv(t)
+	tid, err := s.CreateUser(model.User{Username: "ivan", DisplayName: "Ivanov", PasswordHash: "x", Role: model.UserRoleTeacher, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.InQuestionTx(ctx, func(tx *store.QuestionTx) error {
+		_, err := tx.Insert(model.Question{CourseID: 1, Text: "A", Difficulty: "easy", Topic: "t", Rubric: "mine",
+			ModelAnswer: "a", MaxPoints: 5, OwnerID: tid, Published: true})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := writeFile(t, "q.json", `[`+q("A", "r", "5")+`,`+q("New", "r", "5")+`]`)
+	if err := loadQuestions(ctx, s, []string{path}, 3, 0); err != nil {
+		t.Fatalf("loadQuestions: %v", err)
+	}
+	admin, err := s.FirstAdminID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	qs, err := s.ListQuestions()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, x := range qs {
+		switch x.Text {
+		case "A":
+			if x.OwnerID != tid || x.Rubric != "mine" {
+				t.Errorf("teacher's question changed: %+v", x)
+			}
+		case "New":
+			if x.OwnerID != admin || !x.Published {
+				t.Errorf("new question = %+v; want admin-owned, published", x)
+			}
+		}
 	}
 }

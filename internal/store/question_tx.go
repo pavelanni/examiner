@@ -130,13 +130,14 @@ func (t *QuestionTx) Update(q model.Question) error {
 	return nil
 }
 
-// DeleteUnusedByTexts deletes questions whose text is in oldTexts but not in
-// keepTexts and that no question_thread references.
-func (t *QuestionTx) DeleteUnusedByTexts(courseID int64, oldTexts, keepTexts []string) error {
+// DeleteUnusedByTexts deletes ownerID's questions whose text is in oldTexts
+// but not in keepTexts and that no question_thread references. Another
+// owner's question is never deleted, even if its text is in oldTexts.
+func (t *QuestionTx) DeleteUnusedByTexts(courseID, ownerID int64, oldTexts, keepTexts []string) error {
 	if len(oldTexts) == 0 {
 		return nil
 	}
-	args := append([]any{courseID}, stringsToAny(oldTexts)...)
+	args := append([]any{courseID, ownerID}, stringsToAny(oldTexts)...)
 	var notIn string
 	if len(keepTexts) > 0 {
 		notIn = "AND text NOT IN (" + placeholders(len(keepTexts)) + ")"
@@ -144,6 +145,7 @@ func (t *QuestionTx) DeleteUnusedByTexts(courseID int64, oldTexts, keepTexts []s
 	}
 	_, err := t.tx.Exec(`DELETE FROM questions
 		WHERE course_id = ?
+		  AND owner_id = ?
 		  AND text IN (`+placeholders(len(oldTexts))+`)
 		  `+notIn+`
 		  AND NOT EXISTS (
@@ -161,4 +163,14 @@ func (t *QuestionTx) SetImportedFileHash(name, hash string) error {
 		name, hash, now, hash, now,
 	)
 	return err
+}
+
+// UserDisplayName returns the user's display name, or "" for an unknown ID.
+func (t *QuestionTx) UserDisplayName(id int64) (string, error) {
+	var name string
+	err := t.tx.QueryRow(`SELECT display_name FROM users WHERE id = ?`, id).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }

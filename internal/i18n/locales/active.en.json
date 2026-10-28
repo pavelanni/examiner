@@ -134,5 +134,8 @@
   {"id": "QBuilderIncomplete", "other": "Fill in every field of each question you started. Points must be a whole number of at least 1."},
   {"id": "QBuilderEmpty", "other": "Add at least one question."},
   {"id": "QImportErrFileName", "other": "The file name is too long or contains characters that are not allowed (< > : \" / \\ | ? * or control characters). Nothing was changed."},
-  {"id": "QImportErrFileNotWritten", "other": "The questions were saved, but the question file could not be written. Try saving again; if it fails, contact the administrator."}
+  {"id": "QImportErrFileNotWritten", "other": "The questions were saved, but the question file could not be written. Try saving again; if it fails, contact the administrator."},
+  {"id": "QImportErrNotOwner", "other": "matches question #{{.ID}} owned by {{.Owner}} in topic \"{{.Topic}}\"; remove it from the file"},
+  {"id": "QImportOwnerAdmin", "other": "the administrator"},
+  {"id": "QPublishLabel", "other": "Publish (questions go into exams and are visible to other teachers)"}
 ]

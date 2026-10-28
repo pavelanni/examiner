@@ -11,20 +11,10 @@ import (
 
 	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
-	"github.com/pavelanni/examiner/internal/store"
 )
 
 func TestAdminUploadDuplicateProtection(t *testing.T) {
-	if err := i18n.Init("en"); err != nil {
-		t.Fatalf("i18n.Init: %v", err)
-	}
-
-	s, err := store.New(":memory:")
-	if err != nil {
-		t.Fatalf("store.New: %v", err)
-	}
-	t.Cleanup(func() { _ = s.Close() })
-
+	s := newImportStore(t)
 	h := &Handler{store: s}
 
 	// 1. Подготавливаем JSON с двумя вопросами в одной теме,

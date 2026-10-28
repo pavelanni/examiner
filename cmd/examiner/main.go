@@ -401,6 +401,16 @@ func loadQuestions(ctx context.Context, db *store.Store, paths []string, maxFoll
 		}
 	}
 
+	// Files loaded at startup belong to the first admin.
+	adminID, err := db.FirstAdminID()
+	if err != nil {
+		return err
+	}
+	admin, err := db.GetUserByID(adminID)
+	if err != nil {
+		return err
+	}
+
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -434,9 +444,11 @@ func loadQuestions(ctx context.Context, db *store.Store, paths []string, maxFoll
 		err = db.InQuestionTx(ctx, func(tx *store.QuestionTx) error {
 			var err error
 			res, err = questionimport.Apply(tx, drafts, questionimport.Options{
-				Mode:     questionimport.ModeSkipExisting,
-				CourseID: 1,
-				File:     &questionimport.FileRecord{Name: path, Hash: hash},
+				Mode:      questionimport.ModeSkipExisting,
+				CourseID:  1,
+				File:      &questionimport.FileRecord{Name: path, Hash: hash},
+				Actor:     admin,
+				Published: true,
 			})
 			return err
 		})

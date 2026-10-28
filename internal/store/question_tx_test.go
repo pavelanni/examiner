@@ -135,9 +135,10 @@ func TestQuestionTxUpdate(t *testing.T) {
 
 func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	s := newTestStore(t)
-	idKept := insertTestQuestion(t, s, "kept", "easy", "go")
-	idRemoved := insertTestQuestion(t, s, "removed", "easy", "go")
-	idReferenced := insertTestQuestion(t, s, "referenced", "easy", "go")
+	owner := createUser(t, s, "t", model.UserRoleTeacher)
+	idKept := txInsert(t, s, owned("kept", "go", owner, true))
+	idRemoved := txInsert(t, s, owned("removed", "go", owner, true))
+	idReferenced := txInsert(t, s, owned("referenced", "go", owner, true))
 	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -147,7 +148,7 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	}
 
 	err = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		return tx.DeleteUnusedByTexts(1, []string{"kept", "removed", "referenced"}, []string{"kept"})
+		return tx.DeleteUnusedByTexts(1, owner, []string{"kept", "removed", "referenced"}, []string{"kept"})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -188,5 +189,45 @@ func TestInQuestionTxReleasesLockOnPanic(t *testing.T) {
 	}
 	if n := countQuestions(t, s); n != 1 {
 		t.Errorf("count = %d, want 1 (panicked insert rolled back)", n)
+	}
+}
+
+func TestQuestionTxDeleteUnusedScopedToOwner(t *testing.T) {
+	s := newTestStore(t)
+	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
+	t2 := createUser(t, s, "t2", model.UserRoleTeacher)
+	a := txInsert(t, s, owned("A", "x", t1, true))
+	b := txInsert(t, s, owned("B", "x", t2, true))
+	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
+		return tx.DeleteUnusedByTexts(1, t1, []string{"A", "B"}, nil)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetQuestion(a); err == nil {
+		t.Error("own question A not deleted")
+	}
+	if _, err := s.GetQuestion(b); err != nil {
+		t.Errorf("other owner's question B deleted: %v", err)
+	}
+}
+
+func TestQuestionTxUserDisplayName(t *testing.T) {
+	s := newTestStore(t)
+	id, err := s.CreateUser(model.User{Username: "ivan", DisplayName: "Ivanov", PasswordHash: "x", Role: model.UserRoleTeacher, Active: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
+		if name, err := tx.UserDisplayName(id); err != nil || name != "Ivanov" {
+			t.Errorf("UserDisplayName(%d) = %q, %v", id, name, err)
+		}
+		if name, err := tx.UserDisplayName(9999); err != nil || name != "" {
+			t.Errorf("unknown user = %q, %v; want empty, nil", name, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }

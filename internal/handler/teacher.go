@@ -227,9 +227,11 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
 			Mode: questionimport.ModeUpdateExisting,
 			// TODO: derive course ID from context/config when multi-course support lands.
-			CourseID: 1,
-			OldTexts: oldTexts,
-			File:     &questionimport.FileRecord{Name: safeName, Hash: hex.EncodeToString(sum[:])},
+			CourseID:  1,
+			OldTexts:  oldTexts,
+			File:      &questionimport.FileRecord{Name: safeName, Hash: hex.EncodeToString(sum[:])},
+			Actor:     user,
+			Published: true,
 		})
 		return err
 	})

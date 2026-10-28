@@ -19,6 +19,14 @@ type Warning struct {
 func Localize(ctx context.Context, errs []FieldError) []string {
 	out := make([]string, 0, len(errs))
 	for _, e := range errs {
+		if e.Code == "QImportErrNotOwner" && e.Params["Owner"] == "" {
+			params := make(map[string]any, len(e.Params))
+			for k, v := range e.Params {
+				params[k] = v
+			}
+			params["Owner"] = i18n.T(ctx, "QImportOwnerAdmin")
+			e.Params = params
+		}
 		msg := i18n.Td(ctx, e.Code, e.Params)
 		switch {
 		case e.Question == 0:

@@ -149,9 +149,11 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	err = h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
 		var err error
 		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
-			Mode:     questionimport.ModeSkipExisting,
-			CourseID: 1,
-			File:     &questionimport.FileRecord{Name: header.Filename, Hash: hash},
+			Mode:      questionimport.ModeSkipExisting,
+			CourseID:  1,
+			File:      &questionimport.FileRecord{Name: header.Filename, Hash: hash},
+			Actor:     model.UserFromContext(r.Context()),
+			Published: true,
 		})
 		return err
 	})

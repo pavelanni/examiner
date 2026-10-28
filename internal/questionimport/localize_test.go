@@ -57,6 +57,7 @@ func TestLocalesComplete(t *testing.T) {
 		"QImportErrNotInteger", "QImportErrRequired", "QImportErrDifficulty", "QImportErrPositive",
 		"QImportErrUnknownField", "QImportErrInternal", "QImportErrorsTitle", "QImportWarnDupInFile",
 		"QImportWarnDupInDB", "QImportWarnDupOtherTopic", "QImportSummary", "QBuilderIncomplete", "QBuilderEmpty", "QImportErrFileName", "QImportErrFileNotWritten",
+		"QImportErrNotOwner", "QImportOwnerAdmin", "QPublishLabel",
 	}
 	for _, lang := range []string{"en", "ru"} {
 		data, err := os.ReadFile("../i18n/locales/active." + lang + ".json")
@@ -79,5 +80,14 @@ func TestLocalesComplete(t *testing.T) {
 				t.Errorf("%s: missing message %s", lang, id)
 			}
 		}
+	}
+}
+
+func TestLocalizeNotOwnerAdmin(t *testing.T) {
+	got := Localize(ctxFor(t, "ru"), []FieldError{{Question: 3, Code: "QImportErrNotOwner",
+		Params: map[string]any{"ID": int64(17), "Owner": "", "Topic": "Механика"}}})
+	want := "Вопрос №3: совпадает с вопросом #17 владельца «администратор» в теме «Механика»; уберите его из файла"
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("got %q, want %q", got, want)
 	}
 }

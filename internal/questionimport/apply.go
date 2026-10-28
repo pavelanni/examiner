@@ -1,8 +1,10 @@
 package questionimport
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/pavelanni/examiner/internal/access"
 	"github.com/pavelanni/examiner/internal/model"
 )
 
@@ -13,8 +15,9 @@ type Tx interface {
 	FindByCourseAndText(courseID int64, text string) (*model.Question, error)
 	Insert(q model.Question) (int64, error)
 	Update(q model.Question) error
-	DeleteUnusedByTexts(courseID int64, oldTexts, keepTexts []string) error
+	DeleteUnusedByTexts(courseID, ownerID int64, oldTexts, keepTexts []string) error
 	SetImportedFileHash(name, hash string) error
+	UserDisplayName(id int64) (string, error)
 }
 
 // Mode says what to do with a question that already exists in the topic.
@@ -38,6 +41,19 @@ type Options struct {
 	CourseID int64
 	OldTexts []string    // teacher edit: questions of the file being replaced
 	File     *FileRecord // recorded in imported_files inside the transaction
+
+	Actor     *model.User // who imports; owns inserted questions
+	Published bool        // publication state of inserted and updated questions
+}
+
+// ConflictError lists questions in the file that already exist and belong
+// to someone the actor may not edit. Callers show it like validation errors.
+type ConflictError struct {
+	Errs []FieldError
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("%d question(s) belong to another owner", len(e.Errs))
 }
 
 // Result counts what Apply did.
@@ -49,7 +65,11 @@ type Result struct {
 // Apply writes validated questions through tx. Run it inside one
 // transaction: on error the caller rolls back and the Result is discarded.
 func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
+	if opts.Actor == nil {
+		return Result{}, errors.New("import without an acting user")
+	}
 	var res Result
+	var conflicts []FieldError
 	seen := make(map[string]int, len(drafts)) // topic + "\x00" + text_norm -> question number
 	keepTexts := make([]string, 0, len(drafts))
 
@@ -73,7 +93,8 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			Rubric:      d.Rubric,
 			ModelAnswer: d.ModelAnswer,
 			MaxPoints:   d.MaxPoints,
-			Published:   true,
+			OwnerID:     opts.Actor.ID,
+			Published:   opts.Published,
 		}
 
 		existing, err := tx.FindByTopicAndTextNorm(d.Topic, norm)
@@ -82,6 +103,15 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 		}
 		if existing != nil {
 			if opts.Mode == ModeUpdateExisting {
+				if !access.CanEditQuestion(opts.Actor, *existing) {
+					owner, err := tx.UserDisplayName(existing.OwnerID)
+					if err != nil {
+						return Result{}, fmt.Errorf("question %d: owner name: %w", d.Number, err)
+					}
+					conflicts = append(conflicts, FieldError{Question: d.Number, Code: "QImportErrNotOwner",
+						Params: map[string]any{"ID": existing.ID, "Owner": owner, "Topic": d.Topic}})
+					continue
+				}
 				// The new text may equal another row's exact text (a legacy
 				// near-duplicate in another topic); updating would violate
 				// the (course_id, text) unique index.
@@ -94,6 +124,7 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 					continue
 				}
 				q.ID = existing.ID
+				q.OwnerID = existing.OwnerID
 				if err := tx.Update(q); err != nil {
 					return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)
 				}
@@ -121,8 +152,11 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 		res.Inserted++
 	}
 
+	if len(conflicts) > 0 {
+		return Result{}, &ConflictError{Errs: conflicts}
+	}
 	if len(opts.OldTexts) > 0 {
-		if err := tx.DeleteUnusedByTexts(opts.CourseID, opts.OldTexts, keepTexts); err != nil {
+		if err := tx.DeleteUnusedByTexts(opts.CourseID, opts.Actor.ID, opts.OldTexts, keepTexts); err != nil {
 			return Result{}, fmt.Errorf("delete replaced questions: %w", err)
 		}
 	}
