@@ -149,3 +149,111 @@ func TestListQuestionsFilteredSkipsUnpublished(t *testing.T) {
 		t.Errorf("questions = %+v, %v; want only P", qs, err)
 	}
 }
+
+func ownerOf(t *testing.T, s *Store, id int64) int64 {
+	t.Helper()
+	q, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("GetQuestion %d: %v", id, err)
+	}
+	return q.OwnerID
+}
+
+func owned(text, topic string, owner int64, published bool) model.Question {
+	q := txQuestion(text, topic)
+	q.OwnerID = owner
+	q.Published = published
+	return q
+}
+
+func TestFirstAdminID(t *testing.T) {
+	s := newTestStore(t)
+	createUser(t, s, "t", model.UserRoleTeacher)
+	if _, err := s.FirstAdminID(); err == nil {
+		t.Error("no admin: want error")
+	}
+	a := createUser(t, s, "a1", model.UserRoleAdmin)
+	createUser(t, s, "a2", model.UserRoleAdmin)
+	if got, err := s.FirstAdminID(); err != nil || got != a {
+		t.Errorf("FirstAdminID = %d, %v; want %d", got, err, a)
+	}
+}
+
+func TestFindUnownedQuestionIDs(t *testing.T) {
+	s := newTestStore(t)
+	tid := createUser(t, s, "t", model.UserRoleTeacher)
+	free := txInsert(t, s, owned("A", "x", 0, true))
+	txInsert(t, s, owned("A?", "x", tid, true)) // same key, owned
+	ids, err := s.FindUnownedQuestionIDs("x", "a")
+	if err != nil || len(ids) != 1 || ids[0] != free {
+		t.Errorf("ids = %v, %v; want [%d]", ids, err, free)
+	}
+}
+
+func TestClaimQuestionOwners(t *testing.T) {
+	s := newTestStore(t)
+	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
+	t2 := createUser(t, s, "t2", model.UserRoleTeacher)
+	r1 := txInsert(t, s, owned("R1", "x", 0, true))
+	r2 := txInsert(t, s, owned("R2", "x", 0, true))
+	r3 := txInsert(t, s, owned("R3", "x", 0, true))
+	r4 := txInsert(t, s, owned("R4", "x", t2, true))
+	claims := map[int64][]int64{r1: {t1}, r2: {t1, t2}, r4: {t1}}
+
+	if err := s.ClaimQuestionOwners(claims); err == nil {
+		t.Fatal("no admin: want error")
+	}
+	if ownerOf(t, s, r1) != 0 {
+		t.Fatal("rows changed although the claim failed")
+	}
+
+	admin := createUser(t, s, "admin", model.UserRoleAdmin)
+	for run := 1; run <= 2; run++ {
+		if err := s.ClaimQuestionOwners(claims); err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+		for id, want := range map[int64]int64{r1: t1, r2: admin, r3: admin, r4: t2} {
+			if got := ownerOf(t, s, id); got != want {
+				t.Errorf("run %d: row %d owner = %d, want %d", run, id, got, want)
+			}
+		}
+	}
+}
+
+func TestClaimQuestionOwnersSameUserTwice(t *testing.T) {
+	s := newTestStore(t)
+	createUser(t, s, "admin", model.UserRoleAdmin)
+	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
+	r1 := txInsert(t, s, owned("R1", "x", 0, true))
+	if err := s.ClaimQuestionOwners(map[int64][]int64{r1: {t1, t1}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownerOf(t, s, r1); got != t1 {
+		t.Errorf("owner = %d, want %d", got, t1)
+	}
+}
+
+func TestAllPublished(t *testing.T) {
+	s := newTestStore(t)
+	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
+	t2 := createUser(t, s, "t2", model.UserRoleTeacher)
+	txInsert(t, s, owned("X", "a", t1, true))
+	txInsert(t, s, owned("Y", "b", t1, false))
+	txInsert(t, s, owned("Z", "a", t2, false))
+	tests := []struct {
+		keys []QuestionKey
+		want bool
+	}{
+		{[]QuestionKey{{"a", "x"}}, true},
+		{[]QuestionKey{{"a", "x"}, {"b", "y"}}, false},
+		{[]QuestionKey{{"zz", "zz"}}, true},
+		{[]QuestionKey{{"a", "x"}, {"a", "z"}}, true}, // t2's unpublished row does not count
+		{nil, true},
+	}
+	for _, tt := range tests {
+		got, err := s.AllPublished(t1, tt.keys)
+		if err != nil || got != tt.want {
+			t.Errorf("AllPublished(%v) = %v, %v; want %v", tt.keys, got, err, tt.want)
+		}
+	}
+}
