@@ -3,19 +3,19 @@ package handler
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/questionimport"
+	"github.com/pavelanni/examiner/internal/store"
 )
 
 // handleAdminUsersPage serves the admin users management page.
@@ -93,13 +93,19 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 
 // handleAdminQuestionsPage serves the admin questions management page.
 func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Request) {
+	renderAdminQuestions(w, r, http.StatusOK, "", false, nil, nil)
+}
+
+func renderAdminQuestions(w http.ResponseWriter, r *http.Request, status int, flash string, flashErr bool, errs, warnings []string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.AdminQuestionsPage("", false).Render(r.Context(), w); err != nil {
+	w.WriteHeader(status)
+	if err := views.AdminQuestionsPage(flash, flashErr, errs, warnings).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
 
-// handleUploadQuestions handles question file upload.
+// handleUploadQuestions imports a question file. The whole file is
+// validated first; a file with any error writes nothing.
 func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
 		http.Error(w, "file too large", http.StatusBadRequest)
@@ -129,80 +135,37 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if storedHash == hash {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.AdminQuestionsPage("UploadDuplicate", true).Render(r.Context(), w); err != nil {
-			slog.Error("render error", "error", err)
-		}
+		renderAdminQuestions(w, r, http.StatusOK, appI18n.T(r.Context(), "UploadDuplicate"), true, nil, nil)
 		return
 	}
 
-	var questions []model.QuestionImport
-	if err := json.Unmarshal(data, &questions); err != nil {
-		http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+	drafts, errs := questionimport.Parse(data)
+	if len(errs) > 0 {
+		renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), errs), nil)
 		return
 	}
 
-	importedCount := 0
-	var warnings []string
-	seenInFile := make(map[string]int) // topic + "\x00" + text_norm -> 1-based question number
-
-	for i, qi := range questions {
-		qNum := i + 1
-		norm := model.NormalizeQuestionText(qi.Text)
-		key := qi.Topic + "\x00" + norm
-
-		// Check duplicate within the same file (intra-file)
-		if prevNum, duplicate := seenInFile[key]; duplicate {
-			warnings = append(warnings, fmt.Sprintf("Вопрос №%d совпадает с вопросом №%d в файле в теме %q (пропущен).", qNum, prevNum, qi.Topic))
-			continue
-		}
-		seenInFile[key] = qNum
-
-		// Check duplicate against existing questions in DB (normalized)
-		existing, err := h.store.FindQuestionByTopicAndTextNorm(qi.Topic, norm)
-		if err != nil {
-			slog.Error("failed to check question duplicate", "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
-		}
-		if existing != nil {
-			warnings = append(warnings, fmt.Sprintf("Вопрос №%d совпадает с существующим вопросом #%d в теме %q (пропущен).", qNum, existing.ID, qi.Topic))
-			continue
-		}
-
-		// Insert question
-		q := model.Question{
-			CourseID:    1,
-			Text:        qi.Text,
-			TextNorm:    norm,
-			Difficulty:  qi.Difficulty,
-			Topic:       qi.Topic,
-			Rubric:      qi.Rubric,
-			ModelAnswer: qi.ModelAnswer,
-			MaxPoints:   qi.MaxPoints,
-		}
-		if _, err := h.store.InsertQuestion(q); err != nil {
-			slog.Error("failed to insert question", "error", err)
-			http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
-			return
-		}
-		importedCount++
+	var res questionimport.Result
+	err = h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
+		var err error
+		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
+			Mode:     questionimport.ModeSkipExisting,
+			CourseID: 1,
+			File:     &questionimport.FileRecord{Name: header.Filename, Hash: hash},
+		})
+		return err
+	})
+	if err != nil {
+		slog.Error("failed to import questions", "filename", header.Filename, "error", err)
+		renderAdminQuestions(w, r, http.StatusInternalServerError, appI18n.T(r.Context(), "QImportErrInternal"), true, nil, nil)
+		return
 	}
 
-	if err := h.store.SetImportedFileHash(header.Filename, hash); err != nil {
-		slog.Error("failed to record import", "error", err)
-	}
+	slog.Info("uploaded questions via admin", "filename", header.Filename,
+		"inserted", res.Inserted, "skipped", res.Skipped)
 
-	slog.Info("uploaded questions via admin", "filename", header.Filename, "imported", importedCount, "warnings", len(warnings))
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	var msg string
-	if len(warnings) > 0 {
-		msg = fmt.Sprintf("Успешно импортировано %d вопросов. Предупреждения: %s", importedCount, strings.Join(warnings, " "))
-	} else {
-		msg = fmt.Sprintf("Successfully imported %d questions.", importedCount)
-	}
-	if err := views.AdminQuestionsPage(msg, len(warnings) > 0).Render(r.Context(), w); err != nil {
-		slog.Error("render error", "error", err)
-	}
+	summary := appI18n.Td(r.Context(), "QImportSummary", map[string]any{
+		"Inserted": res.Inserted, "Updated": res.Updated, "Skipped": res.Skipped,
+	})
+	renderAdminQuestions(w, r, http.StatusOK, summary, false, nil, questionimport.LocalizeWarnings(r.Context(), res.Warnings))
 }

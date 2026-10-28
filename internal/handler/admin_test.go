@@ -75,7 +75,7 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 
 	// Критерий 1: в ответе должно быть предупреждение о дубликате
 	body1 := rec1.Body.String()
-	if !strings.Contains(body1, "совпадает с вопросом") && !strings.Contains(body1, "Предупреждения") {
+	if !strings.Contains(body1, "duplicates question 1") {
 		t.Errorf("expected warning in response, got: %s", body1)
 	}
 
@@ -108,7 +108,7 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 	}
 
 	body3 := rec3.Body.String()
-	if !strings.Contains(body3, "совпадает с существующим вопросом") {
+	if !strings.Contains(body3, "matches existing question") {
 		t.Errorf("expected warning about existing question in DB, got: %s", body3)
 	}
 
