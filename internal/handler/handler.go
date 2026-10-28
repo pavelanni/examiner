@@ -138,7 +138,7 @@ func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get available topics for the dropdown.
-	allTopics, err := h.store.ListDistinctTopics()
+	allTopics, err := h.store.ListPublishedTopics()
 	if err != nil {
 		slog.Error("failed to list topics", "error", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)

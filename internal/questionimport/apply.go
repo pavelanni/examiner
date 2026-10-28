@@ -73,6 +73,7 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			Rubric:      d.Rubric,
 			ModelAnswer: d.ModelAnswer,
 			MaxPoints:   d.MaxPoints,
+			Published:   true,
 		}
 
 		existing, err := tx.FindByTopicAndTextNorm(d.Topic, norm)
