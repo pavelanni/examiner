@@ -195,7 +195,7 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Deduplicate questions by text (guards against legacy DB duplicates).
+	// Deduplicate by normalized text (guards against legacy DB duplicates).
 	seen := make(map[string]bool, len(questions))
 	unique := questions[:0]
 	for _, q := range questions {

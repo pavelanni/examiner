@@ -226,6 +226,23 @@ plain array of questions or a wrapper object:
 }
 ```
 
+Every question must follow these rules, whether it comes from the
+builder, a teacher upload, the admin import or the `--questions` flag:
+
+| Field | Rule |
+| ----- | ---- |
+| `text`, `topic`, `rubric`, `model_answer` | Required, not empty or whitespace only |
+| `difficulty` | `easy`, `medium` or `hard` |
+| `max_points` | Whole number greater than 0 (`"5"`, `2.5` and `10.0` are rejected) |
+
+Other fields are rejected. A file with any error is not imported at all:
+the page lists every error with the question number and field, for
+example "Question 3, field max_points: must be an integer greater than
+0". At startup, an invalid `--questions` file stops the server with the
+same list. A question that matches an existing one in the same topic
+(ignoring case, spacing and trailing punctuation) is skipped with a
+warning; when a teacher saves their own file, it is updated instead.
+
 | Route | Purpose |
 | ----- | ------- |
 | `/teacher/profile` | List and manage your question files |
