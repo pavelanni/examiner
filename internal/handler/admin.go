@@ -3,6 +3,7 @@ package handler
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -157,6 +158,13 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		})
 		return err
 	})
+	var conflict *questionimport.ConflictError
+	if errors.As(err, &conflict) {
+		// Not reachable with ModeSkipExisting; kept so a mode change cannot
+		// turn a conflict into a 500.
+		renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), conflict.Errs), nil)
+		return
+	}
 	if err != nil {
 		slog.Error("failed to import questions", "filename", header.Filename, "error", err)
 		renderAdminQuestions(w, r, http.StatusInternalServerError, appI18n.T(r.Context(), "QImportErrInternal"), true, nil, nil)

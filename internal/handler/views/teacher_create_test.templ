@@ -14,7 +14,7 @@ func safeJSONString(questions []model.QuestionImport) string {
     return str
 }
 
-templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string, customName string, errs []string) {
+templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string, customName string, published bool, errs []string) {
     @Layout(t(ctx, "TeacherProfile")) {
         // Добавляем глобальные CSS Стили для автоматической нумерации блоков
         <style>
@@ -70,6 +70,10 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                 </div>
             }
             
+            <div style="margin: 12px 0;">
+                <label><input type="checkbox" name="publish" value="1" checked?={ published }/> { t(ctx, "QPublishLabel") }</label>
+            </div>
+
             <textarea id="assembled-json" name="questions_json" style="display:none;"></textarea>
             
             <div>

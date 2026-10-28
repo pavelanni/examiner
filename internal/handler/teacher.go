@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -38,11 +39,11 @@ func draftsToImports(drafts []questionimport.Draft) []model.QuestionImport {
 	return out
 }
 
-func (h *Handler) renderTeacherCreateTest(w http.ResponseWriter, r *http.Request, status int, questions []model.QuestionImport, filename, customName string, errs []string) {
+func (h *Handler) renderTeacherCreateTest(w http.ResponseWriter, r *http.Request, status int, questions []model.QuestionImport, filename, customName string, published bool, errs []string) {
 	user := model.UserFromContext(r.Context())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	component := views.TeacherCreateTestPage(user.DisplayName, model.CSRFTokenFromContext(r.Context()), questions, filename, customName, errs)
+	component := views.TeacherCreateTestPage(user.DisplayName, model.CSRFTokenFromContext(r.Context()), questions, filename, customName, published, errs)
 	if err := component.Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
@@ -104,7 +105,23 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	h.renderTeacherCreateTest(w, r, http.StatusOK, existingQuestions, filename, "", nil)
+	// A new file is published by default; an existing one keeps the state
+	// of the teacher's questions in it, so saving does not republish it.
+	published := true
+	if len(existingQuestions) > 0 {
+		keys := make([]store.QuestionKey, 0, len(existingQuestions))
+		for _, q := range existingQuestions {
+			keys = append(keys, store.QuestionKey{Topic: q.Topic, TextNorm: model.NormalizeQuestionText(q.Text)})
+		}
+		var err error
+		if published, err = h.store.AllPublished(user.ID, keys); err != nil {
+			slog.Error("failed to read publication state", "file", filename, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	h.renderTeacherCreateTest(w, r, http.StatusOK, existingQuestions, filename, "", published, nil)
 }
 
 func (h *Handler) handleTeacherMe(w http.ResponseWriter, r *http.Request) {
@@ -156,11 +173,12 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	editingFile := r.FormValue("editing_file")
 	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
+	published := r.FormValue("publish") == "1"
 
 	// Validate the whole payload before touching the disk or the DB.
 	drafts, errs := questionimport.Parse(data)
 	if len(errs) > 0 {
-		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename,
+		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename, published,
 			questionimport.Localize(r.Context(), errs))
 		return
 	}
@@ -199,7 +217,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	// Reject a name the file system would refuse before anything is
 	// written: the rename happens only after the DB commit.
 	if !validQuestionFileName(safeName) {
-		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename,
+		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename, published,
 			[]string{appI18n.T(r.Context(), "QImportErrFileName")})
 		return
 	}
@@ -207,7 +225,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	fail := func(msgID, msg string, err error) {
 		slog.Error(msg, "user", user.Username, "file", outPath, "error", err)
-		h.renderTeacherCreateTest(w, r, http.StatusInternalServerError, draftsToImports(drafts), editingFile, customFilename,
+		h.renderTeacherCreateTest(w, r, http.StatusInternalServerError, draftsToImports(drafts), editingFile, customFilename, published,
 			[]string{appI18n.T(r.Context(), msgID)})
 	}
 	internalError := func(msg string, err error) { fail("QImportErrInternal", msg, err) }
@@ -231,13 +249,19 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			OldTexts:  oldTexts,
 			File:      &questionimport.FileRecord{Name: safeName, Hash: hex.EncodeToString(sum[:])},
 			Actor:     user,
-			Published: true,
+			Published: published,
 		})
 		return err
 	})
 	if err != nil {
 		if rmErr := os.Remove(tmpPath); rmErr != nil {
 			slog.Warn("failed to remove temporary questions file", "path", tmpPath, "error", rmErr)
+		}
+		var conflict *questionimport.ConflictError
+		if errors.As(err, &conflict) {
+			h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename, published,
+				questionimport.Localize(r.Context(), conflict.Errs))
+			return
 		}
 		internalError("failed to save questions", err)
 		return

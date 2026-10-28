@@ -29,6 +29,11 @@ func teacherEnv(t *testing.T) (*Handler, *store.Store) {
 
 func teacherSave(t *testing.T, h *Handler, fields map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
+	return teacherSaveAs(t, h, &model.User{ID: 2, Username: "teacher1", DisplayName: "T", Role: model.UserRoleTeacher}, fields)
+}
+
+func teacherSaveAs(t *testing.T, h *Handler, user *model.User, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	for k, v := range fields {
@@ -41,8 +46,7 @@ func teacherSave(t *testing.T, h *Handler, fields map[string]string) *httptest.R
 	}
 	req := httptest.NewRequest(http.MethodPost, "/teacher/tests", &body)
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	teacher := &model.User{ID: 2, Username: "teacher1", DisplayName: "T", Role: model.UserRoleTeacher}
-	req = req.WithContext(i18n.WithLocalizer(model.ContextWithUser(req.Context(), teacher), i18n.NewLocalizer("en")))
+	req = req.WithContext(i18n.WithLocalizer(model.ContextWithUser(req.Context(), user), i18n.NewLocalizer("en")))
 	rec := httptest.NewRecorder()
 	h.handleTeacherUpload(rec, req)
 	return rec
