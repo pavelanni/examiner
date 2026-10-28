@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/questionimport"
 )
 
 func txQuestion(text, topic string) model.Question {
@@ -160,3 +161,5 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 		t.Error("unused question not deleted")
 	}
 }
+
+var _ questionimport.Tx = (*QuestionTx)(nil)
