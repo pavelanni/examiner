@@ -30,6 +30,7 @@ func insertTestQuestion(t *testing.T, s *Store, text, difficulty, topic string) 
 		Rubric:      "rubric for " + text,
 		ModelAnswer: "answer for " + text,
 		MaxPoints:   10,
+		Published:   true,
 	})
 	if err != nil {
 		t.Fatalf("insertTestQuestion: %v", err)
@@ -489,13 +490,13 @@ func TestImportedFileHash(t *testing.T) {
 	}
 }
 
-func TestListDistinctTopics(t *testing.T) {
+func TestListPublishedTopics(t *testing.T) {
 	s := newTestStore(t)
 
 	// Empty DB.
-	topics, err := s.ListDistinctTopics()
+	topics, err := s.ListPublishedTopics()
 	if err != nil {
-		t.Fatalf("ListDistinctTopics: %v", err)
+		t.Fatalf("ListPublishedTopics: %v", err)
 	}
 	if len(topics) != 0 {
 		t.Errorf("expected 0 topics, got %d", len(topics))
@@ -503,7 +504,7 @@ func TestListDistinctTopics(t *testing.T) {
 
 	// Single topic.
 	insertTestQuestion(t, s, "Q1", "easy", "basics")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 1 || topics[0] != "basics" {
 		t.Errorf("expected [basics], got %v", topics)
 	}
@@ -512,7 +513,7 @@ func TestListDistinctTopics(t *testing.T) {
 	insertTestQuestion(t, s, "Q2", "easy", "basics")
 	insertTestQuestion(t, s, "Q3", "easy", "concurrency")
 	insertTestQuestion(t, s, "Q4", "easy", "advanced")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 3 {
 		t.Errorf("expected 3 distinct topics, got %d: %v", len(topics), topics)
 	}

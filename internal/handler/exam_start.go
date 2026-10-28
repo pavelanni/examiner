@@ -54,7 +54,7 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 		}
 	}
 
-	allTopics, err := h.store.ListDistinctTopics()
+	allTopics, err := h.store.ListPublishedTopics()
 	if err != nil {
 		slog.Error("failed to list topics", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

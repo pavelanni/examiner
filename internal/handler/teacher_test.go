@@ -156,17 +156,17 @@ func TestStartExamDeduplicatesByTextNorm(t *testing.T) {
 		t.Fatalf("CreateBlueprint: %v", err)
 	}
 	if _, err := s.InsertQuestion(model.Question{
-		CourseID: 1, Text: "What is Go?", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5,
+		CourseID: 1, Text: "What is Go?", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5, Published: true,
 	}); err != nil {
 		t.Fatalf("InsertQuestion 1: %v", err)
 	}
 	if _, err := s.InsertQuestion(model.Question{
-		CourseID: 2, Text: "what is go", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5,
+		CourseID: 2, Text: "what is go", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5, Published: true,
 	}); err != nil {
 		t.Fatalf("InsertQuestion 2: %v", err)
 	}
 	if _, err := s.InsertQuestion(model.Question{
-		CourseID: 1, Text: "What is Go?", Difficulty: model.DifficultyEasy, Topic: "history", MaxPoints: 5,
+		CourseID: 1, Text: "What is Go?", Difficulty: model.DifficultyEasy, Topic: "history", MaxPoints: 5, Published: true,
 	}); err != nil {
 		t.Fatalf("InsertQuestion 3 (different topic): %v", err)
 	}

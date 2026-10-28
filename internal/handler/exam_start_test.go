@@ -38,7 +38,7 @@ func withExamUser(r *http.Request, u *model.User) *http.Request {
 
 // examQuestion builds a valid question fixture.
 func examQuestion(text, topic string) model.Question {
-	return model.Question{CourseID: 1, Text: text, Topic: topic, Difficulty: model.DifficultyEasy, Rubric: "r", ModelAnswer: "a", MaxPoints: 5}
+	return model.Question{CourseID: 1, Text: text, Topic: topic, Difficulty: model.DifficultyEasy, Rubric: "r", ModelAnswer: "a", MaxPoints: 5, Published: true}
 }
 
 // insertExamQuestion inserts a fixture and fails on a skipped or invalid row.

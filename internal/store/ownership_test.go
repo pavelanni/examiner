@@ -125,3 +125,27 @@ func TestQuestionTxUpdateKeepsOwner(t *testing.T) {
 		t.Errorf("updated_at not >= created_at: %v", err)
 	}
 }
+
+func TestListPublishedTopicsSkipsUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	a := txQuestion("A1", "a")
+	a.Published = true
+	txInsert(t, s, a)
+	txInsert(t, s, txQuestion("B1", "b")) // unpublished
+	topics, err := s.ListPublishedTopics()
+	if err != nil || len(topics) != 1 || topics[0] != "a" {
+		t.Errorf("topics = %v, %v; want [a]", topics, err)
+	}
+}
+
+func TestListQuestionsFilteredSkipsUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	p := txQuestion("P", "a")
+	p.Published = true
+	txInsert(t, s, p)
+	txInsert(t, s, txQuestion("U", "a"))
+	qs, err := s.ListQuestionsFiltered("", "a")
+	if err != nil || len(qs) != 1 || qs[0].Text != "P" {
+		t.Errorf("questions = %+v, %v; want only P", qs, err)
+	}
+}

@@ -345,7 +345,8 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 	return questions, rows.Err()
 }
 
-// ListQuestionsFiltered returns questions matching the given filters.
+// ListQuestionsFiltered returns published questions matching the given
+// filters; it feeds students' exams.
 // Empty strings mean no filtering on that field.
 // Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
@@ -362,7 +363,7 @@ func (s *Store) ListQuestionsInTopic(difficulty, topic string) ([]model.Question
 
 // listQuestionsFiltered distinguishes an exact topic from the unfiltered bank.
 func (s *Store) listQuestionsFiltered(difficulty string, topic *string) ([]model.Question, error) {
-	query := `SELECT ` + questionColumns + ` FROM questions WHERE archived = 0`
+	query := `SELECT ` + questionColumns + ` FROM questions WHERE archived = 0 AND published = 1`
 	var args []any
 	if difficulty != "" {
 		var levels []string
@@ -897,9 +898,10 @@ func (s *Store) SetImportedFileHash(path, hash string) error {
 	return nil
 }
 
-// ListDistinctTopics returns all unique topic values from the questions table.
-func (s *Store) ListDistinctTopics() ([]string, error) {
-	rows, err := s.db.Query(`SELECT DISTINCT topic FROM questions WHERE archived = 0 ORDER BY topic`)
+// ListPublishedTopics returns the topics that have at least one active,
+// published question, sorted. Students choose their exam topic from this list.
+func (s *Store) ListPublishedTopics() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT topic FROM questions WHERE archived = 0 AND published = 1 ORDER BY topic`)
 	if err != nil {
 		return nil, err
 	}
