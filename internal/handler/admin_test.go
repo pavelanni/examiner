@@ -78,8 +78,8 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 
 	// Критерий 1: в ответе должно быть локализованное предупреждение о дубликате на английском
 	body1 := rec1.Body.String()
-	if !strings.Contains(body1, "matches question #1 in the file under topic") || !strings.Contains(body1, "Warnings:") {
-		t.Errorf("expected English warning in response, got: %s", body1)
+	if !strings.Contains(body1, "duplicates question 1") {
+		t.Errorf("expected warning in response, got: %s", body1)
 	}
 
 	// Критерий 2: повторный импорт того же файла не меняет количество вопросов и показывает локализованное сообщение
@@ -119,8 +119,8 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 	}
 
 	body3 := rec3.Body.String()
-	if !strings.Contains(body3, "matches existing question #") {
-		t.Errorf("expected English warning about existing question in DB, got: %s", body3)
+	if !strings.Contains(body3, "matches existing question") {
+		t.Errorf("expected warning about existing question in DB, got: %s", body3)
 	}
 
 	// Проверяем русскую локаль (RU locale)

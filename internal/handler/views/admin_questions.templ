@@ -6,7 +6,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ AdminQuestionsPage(flashMsg string, flashErr bool, duplicates []model.DuplicateQuestionGroup) {
+templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string, duplicates []model.DuplicateQuestionGroup) {
 	@Layout(t(ctx, "AdminQuestions")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -21,6 +21,7 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, duplicates []model.Dupl
 				<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
 			}
 		}
+		@importMessages(errs, warnings)
 		<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/questions")) } enctype="multipart/form-data">
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
@@ -43,5 +44,27 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, duplicates []model.Dupl
 				}
 			</section>
 		}
+	}
+}
+
+// importMessages lists question import errors and warnings. It is shared
+// by the admin import page and the teacher constructor.
+templ importMessages(errs []string, warnings []string) {
+	if len(errs) > 0 {
+		<article role="alert" style="border-left: 4px solid var(--pico-del-color);">
+			<p><strong>{ t(ctx, "QImportErrorsTitle") }</strong></p>
+			<ul>
+				for _, e := range errs {
+					<li>{ e }</li>
+				}
+			</ul>
+		</article>
+	}
+	if len(warnings) > 0 {
+		<ul>
+			for _, w := range warnings {
+				<li>{ w }</li>
+			}
+		</ul>
 	}
 }
