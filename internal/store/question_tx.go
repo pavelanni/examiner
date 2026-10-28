@@ -25,10 +25,18 @@ func (s *Store) InQuestionTx(ctx context.Context, fn func(*QuestionTx) error) er
 	if err != nil {
 		return fmt.Errorf("question tx: begin: %w", err)
 	}
+	// Roll back on every exit but a commit, including a panic in fn:
+	// a leaked BEGIN IMMEDIATE would block all other writers.
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
 	if err := fn(&QuestionTx{tx: tx}); err != nil {
-		_ = tx.Rollback()
 		return fmt.Errorf("question tx: %w", err)
 	}
+	committed = true
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("question tx: commit: %w", err)
 	}

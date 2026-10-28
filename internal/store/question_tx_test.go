@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -163,3 +164,29 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 }
 
 var _ questionimport.Tx = (*QuestionTx)(nil)
+
+func TestInQuestionTxReleasesLockOnPanic(t *testing.T) {
+	s, err := New(filepath.Join(t.TempDir(), "q.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	func() {
+		defer func() { _ = recover() }()
+		_ = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
+			if _, err := tx.Insert(txQuestion("A", "x")); err != nil {
+				return err
+			}
+			panic("boom")
+		})
+	}()
+
+	// A leaked BEGIN IMMEDIATE would hold the write lock until busy_timeout.
+	if _, err := s.InsertQuestion(txQuestion("B", "x")); err != nil {
+		t.Fatalf("write after panic: %v", err)
+	}
+	if n := countQuestions(t, s); n != 1 {
+		t.Errorf("count = %d, want 1 (panicked insert rolled back)", n)
+	}
+}

@@ -169,3 +169,47 @@ func TestTeacherSaveTxFailureLeavesNoFile(t *testing.T) {
 		t.Errorf("questions/ = %v, want empty", files)
 	}
 }
+
+func TestTeacherSaveRejectsBadFilename(t *testing.T) {
+	for name, custom := range map[string]string{
+		"too long":       strings.Repeat("ф", 150), // 300 bytes
+		"reserved chars": "mid:term?",
+		"control char":   "mid\tterm",
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, s := teacherEnv(t)
+			rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": custom})
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "file name") {
+				t.Errorf("body does not explain the file name problem")
+			}
+			if n := questionCount(t, s); n != 0 {
+				t.Errorf("count = %d, want 0", n)
+			}
+			if files := questionFiles(t); len(files) != 0 {
+				t.Errorf("questions/ = %v, want empty", files)
+			}
+		})
+	}
+}
+
+func TestTeacherSavePublishFailureCleansTemp(t *testing.T) {
+	h, _ := teacherEnv(t)
+	// A directory at the destination makes the rename fail after commit.
+	if err := os.Mkdir(filepath.Join("questions", "teacher_teacher1_mid.json"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "Nothing was changed") || !strings.Contains(body, "could not be written") {
+		t.Errorf("post-commit failure must not claim nothing changed")
+	}
+	if files := questionFiles(t); !slices.Equal(files, []string{"teacher_teacher1_mid.json"}) {
+		t.Errorf("questions/ = %v, want only the blocking directory (no .tmp-*)", files)
+	}
+}

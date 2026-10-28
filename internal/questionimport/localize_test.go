@@ -56,7 +56,7 @@ func TestLocalesComplete(t *testing.T) {
 		"QImportErrUnknownTopField", "QImportErrNoQuestions", "QImportErrNotObject", "QImportErrNotString",
 		"QImportErrNotInteger", "QImportErrRequired", "QImportErrDifficulty", "QImportErrPositive",
 		"QImportErrUnknownField", "QImportErrInternal", "QImportErrorsTitle", "QImportWarnDupInFile",
-		"QImportWarnDupInDB", "QImportWarnDupOtherTopic", "QImportSummary", "QBuilderIncomplete", "QBuilderEmpty",
+		"QImportWarnDupInDB", "QImportWarnDupOtherTopic", "QImportSummary", "QBuilderIncomplete", "QBuilderEmpty", "QImportErrFileName", "QImportErrFileNotWritten",
 	}
 	for _, lang := range []string{"en", "ru"} {
 		data, err := os.ReadFile("../i18n/locales/active." + lang + ".json")

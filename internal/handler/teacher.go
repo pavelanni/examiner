@@ -196,13 +196,21 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
 		}
 	}
+	// Reject a name the file system would refuse before anything is
+	// written: the rename happens only after the DB commit.
+	if !validQuestionFileName(safeName) {
+		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename,
+			[]string{appI18n.T(r.Context(), "QImportErrFileName")})
+		return
+	}
 	outPath := filepath.Join("questions", safeName)
 
-	internalError := func(msg string, err error) {
+	fail := func(msgID, msg string, err error) {
 		slog.Error(msg, "user", user.Username, "file", outPath, "error", err)
 		h.renderTeacherCreateTest(w, r, http.StatusInternalServerError, draftsToImports(drafts), editingFile, customFilename,
-			[]string{appI18n.T(r.Context(), "QImportErrInternal")})
+			[]string{appI18n.T(r.Context(), msgID)})
 	}
+	internalError := func(msg string, err error) { fail("QImportErrInternal", msg, err) }
 
 	// Write the payload next to its destination first; it is renamed into
 	// place only after the DB transaction commits.
@@ -236,7 +244,10 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	// The DB is committed. A failed rename leaves the DB consistent;
 	// saving again rewrites the file.
 	if err := os.Rename(tmpPath, outPath); err != nil {
-		internalError("failed to publish questions file", err)
+		if rmErr := os.Remove(tmpPath); rmErr != nil {
+			slog.Warn("failed to remove temporary questions file", "path", tmpPath, "error", rmErr)
+		}
+		fail("QImportErrFileNotWritten", "failed to publish questions file", err)
 		return
 	}
 
@@ -297,4 +308,18 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 	}
 	path := filepath.Join("questions", name)
 	http.ServeFile(w, r, path)
+}
+
+// validQuestionFileName reports whether name can be created on both Linux
+// and Windows: at most 255 bytes, no control characters, none of <>:"/\|?*.
+func validQuestionFileName(name string) bool {
+	if len(name) > 255 {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f || strings.ContainsRune(`<>:"/\|?*`, r) {
+			return false
+		}
+	}
+	return true
 }

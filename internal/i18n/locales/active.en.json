@@ -132,5 +132,7 @@
   {"id": "QImportWarnDupOtherTopic", "other": "Question {{.N}} has the same text as existing question #{{.ID}} in topic \"{{.Topic}}\"; skipped."},
   {"id": "QImportSummary", "other": "Imported: {{.Inserted}}, updated: {{.Updated}}, skipped: {{.Skipped}}."},
   {"id": "QBuilderIncomplete", "other": "Fill in every field of each question you started. Points must be a whole number of at least 1."},
-  {"id": "QBuilderEmpty", "other": "Add at least one question."}
+  {"id": "QBuilderEmpty", "other": "Add at least one question."},
+  {"id": "QImportErrFileName", "other": "The file name is too long or contains characters that are not allowed (< > : \" / \\ | ? * or control characters). Nothing was changed."},
+  {"id": "QImportErrFileNotWritten", "other": "The questions were saved, but the question file could not be written. Try saving again; if it fails, contact the administrator."}
 ]
