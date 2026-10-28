@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +30,11 @@ func teacherEnv(t *testing.T) (*Handler, *store.Store) {
 
 func teacherSave(t *testing.T, h *Handler, fields map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
+	return teacherSaveAs(t, h, &model.User{ID: 2, Username: "teacher1", DisplayName: "T", Role: model.UserRoleTeacher}, fields)
+}
+
+func teacherSaveAs(t *testing.T, h *Handler, user *model.User, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
 	for k, v := range fields {
@@ -41,8 +47,7 @@ func teacherSave(t *testing.T, h *Handler, fields map[string]string) *httptest.R
 	}
 	req := httptest.NewRequest(http.MethodPost, "/teacher/tests", &body)
 	req.Header.Set("Content-Type", w.FormDataContentType())
-	teacher := &model.User{ID: 2, Username: "teacher1", DisplayName: "T", Role: model.UserRoleTeacher}
-	req = req.WithContext(i18n.WithLocalizer(model.ContextWithUser(req.Context(), teacher), i18n.NewLocalizer("en")))
+	req = req.WithContext(i18n.WithLocalizer(model.ContextWithUser(req.Context(), user), i18n.NewLocalizer("en")))
 	rec := httptest.NewRecorder()
 	h.handleTeacherUpload(rec, req)
 	return rec
@@ -219,52 +224,19 @@ func TestTeacherSavePublishFailureRollsBack(t *testing.T) {
 	}
 }
 
-// insertForeign stores "Question 1" in topic t as if another source (an
-// admin import) had created it.
-func insertForeign(t *testing.T, s *store.Store) int64 {
-	t.Helper()
-	id, err := s.InsertQuestion(model.Question{CourseID: 1, Text: "Question 1", Difficulty: model.DifficultyEasy,
-		Topic: "t", Rubric: "foreign", ModelAnswer: "a", MaxPoints: 3})
-	if err != nil || id == 0 {
-		t.Fatalf("InsertQuestion = %d, %v", id, err)
-	}
-	return id
-}
-
-func TestTeacherSaveWritesOnlyAcceptedQuestions(t *testing.T) {
-	h, s := teacherEnv(t)
-	foreign := insertForeign(t, s)
-	rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "matches existing question #") {
-		t.Fatalf("status = %d; want 200 with the skip warning; body: %s", rec.Code, rec.Body.String())
+func TestTeacherSaveLeavesInFileDuplicateOut(t *testing.T) {
+	h, _ := teacherEnv(t)
+	q := `{"text":"%s","difficulty":"easy","topic":"t","rubric":"r","model_answer":"a","max_points":5}`
+	payload := "[" + fmt.Sprintf(q, "What is X?") + "," + fmt.Sprintf(q, "what is x") + "," + fmt.Sprintf(q, "Y") + "]"
+	rec := teacherSave(t, h, map[string]string{"questions_json": payload, "custom_filename": "mid"})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Question 2 duplicates question 1") {
+		t.Fatalf("status = %d; want 200 with the duplicate warning; body: %s", rec.Code, rec.Body.String())
 	}
 	data, err := os.ReadFile(filepath.Join("questions", "teacher_teacher1_mid.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(data), `"Question 1"`) || !strings.Contains(string(data), `"Question 2"`) {
-		t.Errorf("file = %s; want only Question 2", data)
-	}
-	// The skipped question is not in the teacher's file, so a second save
-	// still may not change it.
-	teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil),
-		"editing_file": "teacher_teacher1_mid.json", "custom_filename": "mid"})
-	if q, err := s.GetQuestion(foreign); err != nil || q.Rubric != "foreign" {
-		t.Errorf("foreign question = %+v, %v; want unchanged", q, err)
-	}
-}
-
-func TestTeacherSaveNothingAcceptedChangesNothing(t *testing.T) {
-	h, s := teacherEnv(t)
-	insertForeign(t, s)
-	rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "mid"})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "skipped: 1") {
-		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
-	}
-	if files := questionFiles(t); len(files) != 0 {
-		t.Errorf("questions/ = %v, want no file", files)
-	}
-	if h, err := s.GetImportedFileHash("teacher_teacher1_mid.json"); err != nil || h != "" {
-		t.Errorf("imported file hash = %q, %v; want none", h, err)
+	if strings.Contains(string(data), "what is x") || !strings.Contains(string(data), "What is X?") || !strings.Contains(string(data), `"Y"`) {
+		t.Errorf("file = %s; want questions 1 and 3 only", data)
 	}
 }

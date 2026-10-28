@@ -103,7 +103,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 		t.Errorf("expected own question to be updated, got %+v", found)
 	}
 
-	// 3. Question already in DB from another source (e.g. admin import) is NOT overwritten and warns in RU.
+	// 3. Question already in DB from another source (e.g. admin import) is NOT overwritten: the save is rejected in RU.
 	adminQID, err := s.InsertQuestion(model.Question{
 		CourseID:    1,
 		Text:        "What is Kubernetes?",
@@ -121,11 +121,11 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 		{"text": "what is kubernetes", "difficulty": "hard", "topic": "devops", "rubric": "hijacked", "model_answer": "hijacked", "max_points": 1}
 	]`
 	rec3 := postTeacherJSON(conflictJSON, "devops_quiz", "", "ru")
-	if rec3.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK with warning banner, got %d", rec3.Code)
+	if rec3.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 with the ownership conflict, got %d", rec3.Code)
 	}
-	if !strings.Contains(rec3.Body.String(), "совпадает с существующим вопросом #") {
-		t.Errorf("expected Russian DB duplicate warning, got: %s", rec3.Body.String())
+	if !strings.Contains(rec3.Body.String(), "уберите его из файла") {
+		t.Errorf("expected Russian ownership conflict, got: %s", rec3.Body.String())
 	}
 	adminQ, err := s.GetQuestion(adminQID)
 	if err != nil {
