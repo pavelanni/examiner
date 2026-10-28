@@ -83,11 +83,9 @@ func Decode(data []byte) ([]Draft, []FieldError) {
 
 func decodeQuestion(n int, raw json.RawMessage) (Draft, []FieldError) {
 	d := Draft{Number: n, present: map[string]bool{}, bad: map[string]bool{}}
-	if firstByte(raw) != '{' {
-		return d, []FieldError{{Question: n, Code: "QImportErrNotObject"}}
-	}
 	var obj map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	if firstByte(raw) != '{' || json.Unmarshal(raw, &obj) != nil {
+		d.notObject = true
 		return d, []FieldError{{Question: n, Code: "QImportErrNotObject"}}
 	}
 
