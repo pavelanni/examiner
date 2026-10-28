@@ -1,6 +1,6 @@
 # Build output
 /bin/
-examiner
+/examiner
 
 # Database
 *.db
