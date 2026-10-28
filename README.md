@@ -205,6 +205,25 @@ Editing a file updates existing questions by their text instead of
 duplicating them. Questions that are already part of an exam session are
 left untouched, so old exams remain consistent.
 
+Every question has an owner: the teacher who saved it, or the admin for
+questions imported by an admin or loaded with `--questions`. A teacher
+can change and remove only their own questions; an admin can change any
+question. If a teacher's file contains a question that already belongs to
+someone else (same topic, same text), the whole save is rejected and the
+page lists those questions. Removing a question from your file never
+deletes another teacher's question.
+
+The **Publish** checkbox in the builder decides whether the file's
+questions go into students' exams and are visible to other teachers.
+Students' topic list and exams use published questions only. A new file
+is published by default; an existing file keeps its current state.
+
+Questions created before ownership existed get an owner at startup: a
+question found in exactly one `questions/teacher_<username>_*.json` file
+goes to that teacher, every other one to the admin. The log line
+"question claimed by several teachers" names questions that were in more
+than one teacher's file.
+
 The uploaded JSON must match `schema/question_schema.json`. It can be a
 plain array of questions or a wrapper object:
 
