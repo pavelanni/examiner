@@ -126,6 +126,8 @@ type Question struct {
 	Rubric      string     `json:"rubric"`
 	ModelAnswer string     `json:"model_answer"`
 	MaxPoints   int        `json:"max_points"`
+	OwnerID     int64      `json:"owner_id,omitempty"` // 0 = no owner
+	Published   bool       `json:"published"`
 }
 
 // ExamBlueprint defines the structure of an exam.

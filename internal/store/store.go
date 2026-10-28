@@ -220,6 +220,23 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Ownership and publication (#44). Existing rows stay published; the
+	// owner is assigned by the startup backfill.
+	for _, col := range []string{
+		`owner_id INTEGER REFERENCES users(id)`,
+		`published INTEGER NOT NULL DEFAULT 1`,
+		`created_at DATETIME`,
+		`updated_at DATETIME`,
+	} {
+		if _, err := s.db.Exec(`ALTER TABLE questions ADD COLUMN ` + col); err != nil && !isAlterDuplicate(err) {
+			return err
+		}
+	}
+	now := time.Now()
+	if _, err := s.db.Exec(`UPDATE questions SET created_at = ?, updated_at = ? WHERE created_at IS NULL`, now, now); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -277,9 +294,11 @@ func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 		q.TextNorm = model.NormalizeQuestionText(q.Text)
 	}
 	res, err := s.db.Exec(
-		`INSERT OR IGNORE INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points,
+		                                  owner_id, published, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.CourseID, q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints,
+		nullOwner(q.OwnerID), q.Published, time.Now(), time.Now(),
 	)
 	if err != nil {
 		slog.Error("failed to insert question", "error", err)
@@ -299,15 +318,15 @@ func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 
 // ListQuestions returns all questions.
 func (s *Store) ListQuestions() ([]model.Question, error) {
-	rows, err := s.db.Query(`SELECT id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points FROM questions`)
+	rows, err := s.db.Query(`SELECT ` + questionColumns + ` FROM questions`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 	var questions []model.Question
 	for rows.Next() {
-		var q model.Question
-		if err := rows.Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints); err != nil {
+		q, err := scanQuestion(rows)
+		if err != nil {
 			return nil, err
 		}
 		questions = append(questions, q)
@@ -319,7 +338,7 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 // Empty strings mean no filtering on that field.
 // Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
-	query := `SELECT id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
+	query := `SELECT ` + questionColumns + ` FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
 		var levels []string
@@ -346,8 +365,8 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 	defer func() { _ = rows.Close() }()
 	var questions []model.Question
 	for rows.Next() {
-		var q model.Question
-		if err := rows.Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints); err != nil {
+		q, err := scanQuestion(rows)
+		if err != nil {
 			return nil, err
 		}
 		questions = append(questions, q)
@@ -357,23 +376,15 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 
 // GetQuestion returns a question by ID.
 func (s *Store) GetQuestion(id int64) (model.Question, error) {
-	var q model.Question
-	err := s.db.QueryRow(
-		`SELECT id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE id = ?`, id,
-	).Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints)
-	return q, err
+	return scanQuestion(s.db.QueryRow(`SELECT `+questionColumns+` FROM questions WHERE id = ?`, id))
 }
 
 // FindQuestionByTopicAndTextNorm returns an existing question with matching topic and normalized text.
 func (s *Store) FindQuestionByTopicAndTextNorm(topic, textNorm string) (*model.Question, error) {
-	var q model.Question
-	err := s.db.QueryRow(
-		`SELECT id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points
-		 FROM questions
-		 WHERE topic = ? AND text_norm = ?
-		 LIMIT 1`,
+	q, err := scanQuestion(s.db.QueryRow(
+		`SELECT `+questionColumns+` FROM questions WHERE topic = ? AND text_norm = ? LIMIT 1`,
 		topic, textNorm,
-	).Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -390,9 +401,10 @@ func (s *Store) UpdateQuestion(q model.Question) error {
 	}
 	res, err := s.db.Exec(
 		`UPDATE questions
-		 SET text = ?, text_norm = ?, difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?
+		 SET text = ?, text_norm = ?, difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?,
+		     published = ?, updated_at = ?
 		 WHERE id = ?`,
-		q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.ID,
+		q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.Published, time.Now(), q.ID,
 	)
 	if err != nil {
 		return err

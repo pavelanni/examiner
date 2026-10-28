@@ -43,12 +43,28 @@ func (s *Store) InQuestionTx(ctx context.Context, fn func(*QuestionTx) error) er
 	return nil
 }
 
-const questionColumns = `id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points`
+const questionColumns = `id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points, owner_id, published`
+
+// scanQuestion reads one row selected with questionColumns.
+func scanQuestion(row interface{ Scan(...any) error }) (model.Question, error) {
+	var q model.Question
+	var owner sql.NullInt64
+	err := row.Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints,
+		&owner, &q.Published)
+	q.OwnerID = owner.Int64
+	return q, err
+}
+
+// nullOwner stores OwnerID 0 as NULL.
+func nullOwner(id int64) any {
+	if id == 0 {
+		return nil
+	}
+	return id
+}
 
 func (t *QuestionTx) findOne(where string, args ...any) (*model.Question, error) {
-	var q model.Question
-	err := t.tx.QueryRow(`SELECT `+questionColumns+` FROM questions WHERE `+where+` LIMIT 1`, args...).
-		Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints)
+	q, err := scanQuestion(t.tx.QueryRow(`SELECT `+questionColumns+` FROM questions WHERE `+where+` LIMIT 1`, args...))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -77,9 +93,11 @@ func (t *QuestionTx) Insert(q model.Question) (int64, error) {
 		q.TextNorm = model.NormalizeQuestionText(q.Text)
 	}
 	res, err := t.tx.Exec(
-		`INSERT INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points,
+		                        owner_id, published, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.CourseID, q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints,
+		nullOwner(q.OwnerID), q.Published, time.Now(), time.Now(),
 	)
 	if err != nil {
 		return 0, err
@@ -94,9 +112,10 @@ func (t *QuestionTx) Update(q model.Question) error {
 	}
 	res, err := t.tx.Exec(
 		`UPDATE questions
-		 SET text = ?, text_norm = ?, difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?
+		 SET text = ?, text_norm = ?, difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?,
+		     published = ?, updated_at = ?
 		 WHERE id = ?`,
-		q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.ID,
+		q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.Published, time.Now(), q.ID,
 	)
 	if err != nil {
 		return err
