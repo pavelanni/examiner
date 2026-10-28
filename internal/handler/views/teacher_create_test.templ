@@ -49,9 +49,9 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                     <strong>{ t(ctx, "Exam Topic") }:</strong>
                     if filename != "" {
                         // Отрезаем расширение (.json), оставляя только чистое имя
-                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } placeholder="physics_exam" required />
+                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } maxlength="100" placeholder="physics_exam" required />
                     } else {
-                        <input type="text" name="custom_filename" value={ customName } placeholder="physics_exam" />
+                        <input type="text" name="custom_filename" value={ customName } maxlength="100" placeholder="physics_exam" />
                     }
                 </label>
             </div>

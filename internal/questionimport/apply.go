@@ -81,6 +81,17 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 		}
 		if existing != nil {
 			if opts.Mode == ModeUpdateExisting {
+				// The new text may equal another row's exact text (a legacy
+				// near-duplicate in another topic); updating would violate
+				// the (course_id, text) unique index.
+				other, err := tx.FindByCourseAndText(opts.CourseID, d.Text)
+				if err != nil {
+					return Result{}, fmt.Errorf("question %d: find same text: %w", d.Number, err)
+				}
+				if other != nil && other.ID != existing.ID {
+					res.skip(d.Number, "QImportWarnDupOtherTopic", map[string]any{"ID": other.ID, "Topic": other.Topic})
+					continue
+				}
 				q.ID = existing.ID
 				if err := tx.Update(q); err != nil {
 					return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)

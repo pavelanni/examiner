@@ -54,6 +54,9 @@ func (f *fakeTx) Insert(q model.Question) (int64, error) {
 }
 
 func (f *fakeTx) Update(q model.Question) error {
+	if other, _ := f.FindByCourseAndText(q.CourseID, q.Text); other != nil && other.ID != q.ID {
+		return fmt.Errorf("UNIQUE constraint failed")
+	}
 	for i := range f.rows {
 		if f.rows[i].ID == q.ID {
 			f.rows[i] = q
@@ -236,5 +239,22 @@ func TestApplyPropagatesError(t *testing.T) {
 	}
 	if res.Inserted != 0 || len(tx.files) != 0 {
 		t.Errorf("result = %+v, files = %v; want zero result, no file record", res, tx.files)
+	}
+}
+
+func TestApplyUpdateWouldCollideWithOtherTopic(t *testing.T) {
+	tx := &fakeTx{nextID: 8, rows: []model.Question{
+		{ID: 7, CourseID: 1, Text: "What is OOP?", TextNorm: "what is oop", Topic: "x", Difficulty: "easy", Rubric: "r", ModelAnswer: "a", MaxPoints: 1},
+		{ID: 8, CourseID: 1, Text: "What is OOP", TextNorm: "what is oop", Topic: "y", Difficulty: "easy", Rubric: "r", ModelAnswer: "a", MaxPoints: 1},
+	}}
+	res, err := Apply(tx, parsed(t, "What is OOP|x"), Options{Mode: ModeUpdateExisting, CourseID: 1})
+	if err != nil {
+		t.Fatalf("Apply: %v", err)
+	}
+	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"1:QImportWarnDupOtherTopic"}) || res.Skipped != 1 || res.Warnings[0].Params["ID"] != int64(8) {
+		t.Errorf("result = %+v", res)
+	}
+	if tx.rows[0].Text != "What is OOP?" {
+		t.Errorf("row 7 changed: %+v", tx.rows[0])
 	}
 }
