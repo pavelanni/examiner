@@ -216,10 +216,6 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	outPath := filepath.Join("questions", safeName)
 
-	// A teacher may change only questions listed in their own files;
-	// anyone else's matching question is skipped with a warning.
-	owned := teacherOwnedQuestionKeys(user.Username, oldDrafts)
-
 	// The file is published (and a renamed file retired) as the last step
 	// of the transaction. A failed publish rolls the transaction back; a
 	// failed commit makes saveTeacherQuestionFile restore the files.
@@ -230,12 +226,10 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			res, err = questionimport.Apply(tx, drafts, questionimport.Options{
 				Mode: questionimport.ModeUpdateExisting,
 				// TODO: derive course ID from context/config when multi-course support lands.
-				CourseID: 1,
-				Old:      oldDrafts,
-				Editable: func(q model.Question) bool {
-					_, ok := owned[questionKey{q.Topic, q.TextNorm}]
-					return ok
-				},
+				CourseID:  1,
+				Old:       oldDrafts,
+				Actor:     user,
+				Published: true,
 			})
 			if err != nil {
 				return err
@@ -244,8 +238,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			if len(res.Saved) == 0 {
 				return errNothingSaved
 			}
-			// The file holds only the accepted questions, so a skipped
-			// question never counts as the teacher's own later.
+			// The file holds only the accepted questions.
 			written, err := savedQuestionsFile(data, drafts, res.Saved)
 			if err != nil {
 				return err
@@ -288,30 +281,6 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 // errNothingSaved rolls back a teacher save in which every question was
 // skipped.
 var errNothingSaved = errors.New("no question accepted")
-
-// questionKey is a question's identity within a course.
-type questionKey struct{ topic, norm string }
-
-// teacherOwnedQuestionKeys returns the identities of the questions in the
-// file being edited and in every question file of the teacher.
-func teacherOwnedQuestionKeys(username string, oldDrafts []questionimport.Draft) map[questionKey]struct{} {
-	owned := make(map[questionKey]struct{}, len(oldDrafts))
-	add := func(drafts []questionimport.Draft) {
-		for _, d := range drafts {
-			owned[questionKey{d.Topic, model.NormalizeQuestionText(d.Text)}] = struct{}{}
-		}
-	}
-	add(oldDrafts)
-	for _, name := range listTeacherFiles(username) {
-		b, err := os.ReadFile(filepath.Join("questions", name))
-		if err != nil {
-			continue
-		}
-		drafts, _ := questionimport.Decode(b)
-		add(drafts)
-	}
-	return owned
-}
 
 // savedQuestionsFile returns the file content to publish: data itself when
 // every question was saved, otherwise only the saved ones.

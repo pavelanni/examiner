@@ -33,7 +33,10 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	t.Cleanup(func() { _ = s.Close() })
 
 	h := &Handler{store: s}
-	teacher := &model.User{ID: 2, Username: "alice", DisplayName: "Alice", Role: model.UserRoleTeacher}
+	teacher := &model.User{Username: "alice", DisplayName: "Alice", PasswordHash: "x", Role: model.UserRoleTeacher, Active: true}
+	if teacher.ID, err = s.CreateUser(*teacher); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 
 	postTeacherJSON := func(questionsJSON, customFilename, editingFile, lang string) *httptest.ResponseRecorder {
 		var body bytes.Buffer
@@ -235,7 +238,10 @@ func TestTeacherUploadRedirectRespectsBasePath(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	// Authenticate request as a teacher user (including Username for file naming).
-	teacherUser := &model.User{ID: 1, Username: "teacher1", Role: model.UserRoleTeacher}
+	teacherUser := &model.User{Username: "teacher1", PasswordHash: "x", Role: model.UserRoleTeacher, Active: true}
+	if teacherUser.ID, err = s.CreateUser(*teacherUser); err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
 	ctx := i18n.WithLocalizer(model.ContextWithUser(req.Context(), teacherUser), i18n.NewLocalizer("en"))
 	req = req.WithContext(ctx)
 

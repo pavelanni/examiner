@@ -24,6 +24,16 @@ func newImportStore(t *testing.T) *store.Store {
 		t.Fatalf("store.New: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
+	// The request users of these tests: admin (ID 1) and teacher1 (ID 2).
+	for _, u := range []model.User{
+		{Username: "admin", DisplayName: "Administrator", Role: model.UserRoleAdmin},
+		{Username: "teacher1", DisplayName: "T", Role: model.UserRoleTeacher},
+	} {
+		u.PasswordHash, u.Active = "x", true
+		if _, err := s.CreateUser(u); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return s
 }
 

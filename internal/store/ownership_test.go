@@ -183,6 +183,7 @@ func TestFindUnownedQuestionIDs(t *testing.T) {
 	s := newTestStore(t)
 	tid := createUser(t, s, "t", model.UserRoleTeacher)
 	free := txInsert(t, s, owned("A", "x", 0, true))
+	archive(t, s, free)                         // a history row keeps the key free
 	txInsert(t, s, owned("A?", "x", tid, true)) // same key, owned
 	ids, err := s.FindUnownedQuestionIDs("x", "a")
 	if err != nil || len(ids) != 1 || ids[0] != free {

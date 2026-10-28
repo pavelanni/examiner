@@ -125,15 +125,15 @@ func (t *QuestionTx) Update(q model.Question) error {
 	return nil
 }
 
-// DeleteUnused deletes the active question with this topic and exact text
-// unless a question_thread references it. Another topic's question with
-// the same text is kept.
-func (t *QuestionTx) DeleteUnused(courseID int64, topic, text string) error {
+// DeleteUnused deletes ownerID's active question with this topic and exact
+// text unless a question_thread references it. Another owner's question
+// and another topic's question with the same text are kept.
+func (t *QuestionTx) DeleteUnused(courseID, ownerID int64, topic, text string) error {
 	_, err := t.tx.Exec(`DELETE FROM questions
-		WHERE course_id = ? AND topic = ? AND text = ? AND archived = 0
+		WHERE course_id = ? AND owner_id = ? AND topic = ? AND text = ? AND archived = 0
 		  AND NOT EXISTS (
 		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
-		  )`, courseID, topic, text)
+		  )`, courseID, ownerID, topic, text)
 	return err
 }
 
@@ -152,4 +152,14 @@ func (t *QuestionTx) SetImportedFileHash(name, hash string) error {
 func (t *QuestionTx) DeleteImportedFileHash(name string) error {
 	_, err := t.tx.Exec(`DELETE FROM imported_files WHERE path = ?`, name)
 	return err
+}
+
+// UserDisplayName returns the user's display name, or "" for an unknown ID.
+func (t *QuestionTx) UserDisplayName(id int64) (string, error) {
+	var name string
+	err := t.tx.QueryRow(`SELECT display_name FROM users WHERE id = ?`, id).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil
+	}
+	return name, err
 }

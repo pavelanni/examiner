@@ -1,8 +1,10 @@
 package questionimport
 
 import (
+	"errors"
 	"fmt"
 
+	"github.com/pavelanni/examiner/internal/access"
 	"github.com/pavelanni/examiner/internal/model"
 )
 
@@ -14,10 +16,11 @@ type Tx interface {
 	FindByTopicAndTextNorm(courseID int64, topic, textNorm string) (*model.Question, error)
 	Insert(q model.Question) (int64, error)
 	Update(q model.Question) error
-	// DeleteUnused deletes the active question with this topic and exact
-	// text unless an exam session references it.
-	DeleteUnused(courseID int64, topic, text string) error
+	// DeleteUnused deletes ownerID's active question with this topic and
+	// exact text unless an exam session references it.
+	DeleteUnused(courseID, ownerID int64, topic, text string) error
 	SetImportedFileHash(name, hash string) error
+	UserDisplayName(id int64) (string, error)
 }
 
 // Mode says what to do with a question that already exists in the topic.
@@ -40,14 +43,23 @@ type Options struct {
 	Mode     Mode
 	CourseID int64
 	// Old holds the questions of the file being replaced (teacher edit).
-	// Those whose identity is not in the new file are deleted unless an
-	// exam session uses them.
+	// The actor's questions whose identity is not in the new file are
+	// deleted unless an exam session uses them.
 	Old  []Draft
 	File *FileRecord // recorded in imported_files inside the transaction
-	// Editable reports whether ModeUpdateExisting may change an existing
-	// question; a question it rejects is skipped with a warning. Nil
-	// allows every question.
-	Editable func(existing model.Question) bool
+
+	Actor     *model.User // who imports; owns inserted questions
+	Published bool        // publication state of inserted and updated questions
+}
+
+// ConflictError lists questions in the file that already exist and belong
+// to someone the actor may not edit. Callers show it like validation errors.
+type ConflictError struct {
+	Errs []FieldError
+}
+
+func (e *ConflictError) Error() string {
+	return fmt.Sprintf("%d question(s) belong to another owner", len(e.Errs))
 }
 
 // Result counts what Apply did.
@@ -65,7 +77,11 @@ type identity struct{ topic, norm string }
 // Apply writes validated questions through tx. Run it inside one
 // transaction: on error the caller rolls back and the Result is discarded.
 func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
+	if opts.Actor == nil {
+		return Result{}, errors.New("import without an acting user")
+	}
 	var res Result
+	var conflicts []FieldError
 	seen := make(map[identity]int, len(drafts)) // -> question number
 
 	for _, d := range drafts {
@@ -87,7 +103,8 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			Rubric:      d.Rubric,
 			ModelAnswer: d.ModelAnswer,
 			MaxPoints:   d.MaxPoints,
-			Published:   true,
+			OwnerID:     opts.Actor.ID,
+			Published:   opts.Published,
 		}
 
 		existing, err := tx.FindByTopicAndTextNorm(opts.CourseID, d.Topic, norm)
@@ -102,11 +119,21 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			res.Saved = append(res.Saved, d.Number)
 			continue
 		}
-		if opts.Mode != ModeUpdateExisting || (opts.Editable != nil && !opts.Editable(*existing)) {
+		if opts.Mode != ModeUpdateExisting {
 			res.skip(d.Number, "QImportWarnDupInDB", map[string]any{"ID": existing.ID, "Topic": d.Topic})
 			continue
 		}
+		if !access.CanEditQuestion(opts.Actor, *existing) {
+			owner, err := tx.UserDisplayName(existing.OwnerID)
+			if err != nil {
+				return Result{}, fmt.Errorf("question %d: owner name: %w", d.Number, err)
+			}
+			conflicts = append(conflicts, FieldError{Question: d.Number, Code: "QImportErrNotOwner",
+				Params: map[string]any{"ID": existing.ID, "Owner": owner, "Topic": d.Topic}})
+			continue
+		}
 		q.ID = existing.ID
+		q.OwnerID = existing.OwnerID
 		if err := tx.Update(q); err != nil {
 			return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)
 		}
@@ -114,11 +141,14 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 		res.Saved = append(res.Saved, d.Number)
 	}
 
+	if len(conflicts) > 0 {
+		return Result{}, &ConflictError{Errs: conflicts}
+	}
 	for _, d := range opts.Old {
 		if _, kept := seen[identity{d.Topic, model.NormalizeQuestionText(d.Text)}]; kept {
 			continue
 		}
-		if err := tx.DeleteUnused(opts.CourseID, d.Topic, d.Text); err != nil {
+		if err := tx.DeleteUnused(opts.CourseID, opts.Actor.ID, d.Topic, d.Text); err != nil {
 			return Result{}, fmt.Errorf("delete replaced question %d: %w", d.Number, err)
 		}
 	}
