@@ -170,3 +170,20 @@ func TestBackfillMissingDir(t *testing.T) {
 		t.Errorf("owner = %d, want admin %d", got, admin)
 	}
 }
+
+func TestBackfillIgnoresStudents(t *testing.T) {
+	_, s := loadEnv(t)
+	ivan := addTeacher(t, s, "ivan")
+	if _, err := s.CreateUser(model.User{Username: "ivan_mid", DisplayName: "s", PasswordHash: "x", Role: model.UserRoleStudent, Active: true}); err != nil {
+		t.Fatal(err)
+	}
+	q1 := addUnowned(t, s, "Q1")
+	dir := t.TempDir()
+	writeQuestionsFile(t, dir, "teacher_ivan_mid_term.json", "Q1")
+	if err := backfillQuestionOwners(s, dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := ownerOf(t, s, q1); got != ivan {
+		t.Errorf("owner = %d, want teacher ivan %d (not the student)", got, ivan)
+	}
+}

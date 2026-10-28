@@ -376,3 +376,14 @@ func TestApplyDeleteScopedToActor(t *testing.T) {
 		t.Errorf("deletes = %+v; want owner 11", tx.deletes)
 	}
 }
+
+func TestApplyForeignRowKeepsPublished(t *testing.T) {
+	tx := ownedTx()
+	tx.rows[0].Published = false
+	if _, err := Apply(tx, parsed(t, "A|x"), Options{Actor: testAdmin, Mode: ModeUpdateExisting, CourseID: 1, Published: true}); err != nil {
+		t.Fatal(err)
+	}
+	if tx.rows[0].Published || tx.rows[0].Rubric != "r-A" {
+		t.Errorf("row = %+v; want rubric updated, publication kept", tx.rows[0])
+	}
+}

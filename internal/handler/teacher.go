@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/pavelanni/examiner/internal/access"
 	"github.com/pavelanni/examiner/internal/handler/views"
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
@@ -22,12 +23,31 @@ import (
 	"github.com/pavelanni/examiner/internal/store"
 )
 
-func teacherQuestionFilePrefix(username string) string {
-	return fmt.Sprintf("teacher_%s_", username)
+// ownsQuestionFile reports whether user owns the question file name under
+// the shared longest-prefix rule (access.QuestionFileOwner).
+func (h *Handler) ownsQuestionFile(user *model.User, name string) (bool, error) {
+	users, err := h.store.ListUsers()
+	if err != nil {
+		return false, err
+	}
+	owner := access.QuestionFileOwner(users, filepath.Base(name))
+	return owner != nil && owner.ID == user.ID, nil
 }
 
-func teacherOwnsQuestionFile(username, filename string) bool {
-	return strings.HasPrefix(filepath.Base(filename), teacherQuestionFilePrefix(username))
+// checkQuestionFileOwner writes 403 (or 500) and returns false unless user
+// owns the question file name.
+func (h *Handler) checkQuestionFileOwner(w http.ResponseWriter, user *model.User, name string) bool {
+	ok, err := h.ownsQuestionFile(user, name)
+	if err != nil {
+		slog.Error("failed to check question file owner", "file", name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return false
+	}
+	if !ok {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return false
+	}
+	return true
 }
 
 // draftsToImports returns the decoded questions for prefilling the constructor.
@@ -59,14 +79,18 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 	files := []string{}
 	entries, err := os.ReadDir("questions")
 	if err == nil {
-		prefix := teacherQuestionFilePrefix(user.Username)
 		for _, e := range entries {
-			if e.IsDir() {
+			if e.IsDir() || filepath.Ext(e.Name()) != ".json" {
 				continue
 			}
-			name := e.Name()
-			if filepath.Ext(name) == ".json" && strings.HasPrefix(name, prefix) {
-				files = append(files, name)
+			ok, err := h.ownsQuestionFile(user, e.Name())
+			if err != nil {
+				slog.Error("failed to check question file owner", "error", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+				return
+			}
+			if ok {
+				files = append(files, e.Name())
 			}
 		}
 	}
@@ -89,8 +113,7 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 
 	if filename != "" {
 		baseName := filepath.Base(filename)
-		if !teacherOwnsQuestionFile(user.Username, baseName) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+		if !h.checkQuestionFileOwner(w, user, baseName) {
 			return
 		}
 		filePath := filepath.Join("questions", baseName)
@@ -187,8 +210,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	var oldTexts []string
 
 	if editingFile != "" {
-		if !teacherOwnsQuestionFile(user.Username, editingFile) {
-			http.Error(w, "forbidden", http.StatusForbidden)
+		if !h.checkQuestionFileOwner(w, user, editingFile) {
 			return
 		}
 		oldPath := filepath.Join("questions", filepath.Base(editingFile))
@@ -219,6 +241,17 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	if !validQuestionFileName(safeName) {
 		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename, published,
 			[]string{appI18n.T(r.Context(), "QImportErrFileName")})
+		return
+	}
+	// The new name must stay in the user's own namespace: with users ivan
+	// and ivan_mid, ivan saving "mid_exam" would create ivan_mid's file.
+	if ok, err := h.ownsQuestionFile(user, safeName); err != nil {
+		slog.Error("failed to check question file owner", "file", safeName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	} else if !ok {
+		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename, published,
+			[]string{appI18n.T(r.Context(), "QImportErrFileNameTaken")})
 		return
 	}
 	outPath := filepath.Join("questions", safeName)
@@ -328,8 +361,7 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "invalid filename", http.StatusBadRequest)
 		return
 	}
-	if !teacherOwnsQuestionFile(user.Username, name) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	if !h.checkQuestionFileOwner(w, user, name) {
 		return
 	}
 	path := filepath.Join("questions", name)

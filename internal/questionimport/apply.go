@@ -125,6 +125,11 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 				}
 				q.ID = existing.ID
 				q.OwnerID = existing.OwnerID
+				// Publishing is the owner's decision: an admin fixing someone
+				// else's question keeps its publication state.
+				if existing.OwnerID != opts.Actor.ID {
+					q.Published = existing.Published
+				}
 				if err := tx.Update(q); err != nil {
 					return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)
 				}
