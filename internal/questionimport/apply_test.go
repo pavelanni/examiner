@@ -335,6 +335,18 @@ func TestApplyConflictWithOtherOwner(t *testing.T) {
 	}
 }
 
+func TestApplyPrefersExactTextOverOtherOwnersNearDuplicate(t *testing.T) {
+	tx := ownedTx() // row 17 "A" owned by teacher2
+	tx.rows = append(tx.rows, model.Question{ID: 18, CourseID: 1, Text: "A?", TextNorm: "a", Topic: "x", OwnerID: 11})
+	res, err := Apply(tx, parsed(t, "A?|x"), Options{Actor: teacher1, Mode: ModeUpdateExisting, CourseID: 1})
+	if err != nil {
+		t.Fatalf("err = %v; teacher1's own exact-text row should be updated", err)
+	}
+	if res.Updated != 1 || tx.rows[1].Rubric != "r-A?" || tx.rows[0].Rubric != "orig" {
+		t.Errorf("result %+v, rows %+v", res, tx.rows)
+	}
+}
+
 func TestApplyTwoConflicts(t *testing.T) {
 	tx := ownedTx()
 	tx.rows = append(tx.rows, model.Question{ID: 18, CourseID: 1, Text: "B", TextNorm: "b", Topic: "x", OwnerID: 12})

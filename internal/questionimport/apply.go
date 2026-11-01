@@ -97,9 +97,18 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			Published:   opts.Published,
 		}
 
-		existing, err := tx.FindByTopicAndTextNorm(d.Topic, norm)
+		// Prefer the row with exactly this text: legacy data may hold
+		// several rows with the same normalized text, and another owner's
+		// near-duplicate must not hide the actor's own row.
+		existing, err := tx.FindByCourseAndText(opts.CourseID, d.Text)
 		if err != nil {
-			return Result{}, fmt.Errorf("question %d: find duplicate: %w", d.Number, err)
+			return Result{}, fmt.Errorf("question %d: find same text: %w", d.Number, err)
+		}
+		if existing == nil || existing.Topic != d.Topic {
+			existing, err = tx.FindByTopicAndTextNorm(d.Topic, norm)
+			if err != nil {
+				return Result{}, fmt.Errorf("question %d: find duplicate: %w", d.Number, err)
+			}
 		}
 		if existing != nil {
 			if opts.Mode == ModeUpdateExisting {

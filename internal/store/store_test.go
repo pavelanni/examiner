@@ -98,6 +98,51 @@ func TestQuestionCRUD(t *testing.T) {
 	}
 }
 
+func TestInsertQuestionUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	id, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "Draft", Difficulty: model.DifficultyEasy, Topic: "hidden",
+		Rubric: "r", ModelAnswer: "a", MaxPoints: 10, Published: false,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+	q, err := s.GetQuestion(id)
+	if err != nil || q.Published {
+		t.Errorf("GetQuestion = published %v, %v; want unpublished", q.Published, err)
+	}
+	topics, err := s.ListPublishedTopics()
+	if err != nil || len(topics) != 0 {
+		t.Errorf("ListPublishedTopics = %v, %v; want none", topics, err)
+	}
+}
+
+func TestCreateSessionRejectsUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	bpID, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := insertTestQuestion(t, s, "Published", "easy", "t")
+	unpub, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "Unpublished", Difficulty: model.DifficultyEasy, Topic: "t",
+		Rubric: "r", ModelAnswer: "a", MaxPoints: 10, Published: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateSession(bpID, 1, []int64{pub, unpub}); err == nil {
+		t.Fatal("CreateSession with an unpublished question: want error")
+	}
+	if _, err := s.CreateSession(bpID, 1, []int64{pub, 9999}); err == nil {
+		t.Fatal("CreateSession with a missing question: want error")
+	}
+	sessions, err := s.ListSessions()
+	if err != nil || len(sessions) != 0 {
+		t.Errorf("sessions = %v, %v; want none (rolled back)", sessions, err)
+	}
+}
+
 func TestListQuestionsFiltered(t *testing.T) {
 	s := newTestStore(t)
 	insertTestQuestion(t, s, "Q1", "easy", "basics")

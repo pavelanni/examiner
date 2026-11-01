@@ -52,6 +52,8 @@ func TestDecode(t *testing.T) {
 		{"top level number", `42`, 0, []errKey{{0, "", "QImportErrTopLevel"}}},
 		{"empty array", `[]`, 0, []errKey{{0, "", "QImportErrNoQuestions"}}},
 		{"empty wrapper", `{"questions":[]}`, 0, []errKey{{0, "", "QImportErrNoQuestions"}}},
+		{"wrapper metadata not string", `{"test_name":5,"default_topic":null,"questions":[` + validQ("Q") + `]}`, 1,
+			[]errKey{{0, "default_topic", "QImportErrTopFieldNotString"}, {0, "test_name", "QImportErrTopFieldNotString"}}},
 		{"wrapper without questions", `{"test_name":"x"}`, 0, []errKey{{0, "", "QImportErrNoQuestions"}}},
 		{"invalid json", "[\n{\"text\": }", 0, []errKey{{0, "", "QImportErrInvalidJSON"}}},
 		{"not an object", `[1]`, 1, []errKey{{1, "", "QImportErrNotObject"}}},

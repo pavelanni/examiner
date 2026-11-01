@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -134,24 +135,33 @@ func (t *QuestionTx) Update(q model.Question) error {
 // but not in keepTexts and that no question_thread references. Another
 // owner's question is never deleted, even if its text is in oldTexts.
 func (t *QuestionTx) DeleteUnusedByTexts(courseID, ownerID int64, oldTexts, keepTexts []string) error {
-	if len(oldTexts) == 0 {
-		return nil
+	// Exclude keepTexts here (exact match, like SQL's default BINARY
+	// collation) and delete in chunks, so no statement nears SQLite's
+	// bound-variable limit however large the file is.
+	keep := make(map[string]bool, len(keepTexts))
+	for _, s := range keepTexts {
+		keep[s] = true
 	}
-	args := append([]any{courseID, ownerID}, stringsToAny(oldTexts)...)
-	var notIn string
-	if len(keepTexts) > 0 {
-		notIn = "AND text NOT IN (" + placeholders(len(keepTexts)) + ")"
-		args = append(args, stringsToAny(keepTexts)...)
+	var texts []string
+	for _, s := range oldTexts {
+		if !keep[s] {
+			texts = append(texts, s)
+		}
 	}
-	_, err := t.tx.Exec(`DELETE FROM questions
-		WHERE course_id = ?
-		  AND owner_id = ?
-		  AND text IN (`+placeholders(len(oldTexts))+`)
-		  `+notIn+`
-		  AND NOT EXISTS (
-		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
-		  )`, args...)
-	return err
+	for chunk := range slices.Chunk(texts, sqlChunkSize) {
+		args := append([]any{courseID, ownerID}, stringsToAny(chunk)...)
+		_, err := t.tx.Exec(`DELETE FROM questions
+			WHERE course_id = ?
+			  AND owner_id = ?
+			  AND text IN (`+placeholders(len(chunk))+`)
+			  AND NOT EXISTS (
+			      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
+			  )`, args...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetImportedFileHash records the hash of an imported file.

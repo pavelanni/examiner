@@ -13,7 +13,8 @@ import (
 // TestSchemaAgreesWithValidator keeps schema/question_schema.json, the
 // published contract for hand-written files, in line with the Go rules.
 // Known gap: JSON Schema treats 10.0 as an integer, Parse does not, so no
-// fixture uses it.
+// fixture uses it. The schema side is pinned below; the Parse side is the
+// "points 10.0" case in decode_test.go.
 func TestSchemaAgreesWithValidator(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join("..", "..", "schema", "question_schema.json"))
 	if err != nil {
@@ -27,6 +28,14 @@ func TestSchemaAgreesWithValidator(t *testing.T) {
 	schema, err := c.Compile(url)
 	if err != nil {
 		t.Fatal(err)
+	}
+
+	var float10 any
+	if err := json.Unmarshal([]byte(`[{"text":"Q","difficulty":"easy","topic":"t","rubric":"r","model_answer":"a","max_points":10.0}]`), &float10); err != nil {
+		t.Fatal(err)
+	}
+	if err := schema.Validate(float10); err != nil {
+		t.Errorf("schema rejects max_points 10.0, the known gap changed: %v", err)
 	}
 
 	for _, dir := range []string{"valid", "invalid"} {

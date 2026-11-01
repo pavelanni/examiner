@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -158,6 +159,37 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	}
 	if _, err := s.GetQuestion(idReferenced); err != nil {
 		t.Errorf("referenced question deleted: %v", err)
+	}
+	if _, err := s.GetQuestion(idRemoved); err == nil {
+		t.Error("unused question not deleted")
+	}
+}
+
+// TestQuestionTxDeleteUnusedByTextsLargeLists binds more texts than
+// SQLite's 32766-variable limit would allow in one statement.
+func TestQuestionTxDeleteUnusedByTextsLargeLists(t *testing.T) {
+	s := newTestStore(t)
+	owner := createUser(t, s, "t", model.UserRoleTeacher)
+	idKept := txInsert(t, s, owned("kept", "go", owner, true))
+	idRemoved := txInsert(t, s, owned("removed", "go", owner, true))
+
+	old := make([]string, 0, 20002)
+	keep := make([]string, 0, 20001)
+	for i := range 20000 {
+		old = append(old, fmt.Sprint("old-", i))
+		keep = append(keep, fmt.Sprint("keep-", i))
+	}
+	old = append(old, "kept", "removed")
+	keep = append(keep, "kept")
+
+	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
+		return tx.DeleteUnusedByTexts(1, owner, old, keep)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetQuestion(idKept); err != nil {
+		t.Errorf("kept question deleted: %v", err)
 	}
 	if _, err := s.GetQuestion(idRemoved); err == nil {
 		t.Error("unused question not deleted")

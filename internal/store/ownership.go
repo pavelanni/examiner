@@ -102,20 +102,24 @@ func (s *Store) ClaimQuestionOwners(claims map[int64][]int64) error {
 // AllPublished reports whether every question owned by ownerID that
 // matches one of keys is published. No matching question means true.
 func (s *Store) AllPublished(ownerID int64, keys []QuestionKey) (bool, error) {
-	if len(keys) == 0 {
-		return true, nil
+	// Each OR adds a level to the parsed expression; chunks keep it well
+	// under SQLite's expression depth limit (1000).
+	for chunk := range slices.Chunk(keys, sqlChunkSize) {
+		conds := make([]string, 0, len(chunk))
+		args := []any{ownerID}
+		for _, k := range chunk {
+			conds = append(conds, `(topic = ? AND text_norm = ?)`)
+			args = append(args, k.Topic, k.TextNorm)
+		}
+		var unpublished int
+		err := s.db.QueryRow(`SELECT COUNT(*) FROM questions WHERE owner_id = ? AND published = 0 AND (`+
+			strings.Join(conds, " OR ")+`)`, args...).Scan(&unpublished)
+		if err != nil {
+			return false, err
+		}
+		if unpublished > 0 {
+			return false, nil
+		}
 	}
-	conds := make([]string, 0, len(keys))
-	args := []any{ownerID}
-	for _, k := range keys {
-		conds = append(conds, `(topic = ? AND text_norm = ?)`)
-		args = append(args, k.Topic, k.TextNorm)
-	}
-	var unpublished int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM questions WHERE owner_id = ? AND published = 0 AND (`+
-		strings.Join(conds, " OR ")+`)`, args...).Scan(&unpublished)
-	if err != nil {
-		return false, err
-	}
-	return unpublished == 0, nil
+	return true, nil
 }

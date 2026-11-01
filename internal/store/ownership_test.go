@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -43,14 +44,13 @@ func TestMigrationAddsOwnershipColumns(t *testing.T) {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		course_id INTEGER NOT NULL DEFAULT 1,
 		text TEXT NOT NULL,
-		text_norm TEXT NOT NULL DEFAULT '',
 		difficulty TEXT NOT NULL,
 		topic TEXT NOT NULL,
 		rubric TEXT NOT NULL DEFAULT '',
 		model_answer TEXT NOT NULL DEFAULT '',
 		max_points INTEGER NOT NULL DEFAULT 10
 	);
-	INSERT INTO questions (text, text_norm, difficulty, topic) VALUES ('Legacy', 'legacy', 'easy', 't');`)
+	INSERT INTO questions (text, difficulty, topic) VALUES ('Legacy', 'easy', 't');`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,6 +69,9 @@ func TestMigrationAddsOwnershipColumns(t *testing.T) {
 		}
 		if !q.Published || q.OwnerID != 0 {
 			t.Errorf("run %d: legacy row = published %v, owner %d; want published, no owner", run, q.Published, q.OwnerID)
+		}
+		if q.TextNorm != "legacy" {
+			t.Errorf("run %d: text_norm = %q, want backfilled \"legacy\"", run, q.TextNorm)
 		}
 		var hasTimes bool
 		if err := s.db.QueryRow(`SELECT created_at IS NOT NULL AND updated_at IS NOT NULL FROM questions WHERE id = 1`).Scan(&hasTimes); err != nil || !hasTimes {
@@ -255,5 +258,19 @@ func TestAllPublished(t *testing.T) {
 		if err != nil || got != tt.want {
 			t.Errorf("AllPublished(%v) = %v, %v; want %v", tt.keys, got, err, tt.want)
 		}
+	}
+
+	// More keys than one statement's OR chain may hold; the unpublished
+	// row is in the last chunk.
+	many := make([]QuestionKey, 0, 1501)
+	for i := range 1500 {
+		many = append(many, QuestionKey{"none", fmt.Sprint(i)})
+	}
+	if got, err := s.AllPublished(t1, many); err != nil || !got {
+		t.Errorf("AllPublished(1500 missing keys) = %v, %v; want true", got, err)
+	}
+	many = append(many, QuestionKey{"b", "y"})
+	if got, err := s.AllPublished(t1, many); err != nil || got {
+		t.Errorf("AllPublished(1501 keys) = %v, %v; want false", got, err)
 	}
 }

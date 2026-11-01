@@ -264,15 +264,18 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	internalError := func(msg string, err error) { fail("QImportErrInternal", msg, err) }
 
 	// Write the payload next to its destination first; it is renamed into
-	// place only after the DB transaction commits.
+	// place as the last step of the DB transaction.
 	tmpPath, err := writeTempQuestionsFile(data)
 	if err != nil {
 		internalError("failed to write temporary questions file", err)
 		return
 	}
+	// Kept to restore the destination if the commit fails after the rename.
+	prevData, prevErr := os.ReadFile(outPath)
 
 	sum := sha256.Sum256(data)
 	var res questionimport.Result
+	renamed := false
 	err = h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
 		var err error
 		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
@@ -284,11 +287,28 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			Actor:     user,
 			Published: published,
 		})
-		return err
+		if err != nil {
+			return err
+		}
+		// A failed rename rolls the transaction back, so the DB and its
+		// imported_files hash never get ahead of the file on disk.
+		if err := os.Rename(tmpPath, outPath); err != nil {
+			return fmt.Errorf("publish questions file: %w", err)
+		}
+		renamed = true
+		return nil
 	})
 	if err != nil {
-		if rmErr := os.Remove(tmpPath); rmErr != nil {
-			slog.Warn("failed to remove temporary questions file", "path", tmpPath, "error", rmErr)
+		if !renamed {
+			if rmErr := os.Remove(tmpPath); rmErr != nil {
+				slog.Warn("failed to remove temporary questions file", "path", tmpPath, "error", rmErr)
+			}
+		} else if rsErr := restoreQuestionsFile(outPath, prevData, prevErr); rsErr != nil {
+			// The commit failed after the file was replaced: the DB is
+			// unchanged, the file is not.
+			slog.Error("failed to restore questions file", "path", outPath, "error", rsErr)
+			fail("QImportErrFileNotWritten", "failed to save questions", err)
+			return
 		}
 		var conflict *questionimport.ConflictError
 		if errors.As(err, &conflict) {
@@ -297,16 +317,6 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		internalError("failed to save questions", err)
-		return
-	}
-
-	// The DB is committed. A failed rename leaves the DB consistent;
-	// saving again rewrites the file.
-	if err := os.Rename(tmpPath, outPath); err != nil {
-		if rmErr := os.Remove(tmpPath); rmErr != nil {
-			slog.Warn("failed to remove temporary questions file", "path", tmpPath, "error", rmErr)
-		}
-		fail("QImportErrFileNotWritten", "failed to publish questions file", err)
 		return
 	}
 
@@ -344,6 +354,23 @@ func writeTempQuestionsFile(data []byte) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
+}
+
+// restoreQuestionsFile puts back the content path had before a save:
+// prevData if it existed (prevErr == nil), otherwise no file at all.
+func restoreQuestionsFile(path string, prevData []byte, prevErr error) error {
+	if prevErr != nil {
+		return os.Remove(path)
+	}
+	tmpPath, err := writeTempQuestionsFile(prevData)
+	if err != nil {
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }
 
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {

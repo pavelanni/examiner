@@ -14,7 +14,8 @@ import (
 var utf8BOM = []byte("\xEF\xBB\xBF")
 
 // wrapperKeys are the keys allowed in the {"questions": [...]} format.
-// Everything except "questions" is accepted and ignored.
+// Everything except "questions" is metadata: it must be a string and is
+// otherwise ignored.
 var wrapperKeys = map[string]bool{
 	"questions":        true,
 	"test_name":        true,
@@ -52,8 +53,11 @@ func Decode(data []byte) ([]Draft, []FieldError) {
 			return nil, []FieldError{{Code: "QImportErrTopLevel"}}
 		}
 		for _, k := range sortedKeys(obj) {
-			if !wrapperKeys[k] {
+			switch {
+			case !wrapperKeys[k]:
 				errs = append(errs, FieldError{Field: k, Code: "QImportErrUnknownTopField", Params: map[string]any{"Field": k}})
+			case k != "questions" && firstByte(obj[k]) != '"':
+				errs = append(errs, FieldError{Field: k, Code: "QImportErrTopFieldNotString", Params: map[string]any{"Field": k}})
 			}
 		}
 		if q, ok := obj["questions"]; ok && firstByte(q) != 'n' {

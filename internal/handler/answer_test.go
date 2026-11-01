@@ -88,7 +88,7 @@ func newAnswerEnv(t *testing.T, maxFollowups int, ev Evaluator) *answerEnv {
 	}
 	qID, err := s.InsertQuestion(model.Question{
 		CourseID: 1, Text: "Q1", Difficulty: model.Difficulty("easy"),
-		Topic: "t", Rubric: "r", ModelAnswer: "a", MaxPoints: 10,
+		Topic: "t", Rubric: "r", ModelAnswer: "a", MaxPoints: 10, Published: true,
 	})
 	if err != nil {
 		t.Fatalf("InsertQuestion: %v", err)

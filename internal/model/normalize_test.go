@@ -48,6 +48,11 @@ func TestNormalizeQuestionText(t *testing.T) {
 			input:    " Что такое  ПИД-регулятор? ",
 			expected: "что такое пид-регулятор",
 		},
+		{
+			name:     "non-breaking spaces collapsed like spaces",
+			input:    " Что такое  ПИД-регулятор? ",
+			expected: "что такое пид-регулятор",
+		},
 	}
 
 	for _, tt := range tests {
