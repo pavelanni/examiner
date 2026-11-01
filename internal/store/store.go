@@ -546,6 +546,8 @@ func (s *Store) GetBlueprint(id int64) (model.ExamBlueprint, error) {
 }
 
 // CreateSession creates an exam session with threads for each question.
+// It fails if a question is missing or no longer published, so a question
+// unpublished after the exam was drawn never reaches a student.
 func (s *Store) CreateSession(blueprintID int64, studentID int64, questionIDs []int64) (int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -916,6 +918,9 @@ func (s *Store) ListPublishedTopics() ([]string, error) {
 	}
 	return topics, rows.Err()
 }
+
+// sqlChunkSize caps the keys bound in one statement that takes a list.
+const sqlChunkSize = 500
 
 // placeholders returns a comma-separated string of n SQL placeholder marks.
 func placeholders(n int) string {

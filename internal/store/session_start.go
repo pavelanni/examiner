@@ -101,8 +101,10 @@ func (s *Store) StartSession(blueprintID, studentID int64, topic string, questio
 }
 
 // createSession inserts a session in progress and one thread per question,
-// numbered in the order given. Every newly drawn question must still be active;
-// existing variants may continue to reference an archived historical question.
+// numbered in the order given. Every newly drawn question must still be active
+// and published, so a question unpublished after the draw never reaches a
+// student; existing variants may continue to reference an archived historical
+// question.
 func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, questionIDs []int64, topicKnown bool) (int64, error) {
 	res, err := tx.Exec(
 		`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, ?, ?, ?, 'in_progress', ?)`,
@@ -119,7 +121,7 @@ func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, quest
 	for i, qID := range questionIDs {
 		res, err := tx.Exec(
 			`INSERT INTO question_threads (session_id, question_id, status, position)
-			 SELECT ?, id, 'open', ? FROM questions WHERE id = ? AND archived = 0`,
+			 SELECT ?, id, 'open', ? FROM questions WHERE id = ? AND archived = 0 AND published = 1`,
 			sessionID, i+1, qID,
 		)
 		if err != nil {
@@ -130,7 +132,7 @@ func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, quest
 			return 0, err
 		}
 		if n == 0 {
-			return 0, fmt.Errorf("question %d is missing or archived", qID)
+			return 0, fmt.Errorf("question %d is missing, archived or unpublished", qID)
 		}
 	}
 	slog.Debug("created session", "id", sessionID, "topic", topic, "questions", len(questionIDs))

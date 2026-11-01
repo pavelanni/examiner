@@ -36,7 +36,7 @@ func TestExportQuestionCountIntegration(t *testing.T) {
 				}
 				var ids []int64
 				for i := range 2 {
-					id, err := s.InsertQuestion(model.Question{CourseID: 1, Text: fmt.Sprint("Q", i), Topic: "t", Difficulty: "easy", MaxPoints: 5})
+					id, err := s.InsertQuestion(model.Question{CourseID: 1, Text: fmt.Sprint("Q", i), Topic: "t", Difficulty: "easy", MaxPoints: 5, Published: true})
 					if err != nil {
 						t.Fatal(err)
 					}

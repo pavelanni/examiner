@@ -240,3 +240,17 @@ func TestTeacherSaveLeavesInFileDuplicateOut(t *testing.T) {
 		t.Errorf("file = %s; want questions 1 and 3 only", data)
 	}
 }
+
+func TestTeacherEditRerendersCustomFilename(t *testing.T) {
+	h, _ := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
+	rec := teacherSave(t, h, map[string]string{
+		"questions_json":  importQuestions(1, map[int]string{1: `"rubric":"","max_points":5`}),
+		"editing_file":    "teacher_teacher1_mid.json",
+		"custom_filename": "final",
+	})
+	body := rec.Body.String()
+	if !strings.Contains(body, `name="custom_filename" value="final"`) {
+		t.Errorf("submitted file name not kept on re-render")
+	}
+}

@@ -133,6 +133,7 @@ func TestLoadQuestionsSkipsTeacherOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	foundNew := false
 	for _, x := range qs {
 		switch x.Text {
 		case "A":
@@ -140,9 +141,13 @@ func TestLoadQuestionsSkipsTeacherOwned(t *testing.T) {
 				t.Errorf("teacher's question changed: %+v", x)
 			}
 		case "New":
+			foundNew = true
 			if x.OwnerID != admin || !x.Published {
 				t.Errorf("new question = %+v; want admin-owned, published", x)
 			}
 		}
+	}
+	if !foundNew {
+		t.Error(`question "New" was not imported`)
 	}
 }
