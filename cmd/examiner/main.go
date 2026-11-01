@@ -25,6 +25,7 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/questionimport"
 	"github.com/pavelanni/examiner/internal/store"
 	"github.com/pavelanni/examiner/internal/userutil"
 )
@@ -187,20 +188,27 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("seed admin: %w", err)
 	}
 
+	// Give owners to questions created before ownership existed (#44).
+	if err := backfillQuestionOwners(db, "questions"); err != nil {
+		return fmt.Errorf("backfill question owners: %w", err)
+	}
+
+	// Initialize i18n before loading questions, so validation errors are
+	// reported in the instance's language.
+	lang := v.GetString("lang")
+	if err := appI18n.Init(lang); err != nil {
+		return fmt.Errorf("init i18n: %w", err)
+	}
+
 	// Load questions from all specified files.
-	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
+	loadCtx := appI18n.WithLocalizer(cmd.Context(), appI18n.NewLocalizer(lang))
+	if err := loadQuestions(loadCtx, db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
 	scoreVisibility, err := model.ParseScoreVisibility(strings.ToLower(strings.TrimSpace(v.GetString("score-visibility"))))
 	if err != nil {
 		return fmt.Errorf("score-visibility: %w", err)
-	}
-
-	// Initialize i18n.
-	lang := v.GetString("lang")
-	if err := appI18n.Init(lang); err != nil {
-		return fmt.Errorf("init i18n: %w", err)
 	}
 
 	// Create LLM client.
@@ -379,7 +387,9 @@ func runExport(cmd *cobra.Command, _ []string) error {
 	return nil
 }
 
-func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit int) error {
+// loadQuestions validates and imports question files. ctx carries the
+// localizer used for error messages.
+func loadQuestions(ctx context.Context, db *store.Store, paths []string, maxFollowups int, timeLimit int) error {
 	count, err := db.QuestionCount()
 	if err != nil {
 		return err
@@ -396,10 +406,27 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit 
 		}
 	}
 
+	// Files loaded at startup belong to the first admin.
+	adminID, err := db.FirstAdminID()
+	if err != nil {
+		return err
+	}
+	admin, err := db.GetUserByID(adminID)
+	if err != nil {
+		return err
+	}
+
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", path, err)
+		}
+
+		// Validate every file on every start, even one already imported:
+		// an invalid file stops the server with the full list of errors.
+		drafts, errs := questionimport.Parse(data)
+		if len(errs) > 0 {
+			return fmt.Errorf("%s:\n  %s", path, strings.Join(questionimport.Localize(ctx, errs), "\n  "))
 		}
 
 		hash := sha256sum(data)
@@ -418,30 +445,25 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit 
 			continue
 		}
 
-		var questions []model.QuestionImport
-		if err := json.Unmarshal(data, &questions); err != nil {
-			return fmt.Errorf("parse %s: %w", path, err)
-		}
-
-		for _, qi := range questions {
-			_, err := db.InsertQuestion(model.Question{
-				CourseID:    1,
-				Text:        qi.Text,
-				Difficulty:  qi.Difficulty,
-				Topic:       qi.Topic,
-				Rubric:      qi.Rubric,
-				ModelAnswer: qi.ModelAnswer,
-				MaxPoints:   qi.MaxPoints,
+		var res questionimport.Result
+		err = db.InQuestionTx(ctx, func(tx *store.QuestionTx) error {
+			var err error
+			res, err = questionimport.Apply(tx, drafts, questionimport.Options{
+				Mode:      questionimport.ModeSkipExisting,
+				CourseID:  1,
+				File:      &questionimport.FileRecord{Name: path, Hash: hash},
+				Actor:     admin,
+				Published: true,
 			})
-			if err != nil {
-				return fmt.Errorf("insert question from %s: %w", path, err)
-			}
+			return err
+		})
+		if err != nil {
+			return fmt.Errorf("import %s: %w", path, err)
 		}
-
-		if err := db.SetImportedFileHash(path, hash); err != nil {
-			return fmt.Errorf("record import for %s: %w", path, err)
+		for _, w := range questionimport.LocalizeWarnings(ctx, res.Warnings) {
+			slog.Warn("question skipped", "path", path, "reason", w)
 		}
-		slog.Info("imported questions", "path", path, "count", len(questions))
+		slog.Info("imported questions", "path", path, "inserted", res.Inserted, "skipped", res.Skipped)
 	}
 
 	// Always update blueprint settings to match current CLI flags.
@@ -560,12 +582,21 @@ func runPrep(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("create admin user: %w", err)
 	}
 
+	if err := backfillQuestionOwners(db, filepath.Dir(questionsPath)); err != nil {
+		return fmt.Errorf("backfill question owners: %w", err)
+	}
+
 	// Load questions.
 	maxFollowups := manifest.MaxFollowups
 	if maxFollowups == 0 {
 		maxFollowups = 3
 	}
-	if err := loadQuestions(db, []string{questionsPath}, maxFollowups, manifest.TimeLimit); err != nil {
+	// The manifest has no language; report question errors in English.
+	if err := appI18n.Init("en"); err != nil {
+		return fmt.Errorf("init i18n: %w", err)
+	}
+	loadCtx := appI18n.WithLocalizer(cmd.Context(), appI18n.NewLocalizer("en"))
+	if err := loadQuestions(loadCtx, db, []string{questionsPath}, maxFollowups, manifest.TimeLimit); err != nil {
 		return fmt.Errorf("load questions: %w", err)
 	}
 
