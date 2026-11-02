@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
@@ -74,10 +75,17 @@ func (t *QuestionTx) findOne(where string, args ...any) (*model.Question, error)
 	return &q, nil
 }
 
-// FindByTopicAndTextNorm returns the active question with this identity,
-// or nil if there is none. idx_questions_active_identity allows at most one.
-func (t *QuestionTx) FindByTopicAndTextNorm(courseID int64, topic, textNorm string) (*model.Question, error) {
-	return t.findOne(`course_id = ? AND topic = ? AND text_norm = ? AND archived = 0`, courseID, topic, textNorm)
+// FindByID returns the active question with this ID, or nil if there is
+// none: an archived question stays as sessions saw it.
+func (t *QuestionTx) FindByID(id int64) (*model.Question, error) {
+	return t.findOne(`id = ? AND archived = 0`, id)
+}
+
+// FindByTopicAndTextNorm returns the active question with this identity
+// other than excludeID (0 excludes nothing), or nil if there is none.
+// idx_questions_active_identity allows at most one.
+func (t *QuestionTx) FindByTopicAndTextNorm(courseID int64, topic, textNorm string, excludeID int64) (*model.Question, error) {
+	return t.findOne(`course_id = ? AND topic = ? AND text_norm = ? AND archived = 0 AND id != ?`, courseID, topic, textNorm, excludeID)
 }
 
 // Insert stores a new question. Unlike Store.InsertQuestion it does not
@@ -125,16 +133,27 @@ func (t *QuestionTx) Update(q model.Question) error {
 	return nil
 }
 
-// DeleteUnused deletes ownerID's active question with this topic and exact
-// text unless a question_thread references it. Another owner's question
-// and another topic's question with the same text are kept.
-func (t *QuestionTx) DeleteUnused(courseID, ownerID int64, topic, text string) error {
-	_, err := t.tx.Exec(`DELETE FROM questions
-		WHERE course_id = ? AND owner_id = ? AND topic = ? AND text = ? AND archived = 0
-		  AND NOT EXISTS (
-		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
-		  )`, courseID, ownerID, topic, text)
-	return err
+// DeleteUnusedByIDs deletes ownerID's active questions whose ID is in ids
+// and that no question_thread references. Another owner's question is
+// never deleted, even if its ID is in ids.
+func (t *QuestionTx) DeleteUnusedByIDs(ownerID int64, ids []int64) error {
+	// Delete in chunks, so no statement nears SQLite's bound-variable limit.
+	for chunk := range slices.Chunk(ids, sqlChunkSize) {
+		args := []any{ownerID}
+		for _, id := range chunk {
+			args = append(args, id)
+		}
+		_, err := t.tx.Exec(`DELETE FROM questions
+			WHERE owner_id = ? AND archived = 0
+			  AND id IN (`+placeholders(len(chunk))+`)
+			  AND NOT EXISTS (
+			      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
+			  )`, args...)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // SetImportedFileHash records the hash of an imported file.

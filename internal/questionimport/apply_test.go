@@ -10,24 +10,39 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-// fakeTx is an in-memory Tx. Like the real store, it allows one active
-// question per (course, topic, normalized text).
+// fakeTx is an in-memory Tx. Like the real store, it allows one question
+// per (course, topic, normalized text).
 type fakeTx struct {
 	rows      []model.Question
 	nextID    int64
 	insertErr error
-	deletes   []string // "owner|topic|text" per DeleteUnused call
+	deletes   []fakeDelete
 	files     []FileRecord
 	users     map[int64]string // display names
 }
 
+type fakeDelete struct {
+	owner int64
+	ids   []int64
+}
+
 var testAdmin = &model.User{ID: 1, Role: model.UserRoleAdmin}
 
-func (f *fakeTx) FindByTopicAndTextNorm(courseID int64, topic, norm string) (*model.Question, error) {
+func (f *fakeTx) FindByID(id int64) (*model.Question, error) {
 	for i := range f.rows {
-		if f.rows[i].CourseID == courseID && f.rows[i].Topic == topic && f.rows[i].TextNorm == norm {
+		if f.rows[i].ID == id {
 			q := f.rows[i]
 			return &q, nil
+		}
+	}
+	return nil, nil
+}
+
+func (f *fakeTx) FindByTopicAndTextNorm(courseID int64, topic, norm string, excludeID int64) (*model.Question, error) {
+	for i := range f.rows {
+		r := f.rows[i]
+		if r.CourseID == courseID && r.Topic == topic && r.TextNorm == norm && r.ID != excludeID {
+			return &r, nil
 		}
 	}
 	return nil, nil
@@ -37,7 +52,7 @@ func (f *fakeTx) Insert(q model.Question) (int64, error) {
 	if f.insertErr != nil {
 		return 0, f.insertErr
 	}
-	if existing, _ := f.FindByTopicAndTextNorm(q.CourseID, q.Topic, q.TextNorm); existing != nil {
+	if existing, _ := f.FindByTopicAndTextNorm(q.CourseID, q.Topic, q.TextNorm, 0); existing != nil {
 		return 0, fmt.Errorf("UNIQUE constraint failed")
 	}
 	f.nextID++
@@ -47,6 +62,9 @@ func (f *fakeTx) Insert(q model.Question) (int64, error) {
 }
 
 func (f *fakeTx) Update(q model.Question) error {
+	if other, _ := f.FindByTopicAndTextNorm(q.CourseID, q.Topic, q.TextNorm, q.ID); other != nil {
+		return fmt.Errorf("UNIQUE constraint failed")
+	}
 	for i := range f.rows {
 		if f.rows[i].ID == q.ID {
 			f.rows[i] = q
@@ -56,8 +74,8 @@ func (f *fakeTx) Update(q model.Question) error {
 	return errors.New("no rows")
 }
 
-func (f *fakeTx) DeleteUnused(_, ownerID int64, topic, text string) error {
-	f.deletes = append(f.deletes, fmt.Sprintf("%d|%s|%s", ownerID, topic, text))
+func (f *fakeTx) DeleteUnusedByIDs(ownerID int64, ids []int64) error {
+	f.deletes = append(f.deletes, fakeDelete{ownerID, ids})
 	return nil
 }
 
@@ -137,6 +155,21 @@ func TestApplySameTextDifferentTopic(t *testing.T) {
 	}
 }
 
+func TestApplySaved(t *testing.T) {
+	tx := existingTx()
+	res, err := Apply(tx, parsed(t, "N|x", "N|x", "a|x", "M|y"), Options{Actor: testAdmin, Mode: ModeSkipExisting, CourseID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(res.Saved, []int{1, 4}) {
+		t.Errorf("saved = %v, want [1 4] (2 duplicates 1, 3 exists)", res.Saved)
+	}
+	res, err = Apply(tx, parsed(t, "A|x"), Options{Actor: testAdmin, Mode: ModeUpdateExisting, CourseID: 1})
+	if err != nil || !slices.Equal(res.Saved, []int{1}) {
+		t.Errorf("update: saved = %v, %v; want [1]", res.Saved, err)
+	}
+}
+
 func existingTx() *fakeTx {
 	return &fakeTx{nextID: 7, rows: []model.Question{{
 		ID: 7, CourseID: 1, Text: "A", TextNorm: "a", Topic: "x", Difficulty: "easy", Rubric: "old", ModelAnswer: "a", MaxPoints: 1,
@@ -171,16 +204,22 @@ func TestApplyDupInDBUpdate(t *testing.T) {
 	}
 }
 
-func TestApplyOld(t *testing.T) {
-	tx := &fakeTx{}
-	old := parsed(t, "A|x", "B|x", "c?|y", "A|z")
-	if _, err := Apply(tx, parsed(t, "a|x", "C|y"), Options{Actor: testAdmin, CourseID: 1, Old: old}); err != nil {
+func TestApplyOldIDs(t *testing.T) {
+	tx := existingTx() // row 7 "A"
+	drafts := withIDs(parsed(t, "A|x"), 7)
+	if _, err := Apply(tx, drafts, Options{Actor: testAdmin, Mode: ModeAsk, CourseID: 1, OldIDs: []int64{7, 9}}); err != nil {
 		t.Fatal(err)
 	}
-	// "A|x" and "c?|y" keep their identity; "B|x" is gone and "A" in z
-	// is a different question from "a" in x.
-	if !slices.Equal(tx.deletes, []string{"1|x|B", "1|z|A"}) {
-		t.Errorf("deletes = %v", tx.deletes)
+	if len(tx.deletes) != 1 || !slices.Equal(tx.deletes[0].ids, []int64{9}) {
+		t.Errorf("deletes = %v; want only the dropped #9", tx.deletes)
+	}
+
+	tx = existingTx()
+	if _, err := Apply(tx, drafts, Options{Actor: testAdmin, Mode: ModeAsk, CourseID: 1, OldIDs: []int64{7}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(tx.deletes) != 0 {
+		t.Errorf("deletes with every old question kept = %v", tx.deletes)
 	}
 
 	tx = &fakeTx{}
@@ -188,22 +227,7 @@ func TestApplyOld(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(tx.deletes) != 0 {
-		t.Errorf("deletes without Old = %v", tx.deletes)
-	}
-}
-
-func TestApplySaved(t *testing.T) {
-	tx := existingTx()
-	res, err := Apply(tx, parsed(t, "N|x", "N|x", "a|x", "M|y"), Options{Actor: testAdmin, Mode: ModeSkipExisting, CourseID: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !slices.Equal(res.Saved, []int{1, 4}) {
-		t.Errorf("saved = %v, want [1 4] (2 duplicates 1, 3 exists)", res.Saved)
-	}
-	res, err = Apply(tx, parsed(t, "A|x"), Options{Actor: testAdmin, Mode: ModeUpdateExisting, CourseID: 1})
-	if err != nil || !slices.Equal(res.Saved, []int{1}) {
-		t.Errorf("update: saved = %v, %v; want [1]", res.Saved, err)
+		t.Errorf("deletes without OldIDs = %v", tx.deletes)
 	}
 }
 
@@ -284,7 +308,7 @@ func TestApplyUpdatesOwnQuestion(t *testing.T) {
 func TestApplyConflictWithOtherOwner(t *testing.T) {
 	tx := ownedTx()
 	_, err := Apply(tx, parsed(t, "A|x"), Options{Actor: teacher1, Mode: ModeUpdateExisting, CourseID: 1,
-		Old: parsed(t, "B|x"), File: &FileRecord{Name: "f", Hash: "h"}})
+		OldIDs: []int64{99}, File: &FileRecord{Name: "f", Hash: "h"}})
 	var ce *ConflictError
 	if !errors.As(err, &ce) {
 		t.Fatalf("err = %v, want *ConflictError", err)
@@ -335,10 +359,10 @@ func TestApplySkipModeIgnoresOwner(t *testing.T) {
 
 func TestApplyDeleteScopedToActor(t *testing.T) {
 	tx := &fakeTx{}
-	if _, err := Apply(tx, parsed(t, "A|x"), Options{Actor: teacher1, Mode: ModeUpdateExisting, CourseID: 1, Old: parsed(t, "B|x")}); err != nil {
+	if _, err := Apply(tx, parsed(t, "A|x"), Options{Actor: teacher1, Mode: ModeUpdateExisting, CourseID: 1, OldIDs: []int64{99}}); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(tx.deletes, []string{"11|x|B"}) {
+	if len(tx.deletes) != 1 || tx.deletes[0].owner != 11 {
 		t.Errorf("deletes = %+v; want owner 11", tx.deletes)
 	}
 }
@@ -351,5 +375,173 @@ func TestApplyForeignRowKeepsPublished(t *testing.T) {
 	}
 	if tx.rows[0].Published || tx.rows[0].Rubric != "r-A" {
 		t.Errorf("row = %+v; want rubric updated, publication kept", tx.rows[0])
+	}
+}
+
+// withIDs sets the stored question each draft edits.
+func withIDs(drafts []Draft, ids ...int64) []Draft {
+	for i, id := range ids {
+		drafts[i].ID = id
+	}
+	return drafts
+}
+
+// teacherTx has rows 7 "A" and 8 "B" in topic x, owned by teacher1.
+func teacherTx() *fakeTx {
+	return &fakeTx{nextID: 8, users: map[int64]string{11: "Petrov"}, rows: []model.Question{
+		{ID: 7, CourseID: 1, Text: "A", TextNorm: "a", Topic: "x", Difficulty: "easy", Rubric: "old", ModelAnswer: "a", MaxPoints: 1, OwnerID: 11},
+		{ID: 8, CourseID: 1, Text: "B", TextNorm: "b", Topic: "x", Difficulty: "easy", Rubric: "old", ModelAnswer: "a", MaxPoints: 1, OwnerID: 11},
+	}}
+}
+
+func TestApplyEditByID(t *testing.T) {
+	tx := teacherTx()
+	res, err := Apply(tx, withIDs(parsed(t, "A, reworded|y"), 7), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Updated != 1 || res.Inserted != 0 || len(tx.rows) != 2 {
+		t.Errorf("result %+v, rows %+v; want #7 updated in place", res, tx.rows)
+	}
+	if q := tx.rows[0]; q.Text != "A, reworded" || q.TextNorm != "a, reworded" || q.Topic != "y" || q.OwnerID != 11 {
+		t.Errorf("row 7 = %+v", q)
+	}
+}
+
+func TestApplyResaveByIDIsIdempotent(t *testing.T) {
+	tx := teacherTx()
+	for range 2 {
+		res, err := Apply(tx, withIDs(parsed(t, "A|x", "B|x"), 7, 8), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.Updated != 2 || res.Inserted != 0 || res.Skipped != 0 || len(tx.rows) != 2 {
+			t.Errorf("result %+v, %d rows; want both updated, no new rows", res, len(tx.rows))
+		}
+	}
+}
+
+func TestApplyEditByIDCannotDuplicate(t *testing.T) {
+	for name, spec := range map[string]string{"near-duplicate": "b?|x", "same text": "B|x"} {
+		t.Run(name, func(t *testing.T) {
+			tx := teacherTx()
+			_, err := Apply(tx, withIDs(parsed(t, spec), 7), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1})
+			var ce *ConflictError
+			if !errors.As(err, &ce) {
+				t.Fatalf("err = %v, want *ConflictError", err)
+			}
+			if got := keys(ce.Errs); !sameKeys(got, []errKey{{1, "", "QImportErrEditDup"}}) || ce.Errs[0].Params["ID"] != int64(8) {
+				t.Errorf("errs = %v", ce.Errs)
+			}
+			if tx.rows[0].Text != "A" {
+				t.Errorf("row 7 changed: %+v", tx.rows[0])
+			}
+		})
+	}
+}
+
+func TestApplyForeignIDIsNewQuestion(t *testing.T) {
+	tx := ownedTx() // row 17 "A" owned by teacher2
+	_, err := Apply(tx, withIDs(parsed(t, "A|x"), 17), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1})
+	var de *DuplicatesError
+	if !errors.As(err, &de) || len(de.Dups) != 1 || de.Dups[0].CanUpdate {
+		t.Fatalf("err = %v; want one duplicate that cannot be updated", err)
+	}
+	if tx.rows[0].Rubric != "orig" {
+		t.Errorf("teacher2's row changed: %+v", tx.rows[0])
+	}
+}
+
+func TestApplyAskReportsDuplicates(t *testing.T) {
+	tx := teacherTx()
+	tx.rows = append(tx.rows, model.Question{ID: 17, CourseID: 1, Text: "C", TextNorm: "c", Topic: "x", OwnerID: 12})
+	tx.users[12] = "Ivanov"
+	drafts := parsed(t, "a?|x", "New|x", "c!|x", "New|x", "B|y") // B in y is a new question
+	_, err := Apply(tx, drafts, Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1, File: &FileRecord{Name: "f", Hash: "h"}})
+	var de *DuplicatesError
+	if !errors.As(err, &de) {
+		t.Fatalf("err = %v, want *DuplicatesError", err)
+	}
+	type dup struct {
+		n         int
+		code      string
+		canUpdate bool
+	}
+	var got []dup
+	for _, d := range de.Dups {
+		got = append(got, dup{d.Question, d.Code, d.CanUpdate})
+	}
+	want := []dup{{1, "QDupInDB", true}, {3, "QDupInDBOther", false}, {4, "QDupInFile", false}}
+	if !slices.Equal(got, want) {
+		t.Errorf("dups = %v; want %v", got, want)
+	}
+	if p := de.Dups[1].Params; p["ID"] != int64(17) || p["Owner"] != "Ivanov" || p["N"] != 3 {
+		t.Errorf("params = %v", p)
+	}
+	if len(tx.files) != 0 || len(tx.deletes) != 0 {
+		t.Errorf("writes after pending duplicates: files %v, deletes %v", tx.files, tx.deletes)
+	}
+}
+
+func TestApplyAskDecisions(t *testing.T) {
+	drafts := func() []Draft { return parsed(t, "a?|x", "New|x", "new.|x", "B|y") }
+
+	tx := teacherTx()
+	res, err := Apply(tx, drafts(), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Decision{1: DecisionSkip, 3: DecisionSkip}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Inserted != 2 || res.Skipped != 2 || tx.rows[0].Text != "A" {
+		t.Errorf("skip: result %+v, row 7 %+v", res, tx.rows[0])
+	}
+	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"1:QImportWarnDupInDB", "3:QImportWarnDupInFile"}) {
+		t.Errorf("warnings = %v", got)
+	}
+
+	tx = teacherTx()
+	res, err = Apply(tx, drafts(), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Decision{1: DecisionUpdate, 3: DecisionSkip}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Updated != 1 || tx.rows[0].Text != "a?" || tx.rows[0].Rubric != "r-a?" {
+		t.Errorf("update: result %+v, row 7 %+v", res, tx.rows[0])
+	}
+}
+
+func TestApplyAskUpdateKeptFromDeletion(t *testing.T) {
+	tx := teacherTx()
+	// The edited file had #7; its block is gone, but a new block matching
+	// it was saved with "update", so #7 stays.
+	_, err := Apply(tx, parsed(t, "a?|x"), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		OldIDs: []int64{7, 8}, Decisions: map[int]Decision{1: DecisionUpdate}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tx.deletes) != 1 || !slices.Equal(tx.deletes[0].ids, []int64{8}) {
+		t.Errorf("deletes = %v; want only #8", tx.deletes)
+	}
+}
+
+func TestApplyAskCannotUpdateOthersQuestion(t *testing.T) {
+	tx := ownedTx() // row 17 "A" owned by teacher2
+	_, err := Apply(tx, parsed(t, "A|x"), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Decision{1: DecisionUpdate}})
+	var de *DuplicatesError
+	if !errors.As(err, &de) || len(de.Dups) != 1 {
+		t.Fatalf("err = %v; an update of another owner's question must stay pending", err)
+	}
+	if tx.rows[0].Rubric != "orig" {
+		t.Errorf("row changed: %+v", tx.rows[0])
+	}
+}
+
+func TestApplyAskAdminMayUpdate(t *testing.T) {
+	tx := ownedTx()
+	res, err := Apply(tx, parsed(t, "A|x"), Options{Actor: testAdmin, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Decision{1: DecisionUpdate}})
+	if err != nil || res.Updated != 1 || tx.rows[0].OwnerID != 12 {
+		t.Errorf("result %+v, %v, row %+v", res, err, tx.rows[0])
 	}
 }

@@ -233,5 +233,16 @@
   {"id": "BackupColFile", "other": "Файл"},
   {"id": "BackupColTime", "other": "Создана (UTC)"},
   {"id": "BackupColSize", "other": "Размер"},
-  {"id": "BackupWithConfig", "other": "конфигурация"}
+  {"id": "BackupWithConfig", "other": "конфигурация"},
+  {"id": "QImportErrEditDup", "other": "совпадает с вопросом #{{.ID}} в теме «{{.Topic}}»; измените текст"},
+  {"id": "QImportErrAllSkipped", "other": "Все вопросы пропущены как дубликаты, сохранять нечего. Данные не изменены."},
+  {"id": "QDupTitle", "other": "Некоторые вопросы совпадают с уже существующими. Пока ничего не сохранено: выберите действие для каждого и сохраните ещё раз."},
+  {"id": "QDupInFile", "other": "Вопрос №{{.N}} совпадает с вопросом №{{.PrevN}} в этом тесте (тема «{{.Topic}}»)."},
+  {"id": "QDupInDB", "other": "Вопрос №{{.N}} совпадает с вашим вопросом #{{.ID}} в теме «{{.Topic}}»."},
+  {"id": "QDupInDBOther", "other": "Вопрос №{{.N}} совпадает с вопросом #{{.ID}} в теме «{{.Topic}}» (автор: {{.Owner}})."},
+  {"id": "QDupSkip", "other": "Пропустить: не сохранять этот вопрос"},
+  {"id": "QDupUpdate", "other": "Обновить вопрос #{{.ID}} этой версией"},
+  {"id": "QImportOnDuplicate", "other": "Вопросы, которые уже есть в своей теме"},
+  {"id": "QImportOnDupSkip", "other": "Пропустить"},
+  {"id": "QImportOnDupUpdate", "other": "Обновить"}
 ]

@@ -26,6 +26,11 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
+			<label for="on_duplicate">{ t(ctx, "QImportOnDuplicate") }</label>
+			<select id="on_duplicate" name="on_duplicate">
+				<option value="skip" selected>{ t(ctx, "QImportOnDupSkip") }</option>
+				<option value="update">{ t(ctx, "QImportOnDupUpdate") }</option>
+			</select>
 			<button type="submit">{ t(ctx, "UploadBtn") }</button>
 		</form>
 		if len(duplicates) > 0 {
@@ -46,6 +51,7 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings
 		}
 	}
 }
+
 
 // importMessages lists question import errors and warnings. It is shared
 // by the admin import page and the teacher constructor.

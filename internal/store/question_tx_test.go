@@ -98,15 +98,27 @@ func TestQuestionTxFinders(t *testing.T) {
 	archive(t, s, archived)
 	id := insertTestQuestion(t, s, "A.", "easy", "x")
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		q, err := tx.FindByTopicAndTextNorm(1, "x", model.NormalizeQuestionText("  a? "))
+		q, err := tx.FindByTopicAndTextNorm(1, "x", model.NormalizeQuestionText("  a? "), 0)
 		if err != nil || q == nil || q.ID != id {
 			t.Errorf("FindByTopicAndTextNorm = %+v, %v; want active id %d", q, err, id)
 		}
-		if q, err := tx.FindByTopicAndTextNorm(1, "other", "a"); q != nil || err != nil {
+		if q, err := tx.FindByTopicAndTextNorm(1, "x", "a", id); q != nil || err != nil {
+			t.Errorf("excluding the active row: got %+v, %v; want nil, nil (archived rows do not count)", q, err)
+		}
+		if q, err := tx.FindByTopicAndTextNorm(1, "other", "a", 0); q != nil || err != nil {
 			t.Errorf("other topic: got %+v, %v; want nil, nil", q, err)
 		}
-		if q, err := tx.FindByTopicAndTextNorm(2, "x", "a"); q != nil || err != nil {
+		if q, err := tx.FindByTopicAndTextNorm(2, "x", "a", 0); q != nil || err != nil {
 			t.Errorf("other course: got %+v, %v; want nil, nil", q, err)
+		}
+		if q, err := tx.FindByID(id); err != nil || q == nil || q.Text != "A." {
+			t.Errorf("FindByID(%d) = %+v, %v", id, q, err)
+		}
+		if q, err := tx.FindByID(archived); q != nil || err != nil {
+			t.Errorf("FindByID(archived) = %+v, %v; want nil, nil", q, err)
+		}
+		if q, err := tx.FindByID(9999); q != nil || err != nil {
+			t.Errorf("FindByID miss: got %+v, %v; want nil, nil", q, err)
 		}
 		return nil
 	})
@@ -146,14 +158,16 @@ func TestQuestionTxUpdate(t *testing.T) {
 	}
 }
 
-func TestQuestionTxDeleteUnused(t *testing.T) {
+func TestQuestionTxDeleteUnusedByIDs(t *testing.T) {
 	s := newTestStore(t)
 	owner := createUser(t, s, "t", model.UserRoleTeacher)
 	other := createUser(t, s, "o", model.UserRoleTeacher)
 	idRemoved := txInsert(t, s, owned("removed", "go", owner, true))
-	idOtherTopic := txInsert(t, s, owned("removed", "rust", owner, true))
+	idKept := txInsert(t, s, owned("kept", "go", owner, true))
 	idReferenced := txInsert(t, s, owned("referenced", "go", owner, true))
 	idOthers := txInsert(t, s, owned("theirs", "go", other, true))
+	idArchived := txInsert(t, s, owned("old", "go", owner, true))
+	archive(t, s, idArchived)
 	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10})
 	if err != nil {
 		t.Fatal(err)
@@ -163,12 +177,7 @@ func TestQuestionTxDeleteUnused(t *testing.T) {
 	}
 
 	err = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		for _, text := range []string{"removed", "referenced", "theirs", "missing"} {
-			if err := tx.DeleteUnused(1, owner, "go", text); err != nil {
-				return err
-			}
-		}
-		return nil
+		return tx.DeleteUnusedByIDs(owner, []int64{idRemoved, idReferenced, idOthers, idArchived, 9999})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -176,14 +185,10 @@ func TestQuestionTxDeleteUnused(t *testing.T) {
 	if _, err := s.GetQuestion(idRemoved); err == nil {
 		t.Error("unused question not deleted")
 	}
-	if _, err := s.GetQuestion(idOtherTopic); err != nil {
-		t.Errorf("same text in another topic deleted: %v", err)
-	}
-	if _, err := s.GetQuestion(idReferenced); err != nil {
-		t.Errorf("referenced question deleted: %v", err)
-	}
-	if _, err := s.GetQuestion(idOthers); err != nil {
-		t.Errorf("another owner's question deleted: %v", err)
+	for name, id := range map[string]int64{"kept": idKept, "referenced": idReferenced, "another owner's": idOthers, "archived": idArchived} {
+		if _, err := s.GetQuestion(id); err != nil {
+			t.Errorf("%s question deleted: %v", name, err)
+		}
 	}
 }
 
@@ -228,31 +233,6 @@ func TestInQuestionTxReleasesLockOnPanic(t *testing.T) {
 	}
 	if n := countQuestions(t, s); n != 1 {
 		t.Errorf("count = %d, want 1 (panicked insert rolled back)", n)
-	}
-}
-
-func TestQuestionTxDeleteUnusedScopedToOwner(t *testing.T) {
-	s := newTestStore(t)
-	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
-	t2 := createUser(t, s, "t2", model.UserRoleTeacher)
-	a := txInsert(t, s, owned("A", "x", t1, true))
-	b := txInsert(t, s, owned("B", "x", t2, true))
-	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		for _, text := range []string{"A", "B"} {
-			if err := tx.DeleteUnused(1, t1, "x", text); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.GetQuestion(a); err == nil {
-		t.Error("own question A not deleted")
-	}
-	if _, err := s.GetQuestion(b); err != nil {
-		t.Errorf("other owner's question B deleted: %v", err)
 	}
 }
 

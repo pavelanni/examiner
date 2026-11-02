@@ -153,12 +153,18 @@ func TestTeacherCannotOverwriteOthersQuestion(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("A save: %d", rec.Code)
 	}
-	rec = teacherSaveAs(t, h, b, map[string]string{"questions_json": oneQ("Shared Q", "hacked"), "custom_filename": "x", "publish": "1"})
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("B save: status %d, want 400", rec.Code)
+	fields := map[string]string{"questions_json": oneQ("Shared Q", "hacked"), "custom_filename": "x", "publish": "1"}
+	rec = teacherSaveAs(t, h, b, fields)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("B save: status %d, want 409", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "matches question #") || !strings.Contains(body, "owned by T") {
-		t.Errorf("conflict not explained")
+	if body := rec.Body.String(); !strings.Contains(body, "matches question #1") || !strings.Contains(body, "by T") || strings.Contains(body, `value="update"`) {
+		t.Errorf("duplicate not explained, or B offered to update A's question")
+	}
+	// B cannot update it, even by asking: the decision stays pending.
+	rec = confirmDups(t, h, b, fields, rec, map[int]string{1: "update"})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("B update: status %d, want 409", rec.Code)
 	}
 	if q := questionByText(t, s, "Shared Q"); q == nil || q.Rubric != "r" || q.OwnerID != 2 {
 		t.Errorf("A's question = %+v; want rubric r, owner 2", q)
@@ -168,19 +174,33 @@ func TestTeacherCannotOverwriteOthersQuestion(t *testing.T) {
 	}
 }
 
-func TestTeacherConflictRollsBackOwnQuestions(t *testing.T) {
+func TestTeacherDuplicatesWriteNothingUntilDecided(t *testing.T) {
 	h, s := teacherEnv(t)
 	b := addTeacherB(t, s)
 	own := ownedQ("B own", b.ID)
 	own.Rubric = "old"
 	insertQ(t, s, own)
 	insertQ(t, s, ownedQ("A own", 2))
-	rec := teacherSaveAs(t, h, b, map[string]string{"questions_json": twoQ("B own", "new", "A own", "x"), "custom_filename": "x", "publish": "1"})
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status %d, want 400", rec.Code)
+	fields := map[string]string{"questions_json": twoQ("B own", "new", "A own", "x"), "custom_filename": "x", "publish": "1"}
+	rec := teacherSaveAs(t, h, b, fields)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want 409", rec.Code)
 	}
 	if q := questionByText(t, s, "B own"); q.Rubric != "old" {
-		t.Errorf("B's own question updated despite the conflict: %+v", q)
+		t.Errorf("B's own question updated before the decision: %+v", q)
+	}
+	rec = confirmDups(t, h, b, fields, rec, map[int]string{1: "update", 2: "skip"})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
+	}
+	if q := questionByText(t, s, "B own"); q.Rubric != "new" {
+		t.Errorf("B's own question = %+v; want updated", q)
+	}
+	if q := questionByText(t, s, "A own"); q.Rubric != "r" || q.OwnerID != 2 {
+		t.Errorf("A's question = %+v; want unchanged", q)
+	}
+	if qs := readQuestionFile(t, "teacher_teacherB_x.json"); len(qs) != 1 || qs[0].Text != "B own" {
+		t.Errorf("file = %+v; want only the saved question", qs)
 	}
 }
 
@@ -192,7 +212,8 @@ func TestTeacherEditDoesNotDeleteOthersQuestion(t *testing.T) {
 	if err := os.WriteFile(filepath.Join("questions", "teacher_teacherB_mid.json"), []byte(twoQ("Shared", "r", "B question", "r")), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	rec := teacherSaveAs(t, h, b, map[string]string{"questions_json": oneQ("B question", "r"), "editing_file": "teacher_teacherB_mid.json", "publish": "1"})
+	rec := teacherSaveAs(t, h, b, map[string]string{"questions_json": oneQ("B question", "r"), "question_ids": idsOf(t, s, "B question"),
+		"editing_file": "teacher_teacherB_mid.json", "publish": "1"})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
 	}
@@ -204,14 +225,16 @@ func TestTeacherEditDoesNotDeleteOthersQuestion(t *testing.T) {
 func TestAdminConstructorUpdatesTeacherQuestion(t *testing.T) {
 	h, s := teacherEnv(t)
 	insertQ(t, s, ownedQ("Teacher Q", 2))
-	rec := teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": twoQ("Teacher Q", "admin fix", "Admin Q", "r"), "custom_filename": "adm", "publish": "1"})
+	fields := map[string]string{"questions_json": twoQ("Teacher Q", "admin fix", "Admin Q", "r"), "custom_filename": "adm", "publish": "1"}
+	rec := confirmDups(t, h, adminUser, fields, teacherSaveAs(t, h, adminUser, fields), map[int]string{1: "update"})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
 	}
 	if q := questionByText(t, s, "Teacher Q"); q.Rubric != "admin fix" || q.OwnerID != 2 {
 		t.Errorf("teacher's question = %+v; want updated, owner kept", q)
 	}
-	rec = teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Admin Q", "r"), "editing_file": "teacher_admin_adm.json", "publish": "1"})
+	rec = teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Admin Q", "r"), "question_ids": idsOf(t, s, "Admin Q"),
+		"editing_file": "teacher_admin_adm.json", "publish": "1"})
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("edit status %d", rec.Code)
 	}
@@ -279,7 +302,8 @@ func TestTeacherResaveKeepsUnpublished(t *testing.T) {
 	if publishChecked.MatchString(createTestPage(t, h, "teacher_teacher1_mid.json")) {
 		t.Fatal("checkbox checked for an unpublished file")
 	}
-	teacherSave(t, h, map[string]string{"questions_json": oneQ("Hidden", "r2"), "editing_file": "teacher_teacher1_mid.json"})
+	teacherSave(t, h, map[string]string{"questions_json": oneQ("Hidden", "r2"), "question_ids": idsOf(t, s, "Hidden"),
+		"editing_file": "teacher_teacher1_mid.json"})
 	if q := questionByText(t, s, "Hidden"); q == nil || q.Published || q.Rubric != "r2" {
 		t.Errorf("question = %+v; want updated and still unpublished", q)
 	}
@@ -301,8 +325,15 @@ func TestAdminSaveKeepsTeacherPublication(t *testing.T) {
 	insertQ(t, s, draft)
 	insertQ(t, s, ownedQ("Teacher live", 2))
 	// The admin saves with the box checked, then with it unchecked.
-	teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Teacher draft", "fixed"), "custom_filename": "a1", "publish": "1"})
-	teacherSaveAs(t, h, adminUser, map[string]string{"questions_json": oneQ("Teacher live", "fixed"), "custom_filename": "a2"})
+	for _, fields := range []map[string]string{
+		{"questions_json": oneQ("Teacher draft", "fixed"), "custom_filename": "a1", "publish": "1"},
+		{"questions_json": oneQ("Teacher live", "fixed"), "custom_filename": "a2"},
+	} {
+		rec := confirmDups(t, h, adminUser, fields, teacherSaveAs(t, h, adminUser, fields), map[int]string{1: "update"})
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
+		}
+	}
 	if q := questionByText(t, s, "Teacher draft"); q.Published || q.Rubric != "fixed" {
 		t.Errorf("draft = %+v; want rubric updated, still unpublished", q)
 	}

@@ -2,7 +2,6 @@ package handler
 
 import (
 	"bytes"
-	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -146,6 +145,7 @@ func TestTeacherEditRenameRemovesOld(t *testing.T) {
 	teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
 	rec := teacherSave(t, h, map[string]string{
 		"questions_json":  importQuestions(1, nil),
+		"question_ids":    idsOf(t, s, "Question 1"),
 		"editing_file":    "teacher_teacher1_mid.json",
 		"custom_filename": "final",
 	})
@@ -224,22 +224,6 @@ func TestTeacherSavePublishFailureRollsBack(t *testing.T) {
 	}
 }
 
-func TestTeacherSaveLeavesInFileDuplicateOut(t *testing.T) {
-	h, _ := teacherEnv(t)
-	q := `{"text":"%s","difficulty":"easy","topic":"t","rubric":"r","model_answer":"a","max_points":5}`
-	payload := "[" + fmt.Sprintf(q, "What is X?") + "," + fmt.Sprintf(q, "what is x") + "," + fmt.Sprintf(q, "Y") + "]"
-	rec := teacherSave(t, h, map[string]string{"questions_json": payload, "custom_filename": "mid"})
-	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Question 2 duplicates question 1") {
-		t.Fatalf("status = %d; want 200 with the duplicate warning; body: %s", rec.Code, rec.Body.String())
-	}
-	data, err := os.ReadFile(filepath.Join("questions", "teacher_teacher1_mid.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "what is x") || !strings.Contains(string(data), "What is X?") || !strings.Contains(string(data), `"Y"`) {
-		t.Errorf("file = %s; want questions 1 and 3 only", data)
-	}
-}
 
 func TestTeacherEditRerendersCustomFilename(t *testing.T) {
 	h, _ := teacherEnv(t)

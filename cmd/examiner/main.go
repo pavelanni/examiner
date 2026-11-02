@@ -632,6 +632,21 @@ func loadQuestions(ctx context.Context, db *store.Store, paths []string, maxFoll
 		slog.Info("imported questions", "path", path, "inserted", res.Inserted, "skipped", res.Skipped)
 	}
 
+	// Report stored questions that duplicate each other. They predate the
+	// duplicate checks and are not deleted: sessions may reference them;
+	// all but the oldest are archived.
+	groups, err := db.FindExistingDuplicates()
+	if err != nil {
+		slog.Warn("failed to check for duplicate questions", "error", err)
+	}
+	for _, g := range groups {
+		ids := make([]int64, 0, len(g.Questions))
+		for _, q := range g.Questions {
+			ids = append(ids, q.ID)
+		}
+		slog.Warn("duplicate questions in database", "topic", g.Topic, "ids", ids, "text", g.Questions[0].Text)
+	}
+
 	// Always update blueprint settings to match current CLI flags.
 	bp, err := db.GetBlueprint(1)
 	if err == nil {

@@ -53,8 +53,19 @@ func importQuestions(n int, bad map[int]string) string {
 
 func adminUpload(t *testing.T, h *Handler, filename, content string) *httptest.ResponseRecorder {
 	t.Helper()
+	return adminUploadWith(t, h, filename, content, nil)
+}
+
+// adminUploadWith uploads a question file with extra form fields.
+func adminUploadWith(t *testing.T, h *Handler, filename, content string, fields map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
 	var body bytes.Buffer
 	w := multipart.NewWriter(&body)
+	for k, v := range fields {
+		if err := w.WriteField(k, v); err != nil {
+			t.Fatal(err)
+		}
+	}
 	part, err := w.CreateFormFile("questions_file", filename)
 	if err != nil {
 		t.Fatal(err)

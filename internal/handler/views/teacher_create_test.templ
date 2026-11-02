@@ -1,12 +1,39 @@
 package views
 
 import (
+    "fmt"
     "path/filepath"
     "github.com/pavelanni/examiner/internal/model"
 )
 
+// BuilderQuestion is one question block of the constructor: the question
+// and the stored question it edits (ID 0 for a new one).
+type BuilderQuestion struct {
+    ID int64 `json:"id,omitempty"`
+    model.QuestionImport
+}
+
+// DupChoice asks what to do with a question that duplicates another one.
+type DupChoice struct {
+    N         int    // question number
+    Msg       string // what it duplicates
+    CanUpdate bool   // updating the matching question is allowed
+    UpdateID  int64  // the question an update overwrites
+}
+
+// TeacherBuilder is the state of the constructor page.
+type TeacherBuilder struct {
+    Questions  []BuilderQuestion
+    Filename   string // file being edited, "" for a new test
+    CustomName string
+    Published  bool
+    Errs       []string
+    Dups       []DupChoice
+    DupToken   string // identifies the questions the choices were made for
+}
+
 // Вспомогательная функция, которая берет два значения от JSONString и безопасно возвращает одно
-func safeJSONString(questions []model.QuestionImport) string {
+func safeJSONString(questions []BuilderQuestion) string {
     str, err := templ.JSONString(questions)
     if err != nil {
         return "[]"
@@ -14,7 +41,7 @@ func safeJSONString(questions []model.QuestionImport) string {
     return str
 }
 
-templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions []model.QuestionImport, filename string, customName string, published bool, errs []string) {
+templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
     @Layout(t(ctx, "TeacherProfile")) {
         // Добавляем глобальные CSS Стили для автоматической нумерации блоков
         <style>
@@ -30,36 +57,39 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
         </style>
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-			if filename != "" {
+			if b.Filename != "" {
 				// Отрезаем расширение файла (.json) в заголовке H1
-				<h1>{ t(ctx, "Edit Questions") } ({ filename[:len(filename)-len(filepath.Ext(filename))] })</h1>
+				<h1>{ t(ctx, "Edit Questions") } ({ b.Filename[:len(b.Filename)-len(filepath.Ext(b.Filename))] })</h1>
 			} else {
 				<h1>{ t(ctx, "Create Questions") }</h1>
 			}
 			<a href={ templ.SafeURL(p(ctx, "/teacher/profile")) } class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
 		</div>
-		@importMessages(errs, nil)
+		@importMessages(b.Errs, nil)
         
         <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()" data-msg-incomplete={ t(ctx, "QBuilderIncomplete") } data-msg-empty={ t(ctx, "QBuilderEmpty") }>
             <input type="hidden" name="csrf_token" value={ csrf }/>
-            <input type="hidden" name="editing_file" value={ filename }/>
+            <input type="hidden" name="editing_file" value={ b.Filename }/>
+            if len(b.Dups) > 0 {
+                @duplicateChoices(b.Dups, b.DupToken)
+            }
             
             <div style="margin-bottom: 20px;">
                 <label>
                     <strong>{ t(ctx, "Exam Topic") }:</strong>
-                    if filename != "" && customName != "" {
+                    if b.Filename != "" && b.CustomName != "" {
                         // Повторный показ после ошибки: оставляем введённое имя
-                        <input type="text" name="custom_filename" value={ customName } maxlength="100" placeholder="physics_exam" required />
-                    } else if filename != "" {
+                        <input type="text" name="custom_filename" value={ b.CustomName } maxlength="100" placeholder="physics_exam" required />
+                    } else if b.Filename != "" {
                         // Отрезаем расширение (.json), оставляя только чистое имя
-                        <input type="text" name="custom_filename" value={ filename[:len(filename)-len(filepath.Ext(filename))] } maxlength="100" placeholder="physics_exam" required />
+                        <input type="text" name="custom_filename" value={ b.Filename[:len(b.Filename)-len(filepath.Ext(b.Filename))] } maxlength="100" placeholder="physics_exam" required />
                     } else {
-                        <input type="text" name="custom_filename" value={ customName } maxlength="100" placeholder="physics_exam" />
+                        <input type="text" name="custom_filename" value={ b.CustomName } maxlength="100" placeholder="physics_exam" />
                     }
                 </label>
             </div>
             
-            <input type="hidden" id="preloaded-data" value={ safeJSONString(existingQuestions) }/>
+            <input type="hidden" id="preloaded-data" value={ safeJSONString(b.Questions) }/>
             
             <section>
                 <h2>{ t(ctx, "Questions List") }</h2>
@@ -67,17 +97,18 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                 <p><button type="button" id="add-question">{ t(ctx, "Add Question") }</button></p>
             </section>
             
-            if filename == "" {
+            if b.Filename == "" {
                 <div>
                     <label>{ t(ctx, "OrUploadJson") }: <input type="file" id="questions-file" name="questions_file" accept="application/json"/></label>
                 </div>
             }
             
             <div style="margin: 12px 0;">
-                <label><input type="checkbox" name="publish" value="1" checked?={ published }/> { t(ctx, "QPublishLabel") }</label>
+                <label><input type="checkbox" name="publish" value="1" checked?={ b.Published }/> { t(ctx, "QPublishLabel") }</label>
             </div>
 
             <textarea id="assembled-json" name="questions_json" style="display:none;"></textarea>
+            <input type="hidden" id="assembled-ids" name="question_ids"/>
             
             <div>
                 <button type="submit" class="contrast">
@@ -94,9 +125,11 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
             const points = data.max_points !== undefined ? data.max_points : 1;
             const rubric = data.rubric || '';
             const answer = data.model_answer || '';
+            // The stored question this block edits; 0 for a new one.
+            const qid = Number(data.id) || 0;
 
             return `
-            <div class="question-block" data-idx="${idx}" style="border:1px solid #ddd;padding:16px;margin:12px 0;border-radius:4px;">
+            <div class="question-block" data-idx="${idx}" data-qid="${qid}" style="border:1px solid #ddd;padding:16px;margin:12px 0;border-radius:4px;">
                 <div style="margin-bottom:12px; border-bottom: 1px dashed #eee; padding-bottom: 4px;">
                     <h3 class="question-title" style="margin:0; font-size:1.15rem; color:#555;"> Question</h3>
                 </div>
@@ -192,6 +225,7 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
             const blocks = document.querySelectorAll('.question-block');
             
             const questions = [];
+            const ids = [];
             let hasIncompleteQuestion = false;
 
             for (const b of blocks) {
@@ -212,6 +246,7 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
                         break;
                     }
                     questions.push({ text, topic, difficulty, max_points, rubric, model_answer });
+                    ids.push(Number(b.getAttribute('data-qid')) || 0);
                 }
             }
 
@@ -227,8 +262,27 @@ templ TeacherCreateTestPage(displayName string, csrf string, existingQuestions [
             }
 
             document.getElementById('assembled-json').value = JSON.stringify(questions);
+            document.getElementById('assembled-ids').value = JSON.stringify(ids);
             return true;
         }
         </script>
     }
+}
+
+// duplicateChoices asks what to do with each duplicate question. The
+// choices apply only to the questions identified by token.
+templ duplicateChoices(dups []DupChoice, token string) {
+    <article role="alert" style="border-left: 4px solid var(--pico-primary);">
+        <p><strong>{ t(ctx, "QDupTitle") }</strong></p>
+        <input type="hidden" name="dup_token" value={ token }/>
+        for _, d := range dups {
+            <fieldset>
+                <legend>{ d.Msg }</legend>
+                <label><input type="radio" name={ fmt.Sprintf("dup_%d", d.N) } value="skip" checked?={ !d.CanUpdate } required/> { t(ctx, "QDupSkip") }</label>
+                if d.CanUpdate {
+                    <label><input type="radio" name={ fmt.Sprintf("dup_%d", d.N) } value="update" required/> { td(ctx, "QDupUpdate", map[string]any{"ID": d.UpdateID}) }</label>
+                }
+            </fieldset>
+        }
+    </article>
 }

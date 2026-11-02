@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -38,10 +39,16 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 
+	// questionIDs is sent as the constructor's question_ids field when set,
+	// as the builder does for the blocks of an edited file.
+	var questionIDs string
 	postTeacherJSON := func(questionsJSON, customFilename, editingFile, lang string) *httptest.ResponseRecorder {
 		var body bytes.Buffer
 		writer := multipart.NewWriter(&body)
 		_ = writer.WriteField("questions_json", questionsJSON)
+		if questionIDs != "" {
+			_ = writer.WriteField("question_ids", questionIDs)
+		}
 		if customFilename != "" {
 			_ = writer.WriteField("custom_filename", customFilename)
 		}
@@ -60,17 +67,24 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 		return rec
 	}
 
-	// 1. Intra-file duplicate in teacher upload produces localized warning and saves only 1 question.
-	dupJSON := `[
-		{"text": "Что такое ПИД-регулятор?", "difficulty": "easy", "topic": "control", "rubric": "r1", "model_answer": "a1", "max_points": 5},
+	// 1. An intra-file duplicate is asked about first (nothing is saved),
+	// then the test without it saves 1 question.
+	firstQ := `{"text": "Что такое ПИД-регулятор?", "difficulty": "easy", "topic": "control", "rubric": "r1", "model_answer": "a1", "max_points": 5}`
+	dupJSON := `[` + firstQ + `,
 		{"text": "  что  такое  пид-регулятор  ", "difficulty": "easy", "topic": "control", "rubric": "r2", "model_answer": "a2", "max_points": 5}
 	]`
 	rec1 := postTeacherJSON(dupJSON, "pid_quiz", "", "en")
-	if rec1.Code != http.StatusOK {
-		t.Fatalf("expected 200 OK with warning banner, got %d (%s)", rec1.Code, rec1.Body.String())
+	if rec1.Code != http.StatusConflict {
+		t.Fatalf("expected 409 asking about the duplicate, got %d (%s)", rec1.Code, rec1.Body.String())
 	}
-	if !strings.Contains(rec1.Body.String(), "Question 2 duplicates question 1 in this file") {
-		t.Errorf("expected English intra-file duplicate warning, got: %s", rec1.Body.String())
+	if !strings.Contains(rec1.Body.String(), "Question 2 duplicates question 1 in this test") {
+		t.Errorf("expected English intra-file duplicate question, got: %s", rec1.Body.String())
+	}
+	if n, err := s.QuestionCount(); err != nil || n != 0 {
+		t.Fatalf("QuestionCount before the decision = %d, %v; want 0", n, err)
+	}
+	if rec := postTeacherJSON(`[`+firstQ+`]`, "pid_quiz", "", "en"); rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for the test without the duplicate, got %d", rec.Code)
 	}
 	count, err := s.QuestionCount()
 	if err != nil {
@@ -84,6 +98,11 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	editJSON := `[
 		{"text": "Что такое ПИД-регулятор", "difficulty": "medium", "topic": "control", "rubric": "updated", "model_answer": "a1", "max_points": 8}
 	]`
+	own, err := s.FindQuestionByTopicAndTextNorm(1, "control", model.NormalizeQuestionText("Что такое ПИД-регулятор?"))
+	if err != nil || own == nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm: %v, %+v", err, own)
+	}
+	questionIDs = fmt.Sprintf("[%d]", own.ID)
 	rec2 := postTeacherJSON(editJSON, "pid_quiz", "teacher_alice_pid_quiz.json", "en")
 	if rec2.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect on clean edit, got %d (%s)", rec2.Code, rec2.Body.String())
@@ -103,7 +122,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 		t.Errorf("expected own question to be updated, got %+v", found)
 	}
 
-	// 3. Question already in DB from another source (e.g. admin import) is NOT overwritten: the save is rejected in RU.
+	// 3. Question already in DB from another source (e.g. admin import) is NOT overwritten: the teacher is asked in RU and may only skip it.
 	adminQID, err := s.InsertQuestion(model.Question{
 		CourseID:    1,
 		Text:        "What is Kubernetes?",
@@ -120,12 +139,13 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	conflictJSON := `[
 		{"text": "what is kubernetes", "difficulty": "hard", "topic": "devops", "rubric": "hijacked", "model_answer": "hijacked", "max_points": 1}
 	]`
+	questionIDs = ""
 	rec3 := postTeacherJSON(conflictJSON, "devops_quiz", "", "ru")
-	if rec3.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400 with the ownership conflict, got %d", rec3.Code)
+	if rec3.Code != http.StatusConflict {
+		t.Fatalf("expected 409 asking about another owner's question, got %d", rec3.Code)
 	}
-	if !strings.Contains(rec3.Body.String(), "уберите его из файла") {
-		t.Errorf("expected Russian ownership conflict, got: %s", rec3.Body.String())
+	if body := rec3.Body.String(); !strings.Contains(body, "совпадает с вопросом #") || strings.Contains(body, `value="update"`) {
+		t.Errorf("expected a Russian question offering skip only, got: %s", body)
 	}
 	adminQ, err := s.GetQuestion(adminQID)
 	if err != nil {
@@ -141,6 +161,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("InsertQuestion legacy near-duplicate: %v", err)
 	}
+	questionIDs = fmt.Sprintf("[%d]", own.ID)
 	rec4 := postTeacherJSON(editJSON, "pid_quiz", "teacher_alice_pid_quiz.json", "en")
 	if rec4.Code != http.StatusSeeOther {
 		t.Fatalf("expected 303 redirect even with legacy near-duplicate, got %d (%s)", rec4.Code, rec4.Body.String())

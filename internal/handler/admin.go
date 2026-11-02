@@ -162,11 +162,18 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Questions already in their topic are skipped unless the admin asks
+	// to update them.
+	mode := questionimport.ModeSkipExisting
+	if r.FormValue("on_duplicate") == "update" {
+		mode = questionimport.ModeUpdateExisting
+	}
+
 	var res questionimport.Result
 	err = h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
 		var err error
 		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
-			Mode:      questionimport.ModeSkipExisting,
+			Mode:      mode,
 			CourseID:  1,
 			File:      &questionimport.FileRecord{Name: header.Filename, Hash: hash},
 			Actor:     model.UserFromContext(r.Context()),
@@ -176,8 +183,8 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	})
 	var conflict *questionimport.ConflictError
 	if errors.As(err, &conflict) {
-		// Not reachable with ModeSkipExisting; kept so a mode change cannot
-		// turn a conflict into a 500.
+		// Not reachable for an admin, who may edit every question; kept so a
+		// change of rules cannot turn a conflict into a 500.
 		h.renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), conflict.Errs), nil)
 		return
 	}
@@ -188,7 +195,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	}
 
 	slog.Info("uploaded questions via admin", "filename", header.Filename,
-		"inserted", res.Inserted, "skipped", res.Skipped)
+		"inserted", res.Inserted, "updated", res.Updated, "skipped", res.Skipped)
 
 	summary := appI18n.Td(r.Context(), "QImportSummary", map[string]any{
 		"Inserted": res.Inserted, "Updated": res.Updated, "Skipped": res.Skipped,
