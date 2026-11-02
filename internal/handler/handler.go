@@ -2,6 +2,8 @@ package handler
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
@@ -96,6 +98,28 @@ func (h *Handler) BasePathMiddleware(next http.Handler) http.Handler {
 // path prepends the base path to the given path.
 func (h *Handler) path(p string) string {
 	return h.config.BasePath + p
+}
+
+// parseIDParam reads a numeric URL parameter. On a malformed value it
+// writes 400 and returns false.
+func parseIDParam(w http.ResponseWriter, r *http.Request, name string) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, name), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "invalid "+name, http.StatusBadRequest)
+		return 0, false
+	}
+	return id, true
+}
+
+// lookupError answers a failed lookup of a record named in the URL:
+// 404 when it does not exist, otherwise 500 with the detail logged only.
+func lookupError(w http.ResponseWriter, err error, msg string, args ...any) {
+	if errors.Is(err, sql.ErrNoRows) {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	slog.Error(msg, append(args, "error", err)...)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }
 
 // Routes registers all HTTP routes.
@@ -258,16 +282,14 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
-	sessionID, err := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
 		return
 	}
 
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
-		slog.Error("failed to get session view", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get session view", "session_id", sessionID)
 		return
 	}
 
@@ -312,8 +334,14 @@ func (h *Handler) endAnswer(threadID int64) {
 }
 
 func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
-	threadID, _ := strconv.ParseInt(chi.URLParam(r, "threadID"), 10, 64)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
+	threadID, ok := parseIDParam(w, r, "threadID")
+	if !ok {
+		return
+	}
 
 	answer := r.FormValue("answer")
 	if answer == "" {
@@ -323,8 +351,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	sess, bp, err := h.store.GetSessionWithBlueprint(sessionID)
 	if err != nil {
-		slog.Error("failed to get session with blueprint", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get session with blueprint", "session_id", sessionID)
 		return
 	}
 
@@ -357,8 +384,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	thread, err := h.store.GetThread(threadID)
 	if err != nil {
-		slog.Error("failed to get thread", "thread_id", threadID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get thread", "thread_id", threadID)
 		return
 	}
 
@@ -474,12 +500,14 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
-	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
 
 	sess, err := h.store.GetSession(sessionID)
 	if err != nil {
-		slog.Error("failed to get session", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get session", "session_id", sessionID)
 		return
 	}
 
@@ -581,16 +609,14 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
-	sessionID, err := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
-	if err != nil {
-		http.Error(w, "invalid session ID", http.StatusBadRequest)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
 		return
 	}
 
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
-		slog.Error("failed to get session view", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get session view", "session_id", sessionID)
 		return
 	}
 
@@ -628,12 +654,14 @@ func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleReviewPage(w http.ResponseWriter, r *http.Request) {
-	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
 
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
-		slog.Error("failed to get session view for review", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		lookupError(w, err, "failed to get session view for review", "session_id", sessionID)
 		return
 	}
 
@@ -644,15 +672,53 @@ func (h *Handler) handleReviewPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
-	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
-	threadID, _ := strconv.ParseInt(chi.URLParam(r, "threadID"), 10, 64)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
+	threadID, ok := parseIDParam(w, r, "threadID")
+	if !ok {
+		return
+	}
 
-	scoreStr := r.FormValue("teacher_score")
-	comment := r.FormValue("teacher_comment")
-
-	score, err := strconv.ParseFloat(scoreStr, 64)
+	score, err := strconv.ParseFloat(r.FormValue("teacher_score"), 64)
 	if err != nil {
 		http.Error(w, "invalid score", http.StatusBadRequest)
+		return
+	}
+	comment := r.FormValue("teacher_comment")
+
+	sess, err := h.store.GetSession(sessionID)
+	if err != nil {
+		lookupError(w, err, "failed to get session for score update", "session_id", sessionID)
+		return
+	}
+	// Scores exist only once the session is graded, and a reviewed session
+	// is final: changing it would silently alter a confirmed result.
+	if sess.Status != model.StatusGraded {
+		http.Error(w, "session is not awaiting review", http.StatusConflict)
+		return
+	}
+
+	thread, err := h.store.GetThread(threadID)
+	if err != nil {
+		lookupError(w, err, "failed to get thread for score update", "thread_id", threadID)
+		return
+	}
+	if thread.SessionID != sessionID {
+		http.Error(w, "thread does not belong to session", http.StatusForbidden)
+		return
+	}
+
+	question, err := h.store.GetQuestion(thread.QuestionID)
+	if err != nil {
+		slog.Error("failed to get question for score update", "question_id", thread.QuestionID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	// Written as a negated range so NaN, which fails every comparison, is rejected too.
+	if !(score >= 0 && score <= float64(question.MaxPoints)) {
+		http.Error(w, "score out of range", http.StatusBadRequest)
 		return
 	}
 
@@ -666,12 +732,31 @@ func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
-	sessionID, _ := strconv.ParseInt(chi.URLParam(r, "sessionID"), 10, 64)
+	sessionID, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
 
-	gradeStr := r.FormValue("final_grade")
-	finalGrade, err := strconv.ParseFloat(gradeStr, 64)
+	finalGrade, err := strconv.ParseFloat(r.FormValue("final_grade"), 64)
 	if err != nil {
 		http.Error(w, "invalid grade", http.StatusBadRequest)
+		return
+	}
+	// The final grade is a percentage. Negated range rejects NaN as well.
+	if !(finalGrade >= 0 && finalGrade <= 100) {
+		http.Error(w, "grade out of range", http.StatusBadRequest)
+		return
+	}
+
+	sess, err := h.store.GetSession(sessionID)
+	if err != nil {
+		lookupError(w, err, "failed to get session for finalize", "session_id", sessionID)
+		return
+	}
+	// Only a graded session can be confirmed: earlier there is nothing to
+	// confirm, and confirming again would overwrite the first reviewer.
+	if sess.Status != model.StatusGraded {
+		http.Error(w, "session is not awaiting review", http.StatusConflict)
 		return
 	}
 
