@@ -1,3 +1,8 @@
 # Files embedded or compared byte-for-byte must keep LF on Windows checkouts.
 *.golden text eol=lf
 internal/llm/prompts/*.txt text eol=lf
+
+# Run or installed on Linux hosts as they are: scripts/restore.sh is piped
+# to bash over ssh, and systemd reads the unit files.
+*.sh text eol=lf
+deploy/* text eol=lf
