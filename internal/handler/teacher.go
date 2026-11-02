@@ -245,12 +245,12 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		if err := h.store.UpdateQuestionByCourseAndText(q); err != nil {
 			if !errors.Is(err, sql.ErrNoRows) {
 				slog.Error("failed to update question", "error", err)
-				http.Error(w, "failed to update question: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "failed to update question", http.StatusInternalServerError)
 				return
 			}
 			if _, err := h.store.InsertQuestion(q); err != nil {
 				slog.Error("failed to insert question", "error", err)
-				http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
+				http.Error(w, "failed to insert question", http.StatusInternalServerError)
 				return
 			}
 		}
