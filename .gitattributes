@@ -1,0 +1,4 @@
+# Run or installed on Linux hosts as they are: scripts/restore.sh is piped
+# to bash over ssh, and systemd reads the unit files.
+*.sh text eol=lf
+deploy/* text eol=lf
