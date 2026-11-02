@@ -6,14 +6,15 @@ FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.25-bookworm AS build
 
 ARG TARGETOS TARGETARCH
 
-# Install templ CLI (runs on the build platform).
-RUN go install github.com/a-h/templ/cmd/templ@latest
-
 WORKDIR /src
 
 # Cache module downloads.
 COPY go.mod go.sum ./
 RUN go mod download
+
+# Install the templ CLI at the version in go.mod: generated code must match
+# the templ library, and @latest may need a newer Go than this image has.
+RUN go install github.com/a-h/templ/cmd/templ@$(go list -m -f '{{.Version}}' github.com/a-h/templ)
 
 # Copy source and generate + build.
 COPY . .

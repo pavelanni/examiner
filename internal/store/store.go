@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -1032,4 +1033,16 @@ func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, mod
 		WHERE exam_sessions.id = ?`, sessionID,
 	).Scan(args...)
 	return sess, bp, err
+}
+
+// SnapshotTo writes a consistent copy of the database to path, which must
+// not exist yet (VACUUM INTO). It is safe while the server is writing.
+func (s *Store) SnapshotTo(ctx context.Context, path string) error {
+	_, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
+}
+
+// Ping checks that the database answers.
+func (s *Store) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
 }

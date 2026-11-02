@@ -221,5 +221,17 @@
   {"id": "ThreadGradeDone", "other": "Оценено."},
   {"id": "ThreadGradeFailed", "other": "Ошибка оценки."},
   {"id": "GradingAttempts", "other": "Попыток в этом цикле: {{.Count}}."},
-  {"id": "GradingLastError", "other": "Последняя ошибка: {{.Reason}}."}
+  {"id": "GradingLastError", "other": "Последняя ошибка: {{.Reason}}."},
+  {"id": "AdminBackups", "other": "Резервные копии"},
+  {"id": "BackupDisabled", "other": "Резервное копирование с этой страницы не настроено: задайте backup-dir (EXAMINER_BACKUP_DIR)."},
+  {"id": "BackupFailed", "other": "Не удалось создать резервную копию. Подробности в журнале сервера."},
+  {"id": "BackupListFailed", "other": "Не удалось прочитать список резервных копий. Подробности в журнале сервера."},
+  {"id": "BackupCreated", "other": "Резервная копия {{.Name}} создана и проверена."},
+  {"id": "BackupHint", "other": "Копии сохраняются в {{.Dir}}, хранятся последние {{.Keep}}. Здесь же видны копии по расписанию и перед обновлением."},
+  {"id": "BackupCreateBtn", "other": "Создать резервную копию"},
+  {"id": "BackupNone", "other": "Резервных копий пока нет."},
+  {"id": "BackupColFile", "other": "Файл"},
+  {"id": "BackupColTime", "other": "Создана (UTC)"},
+  {"id": "BackupColSize", "other": "Размер"},
+  {"id": "BackupWithConfig", "other": "конфигурация"}
 ]

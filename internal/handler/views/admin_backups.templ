@@ -1,0 +1,90 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+	"time"
+)
+
+// BackupsPage is the state of the admin backups page.
+type BackupsPage struct {
+	Enabled  bool // a backup directory is configured
+	Dir      string
+	Keep     int
+	Backups  []BackupRow // newest first
+	Flash    string
+	FlashErr bool
+}
+
+// BackupRow is one backup in the list.
+type BackupRow struct {
+	Name      string
+	Time      time.Time
+	Size      int64
+	HasConfig bool
+}
+
+// humanSize formats a byte count as B, KB or MB.
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<20:
+		return fmt.Sprintf("%.1f MB", float64(n)/(1<<20))
+	case n >= 1<<10:
+		return fmt.Sprintf("%.1f KB", float64(n)/(1<<10))
+	}
+	return strconv.FormatInt(n, 10) + " B"
+}
+
+templ AdminBackupsPage(page BackupsPage) {
+	@Layout(t(ctx, "AdminBackups")) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
+			{Label: t(ctx, "Admin"), URL: p(ctx, "/admin/users")},
+			{Label: t(ctx, "AdminBackups")},
+		})
+		<h1>{ t(ctx, "AdminBackups") }</h1>
+		if page.Flash != "" {
+			if page.FlashErr {
+				<p role="alert" style="color: var(--pico-del-color);">{ page.Flash }</p>
+			} else {
+				<p style="color: var(--pico-ins-color);">{ page.Flash }</p>
+			}
+		}
+		if !page.Enabled {
+			<p>{ t(ctx, "BackupDisabled") }</p>
+		} else {
+			<p>{ td(ctx, "BackupHint", map[string]any{"Dir": page.Dir, "Keep": page.Keep}) }</p>
+			<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/backups")) } onsubmit="this.querySelector('button').setAttribute('aria-busy','true');">
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<button type="submit">{ t(ctx, "BackupCreateBtn") }</button>
+			</form>
+			if len(page.Backups) == 0 {
+				<p>{ t(ctx, "BackupNone") }</p>
+			} else {
+				<table>
+					<thead>
+						<tr>
+							<th>{ t(ctx, "BackupColFile") }</th>
+							<th>{ t(ctx, "BackupColTime") }</th>
+							<th>{ t(ctx, "BackupColSize") }</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, b := range page.Backups {
+							<tr>
+								<td>
+									<code>{ b.Name }</code>
+									if b.HasConfig {
+										<small>{ " + " }{ t(ctx, "BackupWithConfig") }</small>
+									}
+								</td>
+								<td>{ b.Time.UTC().Format("2006-01-02 15:04:05") }</td>
+								<td>{ humanSize(b.Size) }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			}
+		}
+	}
+}

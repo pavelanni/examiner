@@ -1,0 +1,35 @@
+# Backs up one Examiner instance: a checked database snapshot and its
+# configuration files, rotated to the newest 14. The instance name is the
+# language: examiner-backup@en.service, examiner-backup@ru.service.
+#
+# Install into ~/.config/systemd/user/ (not the Quadlet directory):
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now examiner-backup@en.timer examiner-backup@ru.timer
+# Run once by hand (task backup does this for both instances):
+#   systemctl --user start examiner-backup@ru.service
+#
+# The container uses the image of the running instance (read from its
+# Quadlet file) and its default user, so the files it writes have the
+# owner the instance expects. label=disable lets it share the volume that
+# the instance mounted with :Z. Secrets (*.env) are not mounted.
+[Unit]
+Description=Examiner backup (%i instance)
+
+[Service]
+Type=oneshot
+ExecStartPre=/usr/bin/mkdir -p %h/examiner/backups/%i
+ExecStart=/bin/sh -c 'exec /usr/bin/podman run --rm --pull=never \
+    --name examiner-backup-%i \
+    --security-opt label=disable \
+    --volume systemd-examiner-%i-data:/data/db \
+    --volume %h/examiner/backups/%i:/data/backups:U \
+    --volume %h/examiner/examiner-%i.yaml:/config/examiner-%i.yaml:ro \
+    --volume %h/examiner/questions-%i.json:/config/questions-%i.json:ro \
+    --volume %h/.config/containers/systemd/examiner-%i.container:/config/examiner-%i.container:ro \
+    --volume %h/.config/containers/systemd/examiner-%i-data.volume:/config/examiner-%i-data.volume:ro \
+    --volume /etc/caddy/Caddyfile:/config/Caddyfile:ro \
+    "$$(sed -n "s/^Image=//p" %h/.config/containers/systemd/examiner-%i.container)" \
+    backup --db /data/db/examiner.db --out-dir /data/backups --name examiner-%i --keep 14 \
+    --config /config/examiner-%i.yaml --config /config/questions-%i.json \
+    --config /config/examiner-%i.container --config /config/examiner-%i-data.volume \
+    --config /config/Caddyfile'

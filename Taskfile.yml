@@ -101,9 +101,10 @@ tasks:
       - task: push
 
   deploy:
-    desc: Deploy to cloud host (build, push, update both instances, restart)
+    desc: Deploy to cloud host (build, push, back up and update both instances, restart)
     cmds:
       - task: release
+      - task: pre-deploy-backup
       - >-
         ssh {{.DEPLOY_HOST}}
         "sed -i 's|^Image=.*|Image={{.REGISTRY}}:{{.DEV_TAG}}|'
@@ -114,8 +115,9 @@ tasks:
       - echo "Deployed {{.DEV_TAG}} to {{.DEPLOY_HOST}} (en + ru)"
 
   deploy-quick:
-    desc: Deploy without rebuilding (use current DEV_TAG)
+    desc: Deploy without rebuilding (use current DEV_TAG); backs up both instances first
     cmds:
+      - task: pre-deploy-backup
       - >-
         ssh {{.DEPLOY_HOST}}
         "sed -i 's|^Image=.*|Image={{.REGISTRY}}:{{.DEV_TAG}}|'
@@ -124,6 +126,50 @@ tasks:
         systemctl --user daemon-reload &&
         systemctl --user restart examiner-en examiner-ru"
       - echo "Deployed {{.DEV_TAG}} to {{.DEPLOY_HOST}} (en + ru)"
+
+  pre-deploy-backup:
+    internal: true
+    desc: Back up both instances before a restart; a failed backup stops the deploy
+    vars:
+      SKIP_BACKUP: '{{.SKIP_BACKUP | default "false"}}'
+    cmds:
+      - >-
+        {{if eq .SKIP_BACKUP "true"}}echo "WARNING: SKIP_BACKUP=true, deploying without a fresh backup"
+        {{else}}ssh {{.DEPLOY_HOST}} "systemctl --user start examiner-backup@en.service examiner-backup@ru.service"
+        && echo "Backed up en + ru on {{.DEPLOY_HOST}}"{{end}}
+
+  backup:
+    desc: Back up both instances on the cloud host now (database + configuration)
+    cmds:
+      - ssh {{.DEPLOY_HOST}} "systemctl --user start examiner-backup@en.service examiner-backup@ru.service"
+      - >-
+        ssh {{.DEPLOY_HOST}}
+        "journalctl --user -u examiner-backup@en.service -u examiner-backup@ru.service
+        -n 20 --no-pager -o cat | grep -E '^(Backup|Config):'"
+
+  backup-list:
+    desc: List the backups on the cloud host
+    cmds:
+      - ssh {{.DEPLOY_HOST}} "podman unshare ls -l ~/examiner/backups/en ~/examiner/backups/ru"
+
+  backup-pull:
+    desc: Copy all backups from the cloud host to DEST (default ./backups), for a copy off the host
+    vars:
+      DEST: '{{.DEST | default "backups"}}'
+    cmds:
+      - mkdir -p {{.DEST}}
+      - ssh {{.DEPLOY_HOST}} "podman unshare tar -C ~/examiner/backups -cf - ." | tar -C {{.DEST}} -xf -
+      - echo "Backups copied to {{.DEST}}"
+
+  restore:
+    desc: Restore an instance on the cloud host from a backup (LANG=en|ru BACKUP=<file name>)
+    preconditions:
+      - sh: '[ "{{.LANG}}" = en ] || [ "{{.LANG}}" = ru ]'
+        msg: "Set LANG=en or LANG=ru"
+      - sh: '[ -n "{{.BACKUP}}" ]'
+        msg: "Set BACKUP=<file name>; task backup-list shows them"
+    cmds:
+      - ssh {{.DEPLOY_HOST}} 'bash -s' -- {{.LANG}} {{.BACKUP}} < scripts/restore.sh
 
   deploy-status:
     desc: Check service status on cloud host
