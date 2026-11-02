@@ -154,5 +154,14 @@
   {"id": "QImportOnDupUpdate", "other": "Обновить"},
   {"id": "QDupReportTitle", "other": "Дубликаты вопросов в базе"},
   {"id": "QDupReportHint", "other": "Эти вопросы совпадают после нормализации (регистр, пробелы, ё/е, знаки препинания в конце). Автоматически они не удаляются: на них могут ссылаться сессии экзаменов."},
-  {"id": "QDupReportGroup", "other": "Тема «{{.Topic}}», вопросы {{.IDs}}: «{{.Text}}»"}
+  {"id": "QDupReportGroup", "other": "Тема «{{.Topic}}», вопросы {{.IDs}}: «{{.Text}}»"},
+  {"id": "ExamUnfinished", "other": "Незавершённые экзамены"},
+  {"id": "ExamNoTopicsAvailable", "other": "Сейчас нет тем, по которым можно начать экзамен."},
+  {"id": "ExamDistribution", "other": "В каждом экзамене: лёгких вопросов — {{.Easy}}, средних — {{.Medium}}, сложных — {{.Hard}} (всего {{.Total}})."},
+  {"id": "ExamTaken", "other": "экзамен по этой теме уже сдан"},
+  {"id": "ExamShortageShort", "other": "недостаточно вопросов уровня {{.Difficulty}}: требуется {{.Need}}, доступно {{.Have}}."},
+  {"id": "ExamShortage", "other": "В теме «{{.Topic}}» недостаточно вопросов уровня {{.Difficulty}}: требуется {{.Need}}, доступно {{.Have}}."},
+  {"id": "ExamNoQuestions", "other": "нет вопросов, подходящих под настройки экзамена"},
+  {"id": "ExamNoQuestionsInTopic", "other": "В теме «{{.Topic}}» нет вопросов, подходящих под настройки экзамена."},
+  {"id": "ExamChooseTopic", "other": "Чтобы начать экзамен, выберите одну из предложенных тем."}
 ]

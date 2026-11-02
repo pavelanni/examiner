@@ -154,5 +154,14 @@
   {"id": "QImportOnDupUpdate", "other": "Update them"},
   {"id": "QDupReportTitle", "other": "Duplicate questions in the database"},
   {"id": "QDupReportHint", "other": "These questions are the same after normalization (case, spaces, ё/е, final punctuation). They are not deleted automatically, because exam sessions may use them."},
-  {"id": "QDupReportGroup", "other": "Topic \"{{.Topic}}\", questions {{.IDs}}: \"{{.Text}}\""}
+  {"id": "QDupReportGroup", "other": "Topic \"{{.Topic}}\", questions {{.IDs}}: \"{{.Text}}\""},
+  {"id": "ExamUnfinished", "other": "Unfinished exams"},
+  {"id": "ExamNoTopicsAvailable", "other": "No topic is open for a new exam right now."},
+  {"id": "ExamDistribution", "other": "Each exam: {{.Easy}} easy, {{.Medium}} medium and {{.Hard}} hard questions ({{.Total}} in total)."},
+  {"id": "ExamTaken", "other": "you have already taken this exam"},
+  {"id": "ExamShortageShort", "other": "not enough {{.Difficulty}} questions: {{.Need}} needed, {{.Have}} available."},
+  {"id": "ExamShortage", "other": "Not enough {{.Difficulty}} questions in topic \"{{.Topic}}\": {{.Need}} needed, {{.Have}} available."},
+  {"id": "ExamNoQuestions", "other": "no questions match the exam settings"},
+  {"id": "ExamNoQuestionsInTopic", "other": "No questions in topic \"{{.Topic}}\" match the exam settings."},
+  {"id": "ExamChooseTopic", "other": "Choose one of the listed topics to start an exam."}
 ]
