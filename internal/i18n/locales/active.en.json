@@ -139,5 +139,20 @@
   {"id": "QImportErrNotOwner", "other": "matches question #{{.ID}} owned by {{.Owner}} in topic \"{{.Topic}}\"; remove it from the file"},
   {"id": "QImportOwnerAdmin", "other": "the administrator"},
   {"id": "QPublishLabel", "other": "Publish (questions go into exams and are visible to other teachers)"},
-  {"id": "QImportErrFileNameTaken", "other": "This file name falls under another user's files (teacher_<username>_…). Choose another name. Nothing was changed."}
+  {"id": "QImportErrFileNameTaken", "other": "This file name falls under another user's files (teacher_<username>_…). Choose another name. Nothing was changed."},
+  {"id": "QImportErrEditDup", "other": "matches question #{{.ID}} in topic \"{{.Topic}}\"; change the text"},
+  {"id": "QImportErrAllSkipped", "other": "Every question was skipped as a duplicate, so there is nothing to save. Nothing was changed."},
+  {"id": "QDupTitle", "other": "Some questions match existing ones. Nothing has been saved yet: choose what to do with each of them and save again."},
+  {"id": "QDupInFile", "other": "Question {{.N}} duplicates question {{.PrevN}} in this test (topic \"{{.Topic}}\")."},
+  {"id": "QDupInDB", "other": "Question {{.N}} matches your question #{{.ID}} in topic \"{{.Topic}}\"."},
+  {"id": "QDupInDBOther", "other": "Question {{.N}} matches question #{{.ID}} by {{.Owner}} in topic \"{{.Topic}}\"."},
+  {"id": "QDupOtherTopic", "other": "Question {{.N}} has the same text as question #{{.ID}} in topic \"{{.Topic}}\"."},
+  {"id": "QDupSkip", "other": "Skip: do not save this question"},
+  {"id": "QDupUpdate", "other": "Update question #{{.ID}} with this version"},
+  {"id": "QImportOnDuplicate", "other": "Questions that already exist in their topic"},
+  {"id": "QImportOnDupSkip", "other": "Skip them"},
+  {"id": "QImportOnDupUpdate", "other": "Update them"},
+  {"id": "QDupReportTitle", "other": "Duplicate questions in the database"},
+  {"id": "QDupReportHint", "other": "These questions are the same after normalization (case, spaces, ё/е, final punctuation). They are not deleted automatically, because exam sessions may use them."},
+  {"id": "QDupReportGroup", "other": "Topic \"{{.Topic}}\", questions {{.IDs}}: \"{{.Text}}\""}
 ]

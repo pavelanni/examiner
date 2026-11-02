@@ -145,6 +145,7 @@ func TestTeacherEditRenameRemovesOld(t *testing.T) {
 	teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
 	rec := teacherSave(t, h, map[string]string{
 		"questions_json":  importQuestions(1, nil),
+		"question_ids":    idsOf(t, s, "Question 1"),
 		"editing_file":    "teacher_teacher1_mid.json",
 		"custom_filename": "final",
 	})

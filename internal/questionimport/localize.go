@@ -19,15 +19,7 @@ type Warning struct {
 func Localize(ctx context.Context, errs []FieldError) []string {
 	out := make([]string, 0, len(errs))
 	for _, e := range errs {
-		if e.Code == "QImportErrNotOwner" && e.Params["Owner"] == "" {
-			params := make(map[string]any, len(e.Params))
-			for k, v := range e.Params {
-				params[k] = v
-			}
-			params["Owner"] = i18n.T(ctx, "QImportOwnerAdmin")
-			e.Params = params
-		}
-		msg := i18n.Td(ctx, e.Code, e.Params)
+		msg := i18n.Td(ctx, e.Code, withOwner(ctx, e.Params))
 		switch {
 		case e.Question == 0:
 			out = append(out, msg)
@@ -46,5 +38,25 @@ func LocalizeWarnings(ctx context.Context, ws []Warning) []string {
 	for _, w := range ws {
 		out = append(out, i18n.Td(ctx, w.Code, w.Params))
 	}
+	return out
+}
+
+// LocalizeDuplicate renders the question about one duplicate in the
+// context's language.
+func LocalizeDuplicate(ctx context.Context, d Duplicate) string {
+	return i18n.Td(ctx, d.Code, withOwner(ctx, d.Params))
+}
+
+// withOwner names the owner of a question whose owner has no display name
+// (legacy rows, assigned to the administrator). It never changes params.
+func withOwner(ctx context.Context, params map[string]any) map[string]any {
+	if owner, ok := params["Owner"]; !ok || owner != "" {
+		return params
+	}
+	out := make(map[string]any, len(params))
+	for k, v := range params {
+		out[k] = v
+	}
+	out["Owner"] = i18n.T(ctx, "QImportOwnerAdmin")
 	return out
 }
