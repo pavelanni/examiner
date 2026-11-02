@@ -115,6 +115,22 @@ const (
 	DifficultyHard   Difficulty = "hard"
 )
 
+// Difficulties lists the difficulty levels from easiest to hardest.
+var Difficulties = []Difficulty{DifficultyEasy, DifficultyMedium, DifficultyHard}
+
+// Distribution is the exact number of questions of each difficulty in an
+// exam (FR3-01). A nil Distribution means none is configured.
+type Distribution map[Difficulty]int
+
+// Total returns the number of questions in an exam.
+func (d Distribution) Total() int {
+	n := 0
+	for _, c := range d {
+		n += c
+	}
+	return n
+}
+
 // Question represents an exam question.
 type Question struct {
 	ID          int64      `json:"id"`
@@ -144,6 +160,7 @@ type ExamSession struct {
 	ID          int64         `json:"id"`
 	BlueprintID int64         `json:"blueprint_id"`
 	StudentID   int64         `json:"student_id"`
+	Topic       string        `json:"topic,omitempty"` // empty for sessions created before topics were stored
 	Status      SessionStatus `json:"status"`
 	StartedAt   time.Time     `json:"started_at"`
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
@@ -214,10 +231,11 @@ type ExamConfig struct {
 	Difficulty    string // empty means all difficulties
 	Topic         string // empty means all topics
 	MaxFollowups  int
-	Shuffle       bool
-	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
-	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
-	PromptVariant string // Grading prompt variant (strict, standard, lenient)
+	Shuffle       bool         // randomize question order; the set is always drawn at random
+	Selection     Distribution // questions per difficulty; replaces NumQuestions and Difficulty when set
+	BasePath      string       // URL prefix for sub-path deployments (e.g. "/ru")
+	SecureCookies bool         // Set Secure flag on cookies (disable for local dev)
+	PromptVariant string       // Grading prompt variant (strict, standard, lenient)
 
 	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
 }

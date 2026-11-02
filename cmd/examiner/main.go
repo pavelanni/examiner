@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +28,7 @@ import (
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/questionimport"
+	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/store"
 	"github.com/pavelanni/examiner/internal/userutil"
 )
@@ -172,9 +175,65 @@ func viperForCmd(cmd *cobra.Command) *viper.Viper {
 	return v
 }
 
+// examSelection reads question_selection, the number of questions per
+// difficulty (FR3-01). It replaces num-questions and difficulty; setting
+// both is an error rather than silently ignoring one of them.
+func examSelection(v *viper.Viper) (model.Distribution, error) {
+	// Read the raw value: GetInt would turn "abc" into 0 and 1.5 into 1.
+	d, err := selection.Parse(v.Get("question_selection"))
+	if err != nil {
+		return nil, fmt.Errorf("question_selection: %w", err)
+	}
+	if d != nil && (v.GetInt("num-questions") != 0 || v.GetString("difficulty") != "") {
+		return nil, errors.New("question_selection cannot be combined with num-questions or difficulty: remove one of them")
+	}
+	return d, nil
+}
+
+// logTopicAvailability logs, per topic, how many published questions of
+// each difficulty exams can draw from, and warns about topics too small
+// for d. Students are not offered such topics.
+func logTopicAvailability(db *store.Store, d model.Distribution) error {
+	questions, err := db.ListQuestionsFiltered("", "")
+	if err != nil {
+		return err
+	}
+	byTopic := make(map[string][]model.Question)
+	for _, q := range questions {
+		byTopic[q.Topic] = append(byTopic[q.Topic], q)
+	}
+	if len(byTopic) == 0 {
+		slog.Warn("no published questions: no exam can start")
+	}
+	topics := make([]string, 0, len(byTopic))
+	for t := range byTopic {
+		topics = append(topics, t)
+	}
+	slices.Sort(topics)
+	for _, topic := range topics {
+		pools := selection.Pools(byTopic[topic])
+		attrs := []any{"topic", topic}
+		for _, level := range model.Difficulties {
+			attrs = append(attrs, string(level), len(pools[level]))
+		}
+		slog.Info("questions available", attrs...)
+		for _, s := range selection.Shortages(pools, d) {
+			slog.Warn("not enough questions for an exam in topic", "topic", topic,
+				"difficulty", string(s.Difficulty), "need", s.Need, "have", s.Have)
+		}
+	}
+	return nil
+}
+
 func runServe(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
+
+	// Check the exam settings before touching the database.
+	questionSelection, err := examSelection(v)
+	if err != nil {
+		return err
+	}
 
 	// Open database.
 	db, err := store.New(v.GetString("db"))
@@ -204,6 +263,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	loadCtx := appI18n.WithLocalizer(cmd.Context(), appI18n.NewLocalizer(lang))
 	if err := loadQuestions(loadCtx, db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
 		return fmt.Errorf("load questions: %w", err)
+	}
+	if questionSelection != nil {
+		if err := logTopicAvailability(db, questionSelection); err != nil {
+			slog.Warn("failed to check topic availability", "error", err)
+		}
 	}
 
 	scoreVisibility, err := model.ParseScoreVisibility(strings.ToLower(strings.TrimSpace(v.GetString("score-visibility"))))
@@ -243,6 +307,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Topic:         v.GetString("topic"),
 		MaxFollowups:  v.GetInt("max-followups"),
 		Shuffle:       v.GetBool("shuffle"),
+		Selection:     questionSelection,
 		BasePath:      basePath,
 		SecureCookies: v.GetBool("secure-cookies"),
 		PromptVariant: promptVariant,
@@ -280,6 +345,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"llm_url", v.GetString("llm-url"),
 		"lang", lang,
 		"num_questions", examCfg.NumQuestions,
+		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"difficulty", examCfg.Difficulty,
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,

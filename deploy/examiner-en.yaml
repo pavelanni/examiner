@@ -3,3 +3,11 @@ llm-model: deepseek-chat
 lang: en
 num-questions: 3
 shuffle: true
+
+# Exact number of questions of each difficulty in every exam (FR3-01).
+# It replaces num-questions: delete that line when enabling this. Topics
+# without enough questions of a difficulty are not offered to students.
+# question_selection:
+#   easy: 1
+#   medium: 1
+#   hard: 1
