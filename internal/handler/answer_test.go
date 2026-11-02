@@ -246,3 +246,26 @@ func TestConcurrentAnswersToSameThreadAreRejected(t *testing.T) {
 		t.Errorf("messages = %d, want 2 (one student, one LLM)", got)
 	}
 }
+
+func TestEvaluatorMarkdownRenderedStudentTextNot(t *testing.T) {
+	env := newAnswerEnv(t, 3, &fakeLLM{})
+	if rec := env.post("I think **this** <script>alert(1)</script>"); rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	page := env.get(t, fmt.Sprintf("/exam/%d", env.sessID))
+
+	// The fake LLM asks a follow-up, which is joined with model.FollowupMarker.
+	if !strings.Contains(page, "<strong>Follow-up question:</strong>") {
+		t.Error("evaluator follow-up marker should render as bold")
+	}
+	if strings.Contains(page, "**Follow-up question:**") {
+		t.Error("raw Markdown asterisks should not be shown")
+	}
+	// The student's answer is plain text: asterisks stay, HTML is escaped.
+	if !strings.Contains(page, "I think **this**") {
+		t.Error("student answer should be shown verbatim")
+	}
+	if strings.Contains(page, "<script>alert(1)") {
+		t.Error("student answer HTML must be escaped")
+	}
+}
