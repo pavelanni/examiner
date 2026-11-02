@@ -96,6 +96,7 @@ templ userNav() {
 				<li><a href={ templ.SafeURL(p(ctx, "/")) }>{ t(ctx, "Home") }</a></li>
 				if user.Role == model.UserRoleAdmin {
 					<li><a href={ templ.SafeURL(p(ctx, "/admin/users")) }>{ t(ctx, "Admin") }</a></li>
+					<li><a href={ templ.SafeURL(p(ctx, "/admin/backups")) }>{ t(ctx, "AdminBackups") }</a></li>
 				}
 				if user.Role == model.UserRoleTeacher || user.Role == model.UserRoleAdmin {
 					<li><a href={ templ.SafeURL(p(ctx, "/teacher/profile")) }>{ t(ctx, "Profile") }</a></li>

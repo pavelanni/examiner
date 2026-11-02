@@ -1,6 +1,7 @@
 # Build output
 /bin/
-examiner
+# The binary built at the repository root, not cmd/examiner/.
+/examiner
 
 # Database
 *.db
@@ -31,3 +32,6 @@ examiner
 # Test output
 coverage.out
 coverage.html
+
+# Database backups (task backup-pull); they hold personal data.
+backups/

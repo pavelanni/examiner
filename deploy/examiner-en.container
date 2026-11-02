@@ -9,6 +9,9 @@ PublishPort=127.0.0.1:8080:8080
 Volume=examiner-en-data.volume:/data/db:Z
 Volume=%h/examiner/questions-en.json:/data/questions.json:ro,Z
 Volume=%h/examiner/examiner-en.yaml:/data/examiner.yaml:ro,Z
+# Backups from the admin page; the backup timer writes here too. :U gives
+# the directory to the container user.
+Volume=%h/examiner/backups/en:/data/backups:Z,U
 
 # Secrets via environment file (LLM key, admin password).
 EnvironmentFile=%h/examiner/examiner-en.env
@@ -17,8 +20,10 @@ EnvironmentFile=%h/examiner/examiner-en.env
 Environment=EXAMINER_DB=/data/db/examiner.db
 Environment=EXAMINER_QUESTIONS=/data/questions.json
 Environment=EXAMINER_ADDR=0.0.0.0:8080
+Environment=EXAMINER_BACKUP_DIR=/data/backups
 
 [Service]
+ExecStartPre=/usr/bin/mkdir -p %h/examiner/backups/en
 Restart=on-failure
 TimeoutStartSec=30
 

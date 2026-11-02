@@ -1,0 +1,12 @@
+# Runs examiner-backup@<lang>.service every 6 hours (RPO 6 h). Persistent
+# catches up on a run missed while the host was off.
+[Unit]
+Description=Examiner backup every 6 hours (%i instance)
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

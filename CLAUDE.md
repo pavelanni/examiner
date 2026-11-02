@@ -36,6 +36,10 @@ task deploy-quick    # update tag + restart both (no rebuild)
 task deploy-quick DEV_TAG=abc1234   # rollback to specific version
 task deploy-status   # check both service statuses
 task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
+task backup          # back up both instances now (DB + config)
+task backup-list     # list backups on the host
+task backup-pull     # copy backups to ./backups (off-host copy)
+task restore LANG=ru BACKUP=<file>  # restore one instance (scripts/restore.sh)
 ```
 
 ### How deploy works
@@ -43,6 +47,8 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 1. Builds `linux/amd64` image on Mac (cross-platform via Podman)
 1. Tags as `ghcr.io/pavelanni/examiner:<git-sha>`
 1. Pushes to ghcr.io
+1. Backs up both instances (`examiner-backup@en|ru.service`); a failed
+   backup stops the deploy. `SKIP_BACKUP=true` skips it (emergencies only)
 1. SSHes to `examiner-01`, updates `Image=` line in both
    `examiner-en.container` and `examiner-ru.container` via `sed`
 1. Runs `systemctl --user daemon-reload && systemctl --user restart examiner-en examiner-ru`
@@ -83,10 +89,15 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 | `deploy/examiner-en.env.example` | English env template (secrets only) |
 | `deploy/examiner-ru.env.example` | Russian env template (secrets only) |
 | `deploy/Caddyfile` | Caddy reverse proxy with path routing |
+| `deploy/examiner-backup@.service` | Backup of one instance (`@en`, `@ru`): DB snapshot + config, rotation |
+| `deploy/examiner-backup@.timer` | Runs the backup every 6 hours (user unit, `~/.config/systemd/user/`) |
+| `scripts/restore.sh` | Restore one instance on the host; run by `task restore` |
+| `docs/ops/backup.md`, `docs/ops/restore.md` | Backup setup and restore runbook |
 
 ## Project structure
 
-- `cmd/examiner/` — entry point, CLI flags
+- `cmd/examiner/` — entry point, CLI flags; `backup`, `restore`, `stats` subcommands
+- `internal/backup/` — consistent DB snapshots, rotation, restore, record counts
 - `internal/handler/` — HTTP handlers (chi router) + Templ views
 - `internal/i18n/` — internationalization (English, Russian)
 - `internal/llm/` — OpenAI-compatible LLM client
