@@ -1,6 +1,13 @@
 package views
 
-templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string) {
+import (
+	"fmt"
+	"strings"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string, dupGroups []model.DuplicateGroup) {
 	@Layout(t(ctx, "AdminQuestions")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -20,9 +27,39 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
+			<label for="on_duplicate">{ t(ctx, "QImportOnDuplicate") }</label>
+			<select id="on_duplicate" name="on_duplicate">
+				<option value="skip" selected>{ t(ctx, "QImportOnDupSkip") }</option>
+				<option value="update">{ t(ctx, "QImportOnDupUpdate") }</option>
+			</select>
 			<button type="submit">{ t(ctx, "UploadBtn") }</button>
 		</form>
+		@duplicateReport(dupGroups)
 	}
+}
+
+// duplicateReport lists stored questions that duplicate each other.
+templ duplicateReport(groups []model.DuplicateGroup) {
+	if len(groups) > 0 {
+		<section>
+			<h2>{ t(ctx, "QDupReportTitle") }</h2>
+			<p>{ t(ctx, "QDupReportHint") }</p>
+			<ul>
+				for _, g := range groups {
+					<li>{ td(ctx, "QDupReportGroup", map[string]any{"Topic": g.Topic, "IDs": duplicateIDs(g), "Text": g.Questions[0].Text}) }</li>
+				}
+			</ul>
+		</section>
+	}
+}
+
+// duplicateIDs lists the question IDs of a duplicate group as "#3, #17".
+func duplicateIDs(g model.DuplicateGroup) string {
+	ids := make([]string, 0, len(g.Questions))
+	for _, q := range g.Questions {
+		ids = append(ids, fmt.Sprintf("#%d", q.ID))
+	}
+	return strings.Join(ids, ", ")
 }
 
 // importMessages lists question import errors and warnings. It is shared

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/i18n"
-	"github.com/pavelanni/examiner/internal/model"
 )
 
 func TestTeacherCreateTestPageInitializesAddQuestionHandler(t *testing.T) {
@@ -18,7 +17,7 @@ func TestTeacherCreateTestPageInitializesAddQuestionHandler(t *testing.T) {
 	ctx := i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("en"))
 
 	var buf bytes.Buffer
-	if err := TeacherCreateTestPage("Teacher", "csrf-token", []model.QuestionImport{}, "", "", true, nil).Render(ctx, &buf); err != nil {
+	if err := TeacherCreateTestPage("Teacher", "csrf-token", TeacherBuilder{Published: true}).Render(ctx, &buf); err != nil {
 		t.Fatalf("render failed: %v", err)
 	}
 

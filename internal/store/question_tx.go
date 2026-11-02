@@ -46,6 +46,10 @@ func (s *Store) InQuestionTx(ctx context.Context, fn func(*QuestionTx) error) er
 
 const questionColumns = `id, course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points, owner_id, published`
 
+// qualifiedQuestionColumns is questionColumns for a query that names the
+// questions table q.
+const qualifiedQuestionColumns = `q.id, q.course_id, q.text, q.text_norm, q.difficulty, q.topic, q.rubric, q.model_answer, q.max_points, q.owner_id, q.published`
+
 // scanQuestion reads one row selected with questionColumns.
 func scanQuestion(row interface{ Scan(...any) error }) (model.Question, error) {
 	var q model.Question
@@ -75,16 +79,22 @@ func (t *QuestionTx) findOne(where string, args ...any) (*model.Question, error)
 	return &q, nil
 }
 
+// FindByID returns the question with this ID, or nil if there is none.
+func (t *QuestionTx) FindByID(id int64) (*model.Question, error) {
+	return t.findOne(`id = ?`, id)
+}
+
 // FindByTopicAndTextNorm returns a question with this topic and normalized
-// text, or nil if there is none.
-func (t *QuestionTx) FindByTopicAndTextNorm(topic, textNorm string) (*model.Question, error) {
-	return t.findOne(`topic = ? AND text_norm = ?`, topic, textNorm)
+// text other than excludeID (0 excludes nothing), or nil if there is none.
+func (t *QuestionTx) FindByTopicAndTextNorm(topic, textNorm string, excludeID int64) (*model.Question, error) {
+	return t.findOne(`topic = ? AND text_norm = ? AND id != ? ORDER BY id`, topic, textNorm, excludeID)
 }
 
 // FindByCourseAndText returns the question with exactly this text in the
-// course, or nil. It mirrors the idx_questions_course_text unique index.
-func (t *QuestionTx) FindByCourseAndText(courseID int64, text string) (*model.Question, error) {
-	return t.findOne(`course_id = ? AND text = ?`, courseID, text)
+// course other than excludeID (0 excludes nothing), or nil. It mirrors the
+// idx_questions_course_text unique index.
+func (t *QuestionTx) FindByCourseAndText(courseID int64, text string, excludeID int64) (*model.Question, error) {
+	return t.findOne(`course_id = ? AND text = ? AND id != ?`, courseID, text, excludeID)
 }
 
 // Insert stores a new question. Unlike Store.InsertQuestion it does not
@@ -131,29 +141,19 @@ func (t *QuestionTx) Update(q model.Question) error {
 	return nil
 }
 
-// DeleteUnusedByTexts deletes ownerID's questions whose text is in oldTexts
-// but not in keepTexts and that no question_thread references. Another
-// owner's question is never deleted, even if its text is in oldTexts.
-func (t *QuestionTx) DeleteUnusedByTexts(courseID, ownerID int64, oldTexts, keepTexts []string) error {
-	// Exclude keepTexts here (exact match, like SQL's default BINARY
-	// collation) and delete in chunks, so no statement nears SQLite's
-	// bound-variable limit however large the file is.
-	keep := make(map[string]bool, len(keepTexts))
-	for _, s := range keepTexts {
-		keep[s] = true
-	}
-	var texts []string
-	for _, s := range oldTexts {
-		if !keep[s] {
-			texts = append(texts, s)
+// DeleteUnusedByIDs deletes ownerID's questions whose ID is in ids and that
+// no question_thread references. Another owner's question is never
+// deleted, even if its ID is in ids.
+func (t *QuestionTx) DeleteUnusedByIDs(ownerID int64, ids []int64) error {
+	// Delete in chunks, so no statement nears SQLite's bound-variable limit.
+	for chunk := range slices.Chunk(ids, sqlChunkSize) {
+		args := []any{ownerID}
+		for _, id := range chunk {
+			args = append(args, id)
 		}
-	}
-	for chunk := range slices.Chunk(texts, sqlChunkSize) {
-		args := append([]any{courseID, ownerID}, stringsToAny(chunk)...)
 		_, err := t.tx.Exec(`DELETE FROM questions
-			WHERE course_id = ?
-			  AND owner_id = ?
-			  AND text IN (`+placeholders(len(chunk))+`)
+			WHERE owner_id = ?
+			  AND id IN (`+placeholders(len(chunk))+`)
 			  AND NOT EXISTS (
 			      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
 			  )`, args...)

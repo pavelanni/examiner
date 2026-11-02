@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"errors"
-	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -87,20 +86,33 @@ func TestInQuestionTxRollsBackOnConstraint(t *testing.T) {
 func TestQuestionTxFinders(t *testing.T) {
 	s := newTestStore(t)
 	id := insertTestQuestion(t, s, "A", "easy", "x")
+	near := insertTestQuestion(t, s, "a?", "easy", "x")
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		q, err := tx.FindByTopicAndTextNorm("x", model.NormalizeQuestionText("  a? "))
+		q, err := tx.FindByTopicAndTextNorm("x", model.NormalizeQuestionText("  a? "), 0)
 		if err != nil || q == nil || q.ID != id {
 			t.Errorf("FindByTopicAndTextNorm = %+v, %v; want id %d", q, err, id)
 		}
-		if q, err := tx.FindByTopicAndTextNorm("other", "a"); q != nil || err != nil {
+		if q, err := tx.FindByTopicAndTextNorm("x", "a", id); err != nil || q == nil || q.ID != near {
+			t.Errorf("FindByTopicAndTextNorm excluding %d = %+v, %v; want id %d", id, q, err, near)
+		}
+		if q, err := tx.FindByTopicAndTextNorm("other", "a", 0); q != nil || err != nil {
 			t.Errorf("miss: got %+v, %v; want nil, nil", q, err)
 		}
-		q, err = tx.FindByCourseAndText(1, "A")
+		q, err = tx.FindByCourseAndText(1, "A", 0)
 		if err != nil || q == nil || q.ID != id || q.Topic != "x" {
 			t.Errorf("FindByCourseAndText = %+v, %v; want id %d", q, err, id)
 		}
-		if q, err := tx.FindByCourseAndText(1, "a"); q != nil || err != nil {
+		if q, err := tx.FindByCourseAndText(1, "A", id); q != nil || err != nil {
+			t.Errorf("FindByCourseAndText excluding its row: got %+v, %v; want nil, nil", q, err)
+		}
+		if q, err := tx.FindByCourseAndText(1, "a", 0); q != nil || err != nil {
 			t.Errorf("exact-text miss: got %+v, %v; want nil, nil", q, err)
+		}
+		if q, err := tx.FindByID(near); err != nil || q == nil || q.Text != "a?" {
+			t.Errorf("FindByID(%d) = %+v, %v", near, q, err)
+		}
+		if q, err := tx.FindByID(9999); q != nil || err != nil {
+			t.Errorf("FindByID miss: got %+v, %v; want nil, nil", q, err)
 		}
 		return nil
 	})
@@ -134,7 +146,7 @@ func TestQuestionTxUpdate(t *testing.T) {
 	}
 }
 
-func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
+func TestQuestionTxDeleteUnusedByIDs(t *testing.T) {
 	s := newTestStore(t)
 	owner := createUser(t, s, "t", model.UserRoleTeacher)
 	idKept := txInsert(t, s, owned("kept", "go", owner, true))
@@ -149,7 +161,7 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	}
 
 	err = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		return tx.DeleteUnusedByTexts(1, owner, []string{"kept", "removed", "referenced"}, []string{"kept"})
+		return tx.DeleteUnusedByIDs(owner, []int64{idRemoved, idReferenced})
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -165,25 +177,22 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	}
 }
 
-// TestQuestionTxDeleteUnusedByTextsLargeLists binds more texts than
-// SQLite's 32766-variable limit would allow in one statement.
-func TestQuestionTxDeleteUnusedByTextsLargeLists(t *testing.T) {
+// TestQuestionTxDeleteUnusedByIDsLargeLists binds more IDs than SQLite's
+// 32766-variable limit would allow in one statement.
+func TestQuestionTxDeleteUnusedByIDsLargeLists(t *testing.T) {
 	s := newTestStore(t)
 	owner := createUser(t, s, "t", model.UserRoleTeacher)
 	idKept := txInsert(t, s, owned("kept", "go", owner, true))
 	idRemoved := txInsert(t, s, owned("removed", "go", owner, true))
 
-	old := make([]string, 0, 20002)
-	keep := make([]string, 0, 20001)
-	for i := range 20000 {
-		old = append(old, fmt.Sprint("old-", i))
-		keep = append(keep, fmt.Sprint("keep-", i))
+	ids := make([]int64, 0, 40001)
+	for i := range 40000 {
+		ids = append(ids, int64(100000+i))
 	}
-	old = append(old, "kept", "removed")
-	keep = append(keep, "kept")
+	ids = append(ids, idRemoved)
 
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		return tx.DeleteUnusedByTexts(1, owner, old, keep)
+		return tx.DeleteUnusedByIDs(owner, ids)
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -231,7 +240,7 @@ func TestQuestionTxDeleteUnusedScopedToOwner(t *testing.T) {
 	a := txInsert(t, s, owned("A", "x", t1, true))
 	b := txInsert(t, s, owned("B", "x", t2, true))
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		return tx.DeleteUnusedByTexts(1, t1, []string{"A", "B"}, nil)
+		return tx.DeleteUnusedByIDs(t1, []int64{a, b})
 	})
 	if err != nil {
 		t.Fatal(err)

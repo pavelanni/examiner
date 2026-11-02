@@ -232,6 +232,13 @@ type QuestionImport struct {
 	MaxPoints   int        `json:"max_points"`
 }
 
+// DuplicateGroup is a set of stored questions in one topic whose texts
+// match after normalization (FR1-03).
+type DuplicateGroup struct {
+	Topic     string
+	Questions []Question // ordered by ID
+}
+
 // ThreadView combines thread data with question and messages for display.
 type ThreadView struct {
 	Thread   QuestionThread

@@ -94,13 +94,20 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 
 // handleAdminQuestionsPage serves the admin questions management page.
 func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Request) {
-	renderAdminQuestions(w, r, http.StatusOK, "", false, nil, nil)
+	h.renderAdminQuestions(w, r, http.StatusOK, "", false, nil, nil)
 }
 
-func renderAdminQuestions(w http.ResponseWriter, r *http.Request, status int, flash string, flashErr bool, errs, warnings []string) {
+// renderAdminQuestions renders the questions page with the report of
+// duplicate questions already stored.
+func (h *Handler) renderAdminQuestions(w http.ResponseWriter, r *http.Request, status int, flash string, flashErr bool, errs, warnings []string) {
+	groups, err := h.store.DuplicateQuestionGroups()
+	if err != nil {
+		// The report is informational; the page works without it.
+		slog.Error("failed to find duplicate questions", "error", err)
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := views.AdminQuestionsPage(flash, flashErr, errs, warnings).Render(r.Context(), w); err != nil {
+	if err := views.AdminQuestionsPage(flash, flashErr, errs, warnings, groups).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -136,21 +143,28 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if storedHash == hash {
-		renderAdminQuestions(w, r, http.StatusOK, appI18n.T(r.Context(), "UploadDuplicate"), true, nil, nil)
+		h.renderAdminQuestions(w, r, http.StatusOK, appI18n.T(r.Context(), "UploadDuplicate"), true, nil, nil)
 		return
 	}
 
 	drafts, errs := questionimport.Parse(data)
 	if len(errs) > 0 {
-		renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), errs), nil)
+		h.renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), errs), nil)
 		return
+	}
+
+	// Questions already in their topic are skipped unless the admin asks
+	// to update them.
+	mode := questionimport.ModeSkipExisting
+	if r.FormValue("on_duplicate") == "update" {
+		mode = questionimport.ModeUpdateExisting
 	}
 
 	var res questionimport.Result
 	err = h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
 		var err error
 		res, err = questionimport.Apply(tx, drafts, questionimport.Options{
-			Mode:      questionimport.ModeSkipExisting,
+			Mode:      mode,
 			CourseID:  1,
 			File:      &questionimport.FileRecord{Name: header.Filename, Hash: hash},
 			Actor:     model.UserFromContext(r.Context()),
@@ -160,22 +174,22 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	})
 	var conflict *questionimport.ConflictError
 	if errors.As(err, &conflict) {
-		// Not reachable with ModeSkipExisting; kept so a mode change cannot
-		// turn a conflict into a 500.
-		renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), conflict.Errs), nil)
+		// Not reachable for an admin, who may edit every question; kept so a
+		// change of rules cannot turn a conflict into a 500.
+		h.renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), conflict.Errs), nil)
 		return
 	}
 	if err != nil {
 		slog.Error("failed to import questions", "filename", header.Filename, "error", err)
-		renderAdminQuestions(w, r, http.StatusInternalServerError, appI18n.T(r.Context(), "QImportErrInternal"), true, nil, nil)
+		h.renderAdminQuestions(w, r, http.StatusInternalServerError, appI18n.T(r.Context(), "QImportErrInternal"), true, nil, nil)
 		return
 	}
 
 	slog.Info("uploaded questions via admin", "filename", header.Filename,
-		"inserted", res.Inserted, "skipped", res.Skipped)
+		"inserted", res.Inserted, "updated", res.Updated, "skipped", res.Skipped)
 
 	summary := appI18n.Td(r.Context(), "QImportSummary", map[string]any{
 		"Inserted": res.Inserted, "Updated": res.Updated, "Skipped": res.Skipped,
 	})
-	renderAdminQuestions(w, r, http.StatusOK, summary, false, nil, questionimport.LocalizeWarnings(r.Context(), res.Warnings))
+	h.renderAdminQuestions(w, r, http.StatusOK, summary, false, nil, questionimport.LocalizeWarnings(r.Context(), res.Warnings))
 }

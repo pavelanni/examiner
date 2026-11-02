@@ -24,6 +24,10 @@ type Draft struct {
 	Number int // 1-based position in the file
 	model.QuestionImport
 
+	// ID is the stored question this draft edits, 0 for a new question.
+	// Only the teacher constructor sets it; it is never read from a file.
+	ID int64
+
 	present   map[string]bool // JSON keys that were present and not null
 	bad       map[string]bool // fields that already have a decode error
 	notObject bool            // the question was not a JSON object; nothing to validate

@@ -280,14 +280,6 @@ func (s *Store) populateQuestionTextNorm() error {
 	return nil
 }
 
-func stringsToAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
 // InsertQuestion stores a question. Duplicate questions (same course_id + text) are silently skipped.
 func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	if q.TextNorm == "" {

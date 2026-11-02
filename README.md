@@ -182,6 +182,14 @@ users cannot log in).
 Admins can upload question JSON files at **Admin → Question upload**
 (`/admin/questions`). The file format is the same as the `--questions`
 flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
+Questions that already exist in their topic are skipped with a warning,
+or updated if the admin picks **Update them** before uploading.
+
+The same page lists stored questions that duplicate each other (same
+topic, same text after normalization), for example rows imported before
+the duplicate checks existed. They are not deleted automatically, since
+exam sessions may reference them; the server also logs them at startup
+("duplicate questions in database").
 
 ### Teacher question authoring
 
@@ -201,17 +209,25 @@ optionally upload a JSON file to seed a new file. When you save, the file
 is written to `questions/teacher_<username>_<name>.json` and the questions
 are imported into the database.
 
-Editing a file updates existing questions by their text instead of
-duplicating them. Questions that are already part of an exam session are
-left untouched, so old exams remain consistent.
+Editing a file updates each question by its database ID, so rewording a
+question changes it in place and saving a file again without changes
+does not add questions. Questions removed from the file are deleted
+unless an exam session uses them, so old exams remain consistent.
+
+If a saved question matches an existing one in the same topic (ignoring
+case, spacing, ё/е and trailing punctuation), or another question in the
+same file, nothing is saved yet: the builder lists those questions and
+asks what to do with each. **Skip** leaves the question out of the file;
+**Update** overwrites the existing question and is offered only for a
+question you may edit. Editing a question so that it matches another
+stored question is rejected; change its text instead.
 
 Every question has an owner: the teacher who saved it, or the admin for
 questions imported by an admin or loaded with `--questions`. A teacher
 can change and remove only their own questions; an admin can change any
-question. If a teacher's file contains a question that already belongs to
-someone else (same topic, same text), the whole save is rejected and the
-page lists those questions. Removing a question from your file never
-deletes another teacher's question.
+question. A question that matches someone else's question can only be
+skipped. Removing a question from your file never deletes another
+teacher's question.
 
 The **Publish** checkbox in the builder decides whether the file's
 questions go into students' exams and are visible to other teachers.
@@ -259,8 +275,9 @@ the page lists every error with the question number and field, for
 example "Question 3, field max_points: must be an integer greater than
 0". At startup, an invalid `--questions` file stops the server with the
 same list. A question that matches an existing one in the same topic
-(ignoring case, spacing and trailing punctuation) is skipped with a
-warning; when a teacher saves their own file, it is updated instead.
+(ignoring case, spacing, ё/е and trailing punctuation) is skipped with a
+warning at startup and in the admin import; the builder asks first (see
+above).
 
 | Route | Purpose |
 | ----- | ------- |
