@@ -22,7 +22,7 @@ func (h *Handler) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	users, err := h.store.ListUsers()
 	if err != nil {
 		slog.Error("failed to list users", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -65,7 +65,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		slog.Error("failed to create user", "error", err)
-		http.Error(w, "failed to create user: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to create user", http.StatusInternalServerError)
 		return
 	}
 
@@ -83,7 +83,7 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 
 	if err := h.store.ToggleUserActive(id); err != nil {
 		slog.Error("failed to toggle user active", "id", id, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 
@@ -153,7 +153,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		})
 		if err != nil {
 			slog.Error("failed to insert question", "error", err)
-			http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "failed to insert question", http.StatusInternalServerError)
 			return
 		}
 	}
