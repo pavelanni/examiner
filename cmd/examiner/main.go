@@ -44,7 +44,7 @@ func rootCmd() *cobra.Command {
 	}
 
 	serve := serveCmd()
-	root.AddCommand(serve, exportCmd(), prepCmd())
+	root.AddCommand(serve, exportCmd(), prepCmd(), backupCmd(), restoreCmd(), statsCmd())
 
 	// Make "serve" the default when no subcommand is given.
 	root.RunE = serve.RunE
@@ -82,6 +82,8 @@ func serveCmd() *cobra.Command {
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	f.String("log-level", "info", "Log level (debug, info, warn, error)")
 	f.String("log-format", "text", "Log format (text, json)")
+	f.String("backup-dir", "", "Directory for backups made from the admin page (empty disables them)")
+	f.Int("backup-keep", 14, "Number of newest backups to keep (0 = keep all)")
 	return cmd
 }
 
@@ -240,6 +242,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		PromptVariant: promptVariant,
 
 		ScoreVisibility: scoreVisibility,
+
+		BackupDir:  v.GetString("backup-dir"),
+		BackupName: "examiner-" + lang,
+		BackupKeep: v.GetInt("backup-keep"),
 	}
 
 	h, err := handler.New(db, llmClient, examCfg)

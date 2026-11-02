@@ -473,6 +473,9 @@ task deploy-status
 task deploy-logs
 ```
 
+`task deploy` and `task deploy-quick` back up both instances before
+they restart them, and stop if the backup fails (see below).
+
 The `deploy` task automatically tags the image with the current git SHA
 and updates `~/.config/containers/systemd/examiner.container` on the
 remote host via `sed`.
@@ -490,6 +493,35 @@ remote host via `sed`.
 - **Manual Quadlet edits on the host.** If you edit the `.container`
   file directly on `examiner-01`, run `systemctl --user daemon-reload`
   before restarting the service.
+
+### Backup and restore
+
+Each instance is backed up every 6 hours by a systemd user timer, by
+hand from **Admin → Backups**, and before every deploy. A backup is a
+consistent snapshot of the database, safe while the server runs,
+checked with `PRAGMA integrity_check` and compressed, plus an archive
+of the configuration files. Secrets (`*.env`) are never included. The
+newest 14 are kept.
+
+```bash
+task backup                 # back up both instances now
+task backup-list            # list the backups on the host
+task backup-pull            # copy them to ./backups for an off-host copy
+task restore LANG=ru BACKUP=examiner-ru-20261103-060012.db.gz
+```
+
+The same operations are subcommands of the binary:
+
+```bash
+examiner backup --db examiner.db --out-dir backups --name examiner-ru --keep 14 --config examiner-ru.yaml
+examiner restore --db examiner.db --backup backups/examiner-ru-20261103-060012.db.gz   # server stopped
+examiner stats --db examiner.db   # counts, to compare before and after a restore
+```
+
+`GET /healthz` answers `ok` when the server and its database work.
+Setup, schedule and the secrets policy are in
+[docs/ops/backup.md](docs/ops/backup.md); the restore runbook, with RPO
+and RTO, is in [docs/ops/restore.md](docs/ops/restore.md).
 
 ### Caddy reverse proxy
 

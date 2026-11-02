@@ -41,6 +41,10 @@ type Handler struct {
 	// SessionStore transition replaces it.
 	inFlightMu sync.Mutex
 	inFlight   map[int64]struct{}
+
+	// backupMu serializes backups from the admin page: two in the same
+	// second would get the same file name.
+	backupMu sync.Mutex
 }
 
 // New creates a new Handler.
@@ -100,6 +104,9 @@ func (h *Handler) path(p string) string {
 
 // Routes registers all HTTP routes.
 func (h *Handler) Routes(r chi.Router) {
+	// Health check for smoke tests and monitoring: no login, no CSRF.
+	r.Get("/healthz", h.handleHealthz)
+
 	// Public routes (login).
 	r.Group(func(r chi.Router) {
 		r.Use(h.csrfMiddleware)
@@ -142,6 +149,8 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Post("/admin/users/{userID}/toggle", h.handleToggleUserActive)
 			r.Get("/admin/questions", h.handleAdminQuestionsPage)
 			r.Post("/admin/questions", h.handleUploadQuestions)
+			r.Get("/admin/backups", h.handleAdminBackupsPage)
+			r.Post("/admin/backups", h.handleCreateBackup)
 		})
 	})
 }

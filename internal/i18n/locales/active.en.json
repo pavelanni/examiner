@@ -111,5 +111,17 @@
   {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"},
   {"id": "CSRFErrorTitle", "other": "Could not submit the form"},
   {"id": "CSRFError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Press the button again; if it fails, reload the page."},
-  {"id": "CSRFPageError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Go back, reload the page and try again."}
+  {"id": "CSRFPageError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Go back, reload the page and try again."},
+  {"id": "AdminBackups", "other": "Backups"},
+  {"id": "BackupDisabled", "other": "Backups from this page are not configured: set backup-dir (EXAMINER_BACKUP_DIR)."},
+  {"id": "BackupFailed", "other": "The backup could not be created. The details are in the server log."},
+  {"id": "BackupListFailed", "other": "The list of backups could not be read. The details are in the server log."},
+  {"id": "BackupCreated", "other": "Backup {{.Name}} created and checked."},
+  {"id": "BackupHint", "other": "Backups are written to {{.Dir}}; the newest {{.Keep}} are kept. Scheduled backups and backups before a deploy appear here too."},
+  {"id": "BackupCreateBtn", "other": "Create a backup now"},
+  {"id": "BackupNone", "other": "No backups yet."},
+  {"id": "BackupColFile", "other": "File"},
+  {"id": "BackupColTime", "other": "Created (UTC)"},
+  {"id": "BackupColSize", "other": "Size"},
+  {"id": "BackupWithConfig", "other": "configuration"}
 ]
