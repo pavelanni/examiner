@@ -4,16 +4,17 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
 )
 
@@ -129,7 +130,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	}
 	if storedHash == hash {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		if err := views.AdminQuestionsPage("UploadDuplicate", true).Render(r.Context(), w); err != nil {
+		if err := views.AdminQuestionsPage(appI18n.T(r.Context(), "UploadDuplicate"), true).Render(r.Context(), w); err != nil {
 			slog.Error("render error", "error", err)
 		}
 		return
@@ -141,32 +142,80 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	for _, qi := range questions {
-		_, err := h.store.InsertQuestion(model.Question{
+	importedCount := 0
+	var warnings []string
+	seenInFile := make(map[string]int) // topic + "\x00" + text_norm -> 1-based question number
+
+	for i, qi := range questions {
+		qNum := i + 1
+		norm := model.NormalizeQuestionText(qi.Text)
+		key := qi.Topic + "\x00" + norm
+
+		// Check duplicate within the same file (intra-file)
+		if prevNum, duplicate := seenInFile[key]; duplicate {
+			warnings = append(warnings, appI18n.Td(r.Context(), "UploadDuplicateInFile", map[string]any{
+				"Num":     qNum,
+				"PrevNum": prevNum,
+				"Topic":   qi.Topic,
+			}))
+			continue
+		}
+		seenInFile[key] = qNum
+
+		// Check duplicate against existing questions in DB (normalized)
+		existing, err := h.store.FindQuestionByTopicAndTextNorm(qi.Topic, norm)
+		if err != nil {
+			slog.Error("failed to check question duplicate", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+		if existing != nil {
+			warnings = append(warnings, appI18n.Td(r.Context(), "UploadDuplicateInDB", map[string]any{
+				"Num":   qNum,
+				"ID":    existing.ID,
+				"Topic": qi.Topic,
+			}))
+			continue
+		}
+
+		// Insert question
+		q := model.Question{
 			CourseID:    1,
 			Text:        qi.Text,
+			TextNorm:    norm,
 			Difficulty:  qi.Difficulty,
 			Topic:       qi.Topic,
 			Rubric:      qi.Rubric,
 			ModelAnswer: qi.ModelAnswer,
 			MaxPoints:   qi.MaxPoints,
-		})
-		if err != nil {
+		}
+		if _, err := h.store.InsertQuestion(q); err != nil {
 			slog.Error("failed to insert question", "error", err)
 			http.Error(w, "failed to insert question: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+		importedCount++
 	}
 
 	if err := h.store.SetImportedFileHash(header.Filename, hash); err != nil {
 		slog.Error("failed to record import", "error", err)
 	}
 
-	slog.Info("uploaded questions via admin", "filename", header.Filename, "count", len(questions))
+	slog.Info("uploaded questions via admin", "filename", header.Filename, "imported", importedCount, "warnings", len(warnings))
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	msg := fmt.Sprintf("Successfully imported %d questions.", len(questions))
-	if err := views.AdminQuestionsPage(msg, false).Render(r.Context(), w); err != nil {
+	var msg string
+	if len(warnings) > 0 {
+		msg = appI18n.Td(r.Context(), "UploadSuccessWithWarnings", map[string]any{
+			"Count":    importedCount,
+			"Warnings": strings.Join(warnings, " "),
+		})
+	} else {
+		msg = appI18n.Td(r.Context(), "UploadSuccess", map[string]any{
+			"Count": importedCount,
+		})
+	}
+	if err := views.AdminQuestionsPage(msg, len(warnings) > 0).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
