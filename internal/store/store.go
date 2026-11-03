@@ -201,6 +201,16 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Teacher review list (#52): session times in UTC, so they compare
+	// correctly as text, and an index for the status and date filters.
+	if err := s.migrateSessionTimesToUTC(); err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`CREATE INDEX IF NOT EXISTS idx_exam_sessions_status_started ON exam_sessions(status, started_at)`)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -413,7 +423,7 @@ func (s *Store) CreateSession(blueprintID int64, studentID int64, questionIDs []
 
 	res, err := tx.Exec(
 		`INSERT INTO exam_sessions (blueprint_id, student_id, status, started_at) VALUES (?, ?, 'in_progress', ?)`,
-		blueprintID, studentID, time.Now(),
+		blueprintID, studentID, time.Now().UTC(),
 	)
 	if err != nil {
 		return 0, err
@@ -455,7 +465,7 @@ func (s *Store) UpdateSessionStatus(id int64, status model.SessionStatus) error 
 	args := []any{status, id}
 	if status == model.StatusSubmitted {
 		query = `UPDATE exam_sessions SET status = ?, submitted_at = ? WHERE id = ?`
-		now := time.Now()
+		now := time.Now().UTC()
 		args = []any{status, now, id}
 	}
 	_, err := s.db.Exec(query, args...)

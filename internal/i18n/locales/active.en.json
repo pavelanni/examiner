@@ -111,5 +111,22 @@
   {"id": "AdjustedGrade", "other": "Adjusted grade: {{.Grade}}%"},
   {"id": "CSRFErrorTitle", "other": "Could not submit the form"},
   {"id": "CSRFError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Press the button again; if it fails, reload the page."},
-  {"id": "CSRFPageError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Go back, reload the page and try again."}
+  {"id": "CSRFPageError", "other": "Your session has expired or the page is out of date, so the form was not submitted. Go back, reload the page and try again."},
+  {"id": "FilterStatus", "other": "Status"},
+  {"id": "StatusAll", "other": "All"},
+  {"id": "StatusGraded", "other": "Awaiting review"},
+  {"id": "StatusReviewed", "other": "Reviewed"},
+  {"id": "FilterDateFrom", "other": "From date"},
+  {"id": "FilterDateTo", "other": "To date"},
+  {"id": "FilterToday", "other": "Today"},
+  {"id": "FilterAllDates", "other": "All dates"},
+  {"id": "FilterApply", "other": "Apply"},
+  {"id": "ColLLMGrade", "other": "LLM grade"},
+  {"id": "ColFinalGrade", "other": "Final grade"},
+  {"id": "ReviewInvalidDate", "other": "Invalid date format. Please use YYYY-MM-DD."},
+  {"id": "ReviewInvalidDateRange", "other": "The start date must not be after the end date."},
+  {"id": "ReviewInvalidStatus", "other": "Invalid status filter."},
+  {"id": "PaginationPrev", "other": "‹ Previous"},
+  {"id": "PaginationNext", "other": "Next ›"},
+  {"id": "PaginationInfo", "other": "Page {{.Page}} of {{.TotalPages}} ({{.Total}} total)"}
 ]

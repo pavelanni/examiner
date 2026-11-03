@@ -111,5 +111,22 @@
   {"id": "AdjustedGrade", "other": "Скорректированная оценка: {{.Grade}}%"},
   {"id": "CSRFErrorTitle", "other": "Не удалось отправить форму"},
   {"id": "CSRFError", "other": "Сессия истекла или страница устарела, поэтому форма не была отправлена. Нажмите кнопку ещё раз; если не получится, обновите страницу."},
-  {"id": "CSRFPageError", "other": "Сессия истекла или страница устарела, поэтому форма не была отправлена. Вернитесь назад, обновите страницу и попробуйте ещё раз."}
+  {"id": "CSRFPageError", "other": "Сессия истекла или страница устарела, поэтому форма не была отправлена. Вернитесь назад, обновите страницу и попробуйте ещё раз."},
+  {"id": "FilterStatus", "other": "Статус"},
+  {"id": "StatusAll", "other": "Все"},
+  {"id": "StatusGraded", "other": "Ожидает проверки"},
+  {"id": "StatusReviewed", "other": "Проверено"},
+  {"id": "FilterDateFrom", "other": "Дата с"},
+  {"id": "FilterDateTo", "other": "Дата по"},
+  {"id": "FilterToday", "other": "Сегодня"},
+  {"id": "FilterAllDates", "other": "Все даты"},
+  {"id": "FilterApply", "other": "Применить"},
+  {"id": "ColLLMGrade", "other": "Оценка LLM"},
+  {"id": "ColFinalGrade", "other": "Итоговая оценка"},
+  {"id": "ReviewInvalidDate", "other": "Неверный формат даты. Используйте ГГГГ-ММ-ДД."},
+  {"id": "ReviewInvalidDateRange", "other": "Начальная дата не может быть позже конечной."},
+  {"id": "ReviewInvalidStatus", "other": "Некорректный фильтр статуса."},
+  {"id": "PaginationPrev", "other": "‹ Назад"},
+  {"id": "PaginationNext", "other": "Вперёд ›"},
+  {"id": "PaginationInfo", "other": "Страница {{.Page}} из {{.TotalPages}} (всего: {{.Total}})"}
 ]

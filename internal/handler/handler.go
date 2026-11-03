@@ -41,6 +41,9 @@ type Handler struct {
 	// SessionStore transition replaces it.
 	inFlightMu sync.Mutex
 	inFlight   map[int64]struct{}
+
+	// nowFunc overrides time.Now in tests (nil uses time.Now).
+	nowFunc func() time.Time
 }
 
 // New creates a new Handler.
@@ -607,22 +610,30 @@ func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
-	sessions, err := h.store.ListSessions()
-	if err != nil {
-		slog.Error("failed to list sessions for review", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	var reviewable []model.ExamSession
-	for _, s := range sessions {
-		if s.Status == model.StatusGraded || s.Status == model.StatusReviewed {
-			reviewable = append(reviewable, s)
+	filter, view := parseReviewFilter(r.URL.Query(), h.reviewLocation(), h.now())
+	if view.ErrorKey == "" {
+		rows, total, err := h.store.ListSessionsForReview(filter)
+		if err != nil {
+			slog.Error("failed to list sessions for review", "error", err)
+			http.Error(w, "failed to list sessions", http.StatusInternalServerError)
+			return
+		}
+		view.Rows = rows
+		view.Total = total
+		view.TotalPages = (total + reviewPageSize - 1) / reviewPageSize
+		if view.TotalPages < 1 {
+			view.TotalPages = 1
+		}
+		if view.Page > 1 {
+			view.PrevURL = buildReviewPageURL(view.Status, view.From, view.To, view.Page-1)
+		}
+		if view.Page < view.TotalPages {
+			view.NextURL = buildReviewPageURL(view.Status, view.From, view.To, view.Page+1)
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ReviewListPage(reviewable).Render(r.Context(), w); err != nil {
+	if err := views.ReviewListPage(view).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

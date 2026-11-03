@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	_ "time/tzdata" // the runtime image has no tzdata; needed for --timezone
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -79,6 +80,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
 	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
+	f.String("timezone", "Europe/Moscow", "IANA time zone for exam dates in the teacher review (e.g. Europe/Moscow, UTC)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	f.String("log-level", "info", "Log level (debug, info, warn, error)")
 	f.String("log-format", "text", "Log format (text, json)")
@@ -197,6 +199,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("score-visibility: %w", err)
 	}
 
+	tzName := strings.TrimSpace(v.GetString("timezone"))
+	location, err := time.LoadLocation(tzName)
+	if err != nil || tzName == "" {
+		return fmt.Errorf("timezone %q: not a valid IANA time zone name", tzName)
+	}
+
 	// Initialize i18n.
 	lang := v.GetString("lang")
 	if err := appI18n.Init(lang); err != nil {
@@ -240,6 +248,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		PromptVariant: promptVariant,
 
 		ScoreVisibility: scoreVisibility,
+		Location:        location,
 	}
 
 	h, err := handler.New(db, llmClient, examCfg)
@@ -278,6 +287,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"score_visibility", string(examCfg.ScoreVisibility),
 		"shuffle", examCfg.Shuffle,
 		"base_path", basePath,
+		"timezone", location.String(),
 	)
 	return http.ListenAndServe(addr, r)
 }

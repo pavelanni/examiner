@@ -217,6 +217,10 @@ type ExamConfig struct {
 	PromptVariant string // Grading prompt variant (strict, standard, lenient)
 
 	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
+
+	// Location is the time zone for exam dates in the teacher review
+	// (day boundaries for date filters, displayed times). Nil means UTC.
+	Location *time.Location
 }
 
 // QuestionImport is used for loading questions from JSON.
