@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/i18n"
@@ -120,6 +122,7 @@ func questionIDs(qs []model.Question) []int64 {
 func TestStartExamExactDistribution(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 6, 6, 4)
+	insertExamQuestion(t, s, examQuestion("EASY QUESTION 0!", "t"))
 	d := model.Distribution{"easy": 2, "medium": 2, "hard": 1}
 	h := &Handler{store: s, config: model.ExamConfig{Selection: d, Shuffle: true}}
 
@@ -128,12 +131,18 @@ func TestStartExamExactDistribution(t *testing.T) {
 		qs := sessionQuestions(t, s, startedSession(t, h, student(int64(100+i)), "t"))
 		got := map[model.Difficulty]int{}
 		seen := map[int64]bool{}
+		seenText := map[string]bool{}
 		for _, q := range qs {
 			got[q.Difficulty]++
 			if seen[q.ID] {
 				t.Errorf("session %d repeats question %d", i, q.ID)
 			}
 			seen[q.ID] = true
+			norm := model.NormalizeQuestionText(q.Text)
+			if seenText[norm] {
+				t.Errorf("session %d repeats normalized question %q", i, norm)
+			}
+			seenText[norm] = true
 		}
 		if fmt.Sprint(got) != fmt.Sprint(map[model.Difficulty]int(d)) {
 			t.Errorf("session %d: distribution %v, want %v", i, got, d)
@@ -190,8 +199,8 @@ func indexPage(t *testing.T, h *Handler, user *model.User) string {
 	return rec.Body.String()
 }
 
-// TestIndexShowsDistributionAndAvailability checks exam size and shortage explanations.
-func TestIndexShowsDistributionAndAvailability(t *testing.T) {
+// TestIndexShowsDistributionAndContinue checks exact counts, shortages and saved attempts.
+func TestIndexShowsDistributionAndContinue(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 3, 3, 3)
 	short := examQuestion("Lonely question", "u")
@@ -210,6 +219,22 @@ func TestIndexShowsDistributionAndAvailability(t *testing.T) {
 		t.Errorf("topic u not shown as unavailable with the reason")
 	}
 
+	id := startedSession(t, h, student(7), "t")
+	body = indexPage(t, h, student(7))
+	if !strings.Contains(body, "Unfinished exams") || !strings.Contains(body, fmt.Sprintf(`href="/exam/%d">Continue`, id)) {
+		t.Errorf("no Continue link for the exam in progress")
+	}
+	if strings.Contains(body, `<option value="t"`) {
+		t.Errorf("topic t offered again while its exam is in progress")
+	}
+
+	if err := s.UpdateSessionStatus(id, model.StatusGraded); err != nil {
+		t.Fatal(err)
+	}
+	body = indexPage(t, h, student(7))
+	if !strings.Contains(body, "you have already taken this exam") {
+		t.Errorf("finished topic not marked as taken")
+	}
 }
 
 // TestIndexKeepsMatchingQuestionsInDifferentTopics keeps independent topic banks available.
@@ -239,27 +264,6 @@ func TestIndexKeepsMatchingQuestionsInDifferentTopics(t *testing.T) {
 	}
 }
 
-// TestStartExamLegacyCompatibility preserves old attempt creation and flags before the #46 change.
-func TestStartExamLegacyCompatibility(t *testing.T) {
-	s := newExamStore(t)
-	examStore(t, s, 4, 3, 2)
-	h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 2, Difficulty: "easy", Shuffle: false}}
-	first := startedSession(t, h, student(7), "t")
-	second := startedSession(t, h, student(7), "t")
-	if first == second {
-		t.Fatal("legacy attempt creation must remain unchanged until #46")
-	}
-	want := questionIDs(sessionQuestions(t, s, first))
-	if got := questionIDs(sessionQuestions(t, s, second)); len(got) != 2 || !slices.Equal(got, want) {
-		t.Fatalf("legacy selection with shuffle=false changed: %v, want %v", got, want)
-	}
-	for _, q := range sessionQuestions(t, s, second) {
-		if q.Difficulty != model.DifficultyEasy {
-			t.Fatalf("legacy difficulty filter ignored: %s", q.Difficulty)
-		}
-	}
-}
-
 // TestEmptyExamTopic distinguishes an explicit empty bank from all other topics.
 func TestEmptyExamTopic(t *testing.T) {
 	s := newExamStore(t)
@@ -282,7 +286,7 @@ func TestEmptyExamTopic(t *testing.T) {
 			t.Fatalf("question escaped the selected topic: %+v", q)
 		}
 	}
-	body := indexPage(t, h, student(7))
+	body := indexPage(t, h, student(8))
 	if !strings.Contains(body, `<option value="">No topic</option>`) || strings.Contains(body, `<select id="topic" name="topic" required`) {
 		t.Fatal("the browser must allow the explicit empty topic")
 	}
@@ -354,5 +358,119 @@ func TestTopicAvailabilityUsesDistribution(t *testing.T) {
 	id := startedSession(t, h, student(7), "t")
 	if qs := sessionQuestions(t, s, id); len(qs) != 1 || qs[0].Difficulty != model.DifficultyHard {
 		t.Fatalf("incorrect drawn distribution: %+v", qs)
+	}
+}
+
+func TestStartExamPinsVariant(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 5, 5, 5)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 1, "medium": 1, "hard": 1}, Shuffle: true}}
+	first := startedSession(t, h, student(7), "t")
+	want := questionIDs(sessionQuestions(t, s, first))
+
+	// Starting again (another tab, a new login, a lost connection) returns
+	// the same session with the same questions in the same order.
+	for range 5 {
+		if again := startedSession(t, h, student(7), "t"); again != first {
+			t.Fatalf("second start went to session %d, want %d", again, first)
+		}
+		if got := questionIDs(sessionQuestions(t, s, first)); !slices.Equal(got, want) {
+			t.Fatalf("questions changed: %v, want %v", got, want)
+		}
+	}
+	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 1 {
+		t.Errorf("sessions = %d, want 1", len(sessions))
+	}
+}
+
+func TestStartExamNoRetakeForStudents(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 3, 0, 0)
+	h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 1}}
+	first := startedSession(t, h, student(7), "t")
+	if err := s.UpdateSessionStatus(first, model.StatusGraded); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := startExam(t, h, student(7), "t")
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != fmt.Sprintf("/results/%d", first) {
+		t.Errorf("status %d, location %q; want the results of session %d", rec.Code, rec.Header().Get("Location"), first)
+	}
+	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 1 {
+		t.Errorf("sessions = %d, want 1: a student gets one attempt", len(sessions))
+	}
+
+	// A teacher may try the exam again.
+	teacher := &model.User{ID: 2, Role: model.UserRoleTeacher}
+	tFirst := startedSession(t, h, teacher, "t")
+	if err := s.UpdateSessionStatus(tFirst, model.StatusGraded); err != nil {
+		t.Fatal(err)
+	}
+	if again := startedSession(t, h, teacher, "t"); again == tFirst {
+		t.Error("teacher's second attempt reused the finished session")
+	}
+}
+
+func TestStartExamConcurrent(t *testing.T) {
+	if err := i18n.Init("en"); err != nil {
+		t.Fatal(err)
+	}
+	// A file database: every pooled connection of :memory: is a separate DB.
+	s, err := store.New(filepath.Join(t.TempDir(), "exam.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	examStore(t, s, 4, 4, 4)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 1, "hard": 1}}}
+
+	const n = 8
+	locations := make([]string, n)
+	var wg sync.WaitGroup
+	for i := range n {
+		wg.Go(func() {
+			rec := startExam(t, h, student(7), "t")
+			locations[i] = rec.Header().Get("Location")
+		})
+	}
+	wg.Wait()
+	for i := range n {
+		if locations[i] == "" || locations[i] != locations[0] {
+			t.Errorf("start %d went to %q, start 0 to %q", i, locations[i], locations[0])
+		}
+	}
+	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 1 {
+		t.Errorf("sessions = %d, want 1", len(sessions))
+	}
+}
+
+func TestStartExamRandomWithoutShuffle(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 6, 0, 0)
+	h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 2, Shuffle: false}}
+	sets := map[string]bool{}
+	for i := range 20 {
+		sets[fmt.Sprint(questionIDs(sessionQuestions(t, s, startedSession(t, h, student(int64(100+i)), "t"))))] = true
+	}
+	if len(sets) < 2 {
+		t.Error("with shuffle off every student got the same questions; the set must still be random")
+	}
+}
+
+func TestStartExamNeedsTopic(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 2, 0, 0)
+	h := &Handler{store: s, config: model.ExamConfig{}}
+	for _, topic := range []string{"", "other"} {
+		rec := startExam(t, h, student(7), topic)
+		if topic == "" && rec.Code != http.StatusBadRequest {
+			t.Errorf("no topic: status %d, want 400", rec.Code)
+		}
+		if topic == "other" && rec.Code != http.StatusBadRequest {
+			t.Errorf("unknown topic: status %d, want 400", rec.Code)
+		}
+	}
+	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 0 {
+		t.Errorf("sessions = %v, want none", sessions)
 	}
 }

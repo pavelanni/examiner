@@ -8,7 +8,6 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-// isStudentOnly identifies students for links that differ from teacher review.
 func isStudentOnly(ctx context.Context) bool {
 	u := model.UserFromContext(ctx)
 	return u != nil && u.Role == model.UserRoleStudent
@@ -17,8 +16,9 @@ func isStudentOnly(ctx context.Context) bool {
 // TopicChoice is one exam topic on the home page, as the user sees it.
 type TopicChoice struct {
 	Topic     string
-	Available bool   // a new exam can start in this topic
-	Note      string // why a complete exam cannot be drawn
+	Available bool               // a new exam can start in this topic
+	Note      string             // why it cannot, when not Available and not Active
+	Active    *model.ExamSession // the user's exam in progress in this topic
 }
 
 // IndexData is what the home page shows.
@@ -31,7 +31,16 @@ type IndexData struct {
 	Error          string // why the last start failed
 }
 
-// openTopics filters the topics that can supply a complete new exam.
+func activeTopics(topics []TopicChoice) []TopicChoice {
+	var out []TopicChoice
+	for _, c := range topics {
+		if c.Active != nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func openTopics(topics []TopicChoice) []TopicChoice {
 	var out []TopicChoice
 	for _, c := range topics {
@@ -42,7 +51,6 @@ func openTopics(topics []TopicChoice) []TopicChoice {
 	return out
 }
 
-// distributionParams supplies the localized summary of an exam's exact counts.
 func distributionParams(d model.Distribution) map[string]any {
 	return map[string]any{
 		"Easy":   d[model.DifficultyEasy],
@@ -69,6 +77,19 @@ templ IndexPage(d IndexData) {
 				<p>{ d.Error }</p>
 			</article>
 		}
+		if active := activeTopics(d.Topics); len(active) > 0 {
+			<section>
+				<h2>{ t(ctx, "ExamUnfinished") }</h2>
+				<ul>
+					for _, c := range active {
+						<li>
+							{ topicLabel(ctx, c.Topic) }:
+							<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/exam/%d", c.Active.ID))) }>{ t(ctx, "Continue") }</a>
+						</li>
+					}
+				</ul>
+			</section>
+		}
 		<section>
 			<h2>{ t(ctx, "StartNewExam") }</h2>
 			if d.AvailableCount > 0 || d.Config.Selection != nil {
@@ -91,7 +112,7 @@ templ IndexPage(d IndexData) {
 								for _, c := range d.Topics {
 									if c.Available {
 										<option value={ c.Topic }>{ topicLabel(ctx, c.Topic) }</option>
-									} else {
+									} else if c.Active == nil {
 										<option value={ c.Topic } disabled>{ topicLabel(ctx, c.Topic) } — { c.Note }</option>
 									}
 								}
@@ -121,6 +142,7 @@ templ IndexPage(d IndexData) {
 					<thead>
 						<tr>
 							<th>{ t(ctx, "ColID") }</th>
+							<th>{ t(ctx, "FilterTopic") }</th>
 							<th>{ t(ctx, "ColStatus") }</th>
 							<th>{ t(ctx, "ColStarted") }</th>
 							<th>{ t(ctx, "ColAction") }</th>
@@ -130,6 +152,13 @@ templ IndexPage(d IndexData) {
 						for _, s := range d.Sessions {
 							<tr>
 								<td>{ fmt.Sprint(s.ID) }</td>
+								<td>
+									if s.TopicKnown {
+										{ topicLabel(ctx, s.Topic) }
+									} else {
+										—
+									}
+								</td>
 								<td>{ string(s.Status) }</td>
 								<td>{ s.StartedAt.Format("2006-01-02 15:04") }</td>
 								<td>

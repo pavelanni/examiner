@@ -157,6 +157,8 @@ type ExamSession struct {
 	ID          int64         `json:"id"`
 	BlueprintID int64         `json:"blueprint_id"`
 	StudentID   int64         `json:"student_id"`
+	Topic       string        `json:"topic"`
+	TopicKnown  bool          `json:"-"` // distinguishes an empty topic from an unknown legacy topic
 	Status      SessionStatus `json:"status"`
 	StartedAt   time.Time     `json:"started_at"`
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
@@ -227,7 +229,7 @@ type ExamConfig struct {
 	Difficulty        string // empty means all difficulties
 	Topic             string // empty means all topics
 	MaxFollowups      int
-	Shuffle           bool
+	Shuffle           bool         // randomize order; the set is always selected randomly
 	Selection         Distribution // exact questions per difficulty when configured
 	BasePath          string       // URL prefix for sub-path deployments (e.g. "/ru")
 	SecureCookies     bool         // Set Secure flag on cookies (disable for local dev)

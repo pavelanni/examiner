@@ -164,8 +164,8 @@ func Unique(questions []model.Question) []model.Question {
 	return out
 }
 
-// questionKey identifies repeated question text. Normalized text is added in #46.
-func questionKey(q model.Question) string { return q.Text }
+// questionKey identifies repeated text using the normalization shared with #43.
+func questionKey(q model.Question) string { return model.NormalizeQuestionText(q.Text) }
 
 // Pools removes repeated IDs and groups questions by difficulty. Equal text
 // in different difficulties stays eligible until the distribution is known.
@@ -305,6 +305,17 @@ func allocate(pools map[model.Difficulty][]model.Question, d model.Distribution,
 		out = append(out, q)
 	}
 	return out, counts
+}
+
+// DrawN selects a random legacy-mode set, sorted by difficulty when unshuffled.
+func DrawN(questions []model.Question, n int, rng *rand.Rand) []model.Question {
+	unique := Unique(questions)
+	if n <= 0 || n > len(unique) {
+		n = len(unique)
+	}
+	out := sample(unique, n, rng)
+	sortByLevel(out)
+	return out
 }
 
 // sample returns n distinct elements of qs chosen uniformly at random.
