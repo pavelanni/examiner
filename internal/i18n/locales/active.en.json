@@ -142,5 +142,7 @@
   {"id": "ExamShortage", "other": "Not enough {{.Difficulty}} questions in topic \"{{.Topic}}\": {{.Need}} needed, {{.Have}} available."},
   {"id": "ExamNoQuestions", "other": "no questions match the exam settings"},
   {"id": "ExamNoQuestionsInTopic", "other": "No questions in topic \"{{.Topic}}\" match the exam settings."},
-  {"id": "ExamChooseTopic", "other": "Choose one of the listed topics to start an exam."}
+  {"id": "ExamChooseTopic", "other": "Choose one of the listed topics to start an exam."},
+  {"id": "ExamUnfinished", "other": "Unfinished exams"},
+  {"id": "ExamTaken", "other": "you have already taken this exam"}
 ]

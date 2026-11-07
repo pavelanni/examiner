@@ -74,12 +74,12 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--llm-max-retries` | | `3` | Retries after the initial attempt (`0` disables retries; maximum `100`) |
 | `--llm-max-concurrency` | | `4` | Maximum simultaneous LLM requests per process |
 | `--lang` | `-l` | `en` | UI language (`en`, `ru`) |
-| `--num-questions` | `-n` | `0` (all) | Number of questions per exam |
+| `--num-questions` | `-n` | `0` (all) | Number of questions per exam, drawn at random |
 | `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
-| `--shuffle` | | `true` | Randomize question order |
+| `--shuffle` | | `true` | Randomize question order; selection is always random, even when false |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
@@ -163,6 +163,16 @@ At startup the server logs how many questions of each difficulty every
 topic has and warns about topics that are too small. The home page
 offers only topics where an exam can be put together and shows why the
 others are unavailable. The home page also shows the exam size.
+
+#### Exam variants
+
+A student's questions are drawn once, when the exam starts, and stored
+in the session with their order. Reloading the page, logging in again
+or pressing **Start** again opens the same session; the home page shows
+**Continue** for an exam in progress. After finishing, a student cannot
+start another exam in the same topic. Teachers and admins can retake
+after grading finishes, to try exams out. Sessions created before topics
+were stored are not affected.
 
 #### Examples
 

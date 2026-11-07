@@ -16,8 +16,9 @@ func isStudentOnly(ctx context.Context) bool {
 // TopicChoice is one exam topic on the home page, as the user sees it.
 type TopicChoice struct {
 	Topic     string
-	Available bool   // a new exam can start in this topic
-	Note      string // why a complete exam cannot be drawn
+	Available bool               // a new exam can start in this topic
+	Note      string             // why it cannot, when not Available and not Active
+	Active    *model.ExamSession // the user's exam in progress in this topic
 }
 
 // IndexData is what the home page shows.
@@ -28,6 +29,16 @@ type IndexData struct {
 	Config         model.ExamConfig
 	Topics         []TopicChoice
 	Error          string // why the last start failed
+}
+
+func activeTopics(topics []TopicChoice) []TopicChoice {
+	var out []TopicChoice
+	for _, c := range topics {
+		if c.Active != nil {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 func openTopics(topics []TopicChoice) []TopicChoice {
@@ -58,6 +69,19 @@ templ IndexPage(d IndexData) {
 				<p>{ d.Error }</p>
 			</article>
 		}
+		if active := activeTopics(d.Topics); len(active) > 0 {
+			<section>
+				<h2>{ t(ctx, "ExamUnfinished") }</h2>
+				<ul>
+					for _, c := range active {
+						<li>
+							{ c.Topic }:
+							<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/exam/%d", c.Active.ID))) }>{ t(ctx, "Continue") }</a>
+						</li>
+					}
+				</ul>
+			</section>
+		}
 		<section>
 			<h2>{ t(ctx, "StartNewExam") }</h2>
 			if d.AvailableCount > 0 {
@@ -80,7 +104,7 @@ templ IndexPage(d IndexData) {
 								for _, c := range d.Topics {
 									if c.Available {
 										<option value={ c.Topic }>{ c.Topic }</option>
-									} else {
+									} else if c.Active == nil {
 										<option value={ c.Topic } disabled>{ c.Topic } — { c.Note }</option>
 									}
 								}
@@ -110,6 +134,7 @@ templ IndexPage(d IndexData) {
 					<thead>
 						<tr>
 							<th>{ t(ctx, "ColID") }</th>
+							<th>{ t(ctx, "FilterTopic") }</th>
 							<th>{ t(ctx, "ColStatus") }</th>
 							<th>{ t(ctx, "ColStarted") }</th>
 							<th>{ t(ctx, "ColAction") }</th>
@@ -119,6 +144,7 @@ templ IndexPage(d IndexData) {
 						for _, s := range d.Sessions {
 							<tr>
 								<td>{ fmt.Sprint(s.ID) }</td>
+								<td>{ s.Topic }</td>
 								<td>{ string(s.Status) }</td>
 								<td>{ s.StartedAt.Format("2006-01-02 15:04") }</td>
 								<td>

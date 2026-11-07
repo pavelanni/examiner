@@ -165,7 +165,7 @@ func TestDrawShortage(t *testing.T) {
 
 func TestUniqueDropsRepeats(t *testing.T) {
 	qs := []model.Question{
-		{ID: 3, Text: "what is x", Difficulty: "easy"},
+		{ID: 3, Text: "What is X?", Difficulty: "easy"},
 		{ID: 1, Text: "what is x", Difficulty: "hard"},
 		{ID: 2, Text: "Other", Difficulty: "easy"},
 		{ID: 2, Text: "Other", Difficulty: "easy"},
@@ -176,5 +176,27 @@ func TestUniqueDropsRepeats(t *testing.T) {
 	pools := Pools(qs)
 	if len(pools["hard"]) != 1 || len(pools["easy"]) != 1 {
 		t.Errorf("pools = %v", pools)
+	}
+}
+
+func TestDrawN(t *testing.T) {
+	qs := bank(3) // 9 questions
+	rng := rand.New(rand.NewPCG(7, 7))
+	if got := DrawN(qs, 0, rng); len(got) != 9 {
+		t.Errorf("n=0: %d questions, want all 9", len(got))
+	}
+	if got := DrawN(qs, 20, rng); len(got) != 9 {
+		t.Errorf("n=20: %d questions, want all 9", len(got))
+	}
+	sets := map[string]bool{}
+	for range 30 {
+		got := DrawN(qs, 4, rng)
+		if len(got) != 4 || len(Unique(got)) != 4 {
+			t.Fatalf("n=4: %v", ids(got))
+		}
+		sets[fmt.Sprint(ids(got))] = true
+	}
+	if len(sets) < 2 {
+		t.Error("DrawN always returns the same questions; the set must be random")
 	}
 }

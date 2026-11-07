@@ -134,8 +134,8 @@ func levelList() string {
 }
 
 // Unique returns the questions in ID order without repeats: a question
-// with the same ID or the same text as an earlier one is dropped
-// (legacy rows may duplicate each other).
+// with the same ID or the same normalized text as an earlier one is dropped
+// (legacy rows may duplicate each other, #43).
 func Unique(questions []model.Question) []model.Question {
 	sorted := slices.Clone(questions)
 	slices.SortFunc(sorted, func(a, b model.Question) int { return cmp.Compare(a.ID, b.ID) })
@@ -143,7 +143,7 @@ func Unique(questions []model.Question) []model.Question {
 	seenText := make(map[string]bool, len(sorted))
 	out := sorted[:0]
 	for _, q := range sorted {
-		norm := q.Text
+		norm := model.NormalizeQuestionText(q.Text)
 		if seenID[q.ID] || seenText[norm] {
 			continue
 		}
@@ -206,6 +206,19 @@ func Draw(pools map[model.Difficulty][]model.Question, d model.Distribution, rng
 	}
 	sortByLevel(out)
 	return out, nil
+}
+
+// DrawN picks n questions at random from questions after Unique (all of
+// them when n <= 0 or n is larger), easiest first and by ID within a
+// difficulty. It serves the num-questions setting.
+func DrawN(questions []model.Question, n int, rng *rand.Rand) []model.Question {
+	unique := Unique(questions)
+	if n <= 0 || n > len(unique) {
+		n = len(unique)
+	}
+	out := sample(unique, n, rng)
+	sortByLevel(out)
+	return out
 }
 
 // sample returns n distinct elements of qs chosen uniformly at random.
