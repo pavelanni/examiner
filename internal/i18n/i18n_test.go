@@ -28,6 +28,7 @@ func TestTranslateEnglish(t *testing.T) {
 	}
 }
 
+// TestTranslateRussian checks Russian labels including the self-deactivation explanation.
 func TestTranslateRussian(t *testing.T) {
 	ctx := initLang(t, "ru")
 

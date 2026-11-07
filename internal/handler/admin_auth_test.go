@@ -20,6 +20,7 @@ import (
 	"github.com/pavelanni/examiner/internal/store"
 )
 
+// TestAdminCannotDeactivateSelfAndCanLogInAgain checks the admin guard, other-user controls and login in both locales.
 func TestAdminCannotDeactivateSelfAndCanLogInAgain(t *testing.T) {
 	for _, basePath := range []string{"", "/ru"} {
 		t.Run("base="+basePath, func(t *testing.T) {
