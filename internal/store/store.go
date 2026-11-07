@@ -209,11 +209,22 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`ALTER TABLE question_threads ADD COLUMN position INTEGER NOT NULL DEFAULT 0`); err != nil && !isAlterDuplicate(err) {
 		return err
 	}
+	if _, err := s.db.Exec(`ALTER TABLE exam_sessions ADD COLUMN topic_known INTEGER NOT NULL DEFAULT 0`); err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	// Preserve explicitly saved topics from an earlier #46 schema. New
+	// empty-topic attempts are marked known by StartSession as well.
+	if _, err := s.db.Exec(`UPDATE exam_sessions SET topic_known = 1 WHERE topic != '' AND topic_known = 0`); err != nil {
+		return err
+	}
 	// At most one session in progress per student and exam. Old sessions
 	// have no topic and may already break the rule, so they are left out.
-	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_sessions_one_active
-		ON exam_sessions(student_id, blueprint_id, topic) WHERE status = 'in_progress' AND topic != ''`)
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_sessions_one_known_active
+		ON exam_sessions(student_id, blueprint_id, topic) WHERE status = 'in_progress' AND topic_known = 1`)
 	if err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DROP INDEX IF EXISTS idx_exam_sessions_one_active`); err != nil {
 		return err
 	}
 
@@ -328,6 +339,19 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 // Empty strings mean no filtering on that field.
 // Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
+	if topic != "" {
+		return s.listQuestionsFiltered(difficulty, &topic)
+	}
+	return s.listQuestionsFiltered(difficulty, nil)
+}
+
+// ListQuestionsInTopic filters by the exact topic, including an empty topic.
+func (s *Store) ListQuestionsInTopic(difficulty, topic string) ([]model.Question, error) {
+	return s.listQuestionsFiltered(difficulty, &topic)
+}
+
+// listQuestionsFiltered distinguishes an exact topic from the unfiltered bank.
+func (s *Store) listQuestionsFiltered(difficulty string, topic *string) ([]model.Question, error) {
 	query := `SELECT id, course_id, text, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
@@ -344,9 +368,9 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 			}
 		}
 	}
-	if topic != "" {
+	if topic != nil {
 		query += ` AND topic = ?`
-		args = append(args, topic)
+		args = append(args, *topic)
 	}
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -427,7 +451,7 @@ func (s *Store) CreateSession(blueprintID int64, studentID int64, questionIDs []
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	sessionID, err := createSession(tx, blueprintID, studentID, "", questionIDs)
+	sessionID, err := createSession(tx, blueprintID, studentID, "", questionIDs, false)
 	if err != nil {
 		return 0, err
 	}
@@ -801,13 +825,13 @@ func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, mod
 	var sess model.ExamSession
 	var bp model.ExamBlueprint
 	err := s.db.QueryRow(`
-		SELECT s.id, s.blueprint_id, s.student_id, s.topic, s.status, s.started_at, s.submitted_at,
+		SELECT s.id, s.blueprint_id, s.student_id, s.topic, s.topic_known, s.status, s.started_at, s.submitted_at,
 		       b.id, b.course_id, b.name, b.time_limit, b.max_followups
 		FROM exam_sessions s
 		JOIN exam_blueprints b ON b.id = s.blueprint_id
 		WHERE s.id = ?`, sessionID,
 	).Scan(
-		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
+		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
 		&bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups,
 	)
 	return sess, bp, err

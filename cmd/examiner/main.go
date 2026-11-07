@@ -185,13 +185,20 @@ func viperForCmd(cmd *cobra.Command) *viper.Viper {
 // both is an error rather than silently ignoring one of them.
 func examSelection(v *viper.Viper) (model.Distribution, error) {
 	// Read the raw value: GetInt would turn "abc" into 0 and 1.5 into 1.
-	d, err := selection.Parse(v.Get("question_selection"))
+	raw := v.Get("question_selection")
+	_, selectionEnv := os.LookupEnv("EXAMINER_QUESTION_SELECTION")
+	if raw == nil && (slices.Contains(v.AllKeys(), "question_selection") || selectionEnv) {
+		return nil, errors.New("question_selection: must map difficulties to counts; null or empty values are not allowed")
+	}
+	d, err := selection.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("question_selection: %w", err)
 	}
 	// Unchanged CLI defaults are not explicit settings. IsSet also catches
 	// zero, empty and invalid legacy values that GetInt/GetString can hide.
-	if d != nil && (v.IsSet("num-questions") || v.IsSet("difficulty")) {
+	_, countEnv := os.LookupEnv("EXAMINER_NUM_QUESTIONS")
+	_, difficultyEnv := os.LookupEnv("EXAMINER_DIFFICULTY")
+	if d != nil && (v.IsSet("num-questions") || v.IsSet("difficulty") || countEnv || difficultyEnv) {
 		return nil, errors.New("question_selection cannot be combined with num-questions or difficulty: remove one of them")
 	}
 	return d, nil
@@ -249,6 +256,7 @@ func llmOptions(v *viper.Viper) ([]llm.Option, error) {
 	return []llm.Option{llm.WithTimeout(timeout), llm.WithMaxRetries(retries), llm.WithMaxConcurrency(concurrency)}, nil
 }
 
+// runServe validates configuration and initializes the exam HTTP service.
 func runServe(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
@@ -269,6 +277,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = db.Close() }()
+	if questionSelection != nil {
+		if err := db.ConfigureQuestionCount(questionSelection.Total()); err != nil {
+			return fmt.Errorf("question_selection: %w", err)
+		}
+	}
 
 	// Seed default admin user if no users exist.
 	if err := seedAdmin(db, v.GetString("admin-password")); err != nil {
@@ -381,6 +394,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	return http.ListenAndServe(addr, r)
 }
 
+// runExport writes an exam export whose metadata matches its saved attempts.
 func runExport(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
@@ -433,10 +447,11 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("export sessions: %w", err)
 	}
 
-	// Use DB metadata for num_questions; fall back to first result.
-	numQuestions := info.NumQuestions
-	if numQuestions == 0 && len(results) > 0 {
-		numQuestions = len(results[0].Questions)
+	// Existing sessions are authoritative; stale prep metadata must not
+	// misstate the question count imported by the grader.
+	numQuestions, err := exportQuestionCount(results, info.NumQuestions)
+	if err != nil {
+		return err
 	}
 
 	export := model.ExamExport{

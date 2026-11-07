@@ -21,6 +21,7 @@ const blueprintID = 1
 // errNoQuestions means no question in the topic matches the exam settings.
 var errNoQuestions = errors.New("no questions match the exam settings")
 
+// handleIndex renders the available exam topics and previous attempts.
 func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
 	h.renderIndex(w, r, http.StatusOK, "")
 }
@@ -65,6 +66,9 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 			topics = append(topics, t)
 		}
 	}
+	if h.config.Topic != "" && len(topics) == 0 {
+		topics = append(topics, h.config.Topic)
+	}
 
 	// The questions exams draw from, by topic.
 	pool, err := h.store.ListQuestionsFiltered(h.difficultyFilter(), h.config.Topic)
@@ -81,8 +85,11 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 	// as drawQuestions does; matching text in another topic is still usable.
 	availableCount := 0
 	for topic, questions := range byTopic {
-		byTopic[topic] = selection.Unique(questions)
-		availableCount += len(byTopic[topic])
+		availableCount += len(selection.Unique(questions))
+		// Distribution-aware allocation needs all difficulty alternatives.
+		if h.config.Selection == nil {
+			byTopic[topic] = selection.Unique(questions)
+		}
 	}
 
 	examCount := availableCount
@@ -122,7 +129,7 @@ func (h *Handler) topicChoices(ctx context.Context, user *model.User, topics []s
 	// Per topic, the session a start would return: in progress, else newest.
 	latest := make(map[string]model.ExamSession)
 	for _, s := range mine {
-		if s.Topic == "" || s.BlueprintID != blueprintID {
+		if !s.TopicKnown || s.BlueprintID != blueprintID {
 			continue
 		}
 		if cur, ok := latest[s.Topic]; !ok || (s.Status == model.StatusInProgress && cur.Status != model.StatusInProgress) {
@@ -182,16 +189,20 @@ func canRetake(user *model.User) bool {
 	return user.Role != model.UserRoleStudent
 }
 
+// handleStartExam validates the selected topic and creates a complete variant.
 func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	user := model.UserFromContext(ctx)
-
-	// Use topic from form (dropdown) if provided, otherwise fall back to CLI flag.
-	topic := strings.TrimSpace(r.FormValue("topic"))
-	if topic == "" {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "invalid form", http.StatusBadRequest)
+		return
+	}
+	selected := r.Form.Has("topic")
+	topic := r.Form.Get("topic")
+	if !selected {
 		topic = h.config.Topic
 	}
-	if topic == "" || (h.config.Topic != "" && topic != h.config.Topic) {
+	if (!selected && topic == "") || (h.config.Topic != "" && topic != h.config.Topic) {
 		h.renderIndex(w, r, http.StatusBadRequest, appI18n.T(ctx, "ExamChooseTopic"))
 		return
 	}
@@ -250,7 +261,18 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 // the shuffle setting only randomizes the order, which is otherwise
 // easiest first.
 func (h *Handler) drawQuestions(topic string, rng *rand.Rand) ([]model.Question, error) {
-	questions, err := h.store.ListQuestionsFiltered(h.difficultyFilter(), topic)
+	return h.drawQuestionsFiltered(&topic, rng)
+}
+
+// drawQuestionsFiltered keeps an omitted legacy topic distinct from an empty one.
+func (h *Handler) drawQuestionsFiltered(topic *string, rng *rand.Rand) ([]model.Question, error) {
+	var questions []model.Question
+	var err error
+	if topic == nil {
+		questions, err = h.store.ListQuestionsFiltered(h.difficultyFilter(), "")
+	} else {
+		questions, err = h.store.ListQuestionsInTopic(h.difficultyFilter(), *topic)
+	}
 	if err != nil {
 		return nil, err
 	}

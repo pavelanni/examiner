@@ -224,7 +224,7 @@ func TestOneActiveSessionIndex(t *testing.T) {
 	s := newTestStore(t)
 	bp, _ := sessionEnv(t, s)
 	insert := func(topic string) error {
-		_, err := s.db.Exec(`INSERT INTO exam_sessions (blueprint_id, student_id, topic, status, started_at) VALUES (?, 7, ?, 'in_progress', CURRENT_TIMESTAMP)`, bp, topic)
+		_, err := s.db.Exec(`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, 7, ?, ?, 'in_progress', CURRENT_TIMESTAMP)`, bp, topic, topic != "")
 		return err
 	}
 	if err := insert("t"); err != nil {
@@ -238,6 +238,30 @@ func TestOneActiveSessionIndex(t *testing.T) {
 		if err := insert(""); err != nil {
 			t.Errorf("legacy session without topic: %v", err)
 		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, 7, '', 1, 'in_progress', CURRENT_TIMESTAMP)`, bp); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, 7, '', 1, 'in_progress', CURRENT_TIMESTAMP)`, bp); err == nil {
+		t.Fatal("known empty topic must also have one active attempt")
+	}
+}
+
+// TestEmptyTopicPinsSeparatelyFromLegacy protects real empty-topic variants.
+func TestEmptyTopicPinsSeparatelyFromLegacy(t *testing.T) {
+	s := newTestStore(t)
+	bp, qs := sessionEnv(t, s)
+	legacy, err := s.CreateSession(bp, 7, qs[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, created, err := s.StartSession(bp, 7, "", qs[1:], false)
+	if err != nil || !created || first.ID == legacy || !first.TopicKnown {
+		t.Fatalf("empty topic mixed with legacy attempt: %+v, %v, %v", first, created, err)
+	}
+	again, created, err := s.StartSession(bp, 7, "", qs[:1], false)
+	if err != nil || created || again.ID != first.ID {
+		t.Fatalf("empty topic variant changed: %+v, %v, %v", again, created, err)
 	}
 }
 

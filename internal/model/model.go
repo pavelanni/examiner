@@ -158,6 +158,7 @@ type ExamSession struct {
 	BlueprintID int64         `json:"blueprint_id"`
 	StudentID   int64         `json:"student_id"`
 	Topic       string        `json:"topic"`
+	TopicKnown  bool          `json:"-"` // distinguishes an empty topic from an unknown legacy topic
 	Status      SessionStatus `json:"status"`
 	StartedAt   time.Time     `json:"started_at"`
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`

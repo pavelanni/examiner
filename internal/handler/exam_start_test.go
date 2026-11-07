@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,6 +17,7 @@ import (
 	"github.com/pavelanni/examiner/internal/store"
 )
 
+// newExamStore creates an isolated, localized exam database.
 func newExamStore(t *testing.T) *store.Store {
 	t.Helper()
 	if err := i18n.Init("en"); err != nil {
@@ -29,14 +31,17 @@ func newExamStore(t *testing.T) *store.Store {
 	return s
 }
 
+// withExamUser adds an authenticated test user and English localizer.
 func withExamUser(r *http.Request, u *model.User) *http.Request {
 	return r.WithContext(i18n.WithLocalizer(model.ContextWithUser(r.Context(), u), i18n.NewLocalizer("en")))
 }
 
+// examQuestion builds a valid question fixture.
 func examQuestion(text, topic string) model.Question {
 	return model.Question{CourseID: 1, Text: text, Topic: topic, Difficulty: model.DifficultyEasy, Rubric: "r", ModelAnswer: "a", MaxPoints: 5}
 }
 
+// insertExamQuestion inserts a fixture and fails on a skipped or invalid row.
 func insertExamQuestion(t *testing.T, s *store.Store, q model.Question) int64 {
 	t.Helper()
 	id, err := s.InsertQuestion(q)
@@ -46,8 +51,7 @@ func insertExamQuestion(t *testing.T, s *store.Store, q model.Question) int64 {
 	return id
 }
 
-// examStore has the exam blueprint and, in topic "t", easy/medium/hard
-// questions in the given numbers.
+// examStore creates a blueprint and the requested difficulty pools.
 func examStore(t *testing.T, s *store.Store, easy, medium, hard int) {
 	t.Helper()
 	if _, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "Exam", MaxFollowups: 3}); err != nil {
@@ -62,10 +66,12 @@ func examStore(t *testing.T, s *store.Store, easy, medium, hard int) {
 	}
 }
 
+// student builds a student identity for exam requests.
 func student(id int64) *model.User {
 	return &model.User{ID: id, Username: fmt.Sprint("s", id), DisplayName: "S", Role: model.UserRoleStudent}
 }
 
+// startExam submits an explicit topic to the exam-start handler.
 func startExam(t *testing.T, h *Handler, user *model.User, topic string) *httptest.ResponseRecorder {
 	t.Helper()
 	req := httptest.NewRequest(http.MethodPost, "/exam/start", strings.NewReader(url.Values{"topic": {topic}}.Encode()))
@@ -75,7 +81,7 @@ func startExam(t *testing.T, h *Handler, user *model.User, topic string) *httpte
 	return rec
 }
 
-// startedSession starts an exam and returns the session it redirects to.
+// startedSession returns the new session ID from a successful redirect.
 func startedSession(t *testing.T, h *Handler, user *model.User, topic string) int64 {
 	t.Helper()
 	rec := startExam(t, h, user, topic)
@@ -89,6 +95,7 @@ func startedSession(t *testing.T, h *Handler, user *model.User, topic string) in
 	return id
 }
 
+// sessionQuestions loads the saved questions in their displayed order.
 func sessionQuestions(t *testing.T, s *store.Store, sessionID int64) []model.Question {
 	t.Helper()
 	view, err := s.GetSessionView(sessionID)
@@ -102,6 +109,7 @@ func sessionQuestions(t *testing.T, s *store.Store, sessionID int64) []model.Que
 	return qs
 }
 
+// questionIDs extracts saved question IDs for comparison.
 func questionIDs(qs []model.Question) []int64 {
 	var ids []int64
 	for _, q := range qs {
@@ -110,6 +118,7 @@ func questionIDs(qs []model.Question) []int64 {
 	return ids
 }
 
+// TestStartExamExactDistribution checks 50 sessions for exact counts and varied question sets.
 func TestStartExamExactDistribution(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 6, 6, 4)
@@ -147,6 +156,7 @@ func TestStartExamExactDistribution(t *testing.T) {
 	}
 }
 
+// TestStartExamShortage prevents partial sessions when a difficulty pool is too small.
 func TestStartExamShortage(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 3, 3, 0)
@@ -160,6 +170,194 @@ func TestStartExamShortage(t *testing.T) {
 	}
 	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 0 {
 		t.Errorf("sessions = %v; an incomplete session must not be created", sessions)
+	}
+}
+
+// TestStartExamOrder checks easiest-first order with shuffle disabled.
+func TestStartExamOrder(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 3, 3, 3)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 2, "medium": 1, "hard": 2}}}
+	qs := sessionQuestions(t, s, startedSession(t, h, student(7), "t"))
+	var levels []model.Difficulty
+	for _, q := range qs {
+		levels = append(levels, q.Difficulty)
+	}
+	if want := []model.Difficulty{"easy", "easy", "medium", "hard", "hard"}; !slices.Equal(levels, want) {
+		t.Errorf("without shuffle the order is %v, want easiest first %v", levels, want)
+	}
+}
+
+// indexPage renders the home page for a given identity.
+func indexPage(t *testing.T, h *Handler, user *model.User) string {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	h.handleIndex(rec, withExamUser(httptest.NewRequest(http.MethodGet, "/", nil), user))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /: %d", rec.Code)
+	}
+	return rec.Body.String()
+}
+
+// TestIndexShowsDistributionAndContinue checks exact counts, shortages and saved attempts.
+func TestIndexShowsDistributionAndContinue(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 3, 3, 3)
+	short := examQuestion("Lonely question", "u")
+	short.Difficulty = "hard"
+	insertExamQuestion(t, s, short)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 2, "medium": 2, "hard": 1}}}
+
+	body := indexPage(t, h, student(7))
+	if !strings.Contains(body, "Each exam: 2 easy, 2 medium and 1 hard questions (5 in total).") {
+		t.Errorf("exam size missing")
+	}
+	if !strings.Contains(body, `<option value="t">t</option>`) {
+		t.Errorf("topic t not offered")
+	}
+	if !strings.Contains(body, `<option value="u" disabled>u — not enough easy questions: 2 needed, 0 available.`) {
+		t.Errorf("topic u not shown as unavailable with the reason")
+	}
+
+	id := startedSession(t, h, student(7), "t")
+	body = indexPage(t, h, student(7))
+	if !strings.Contains(body, "Unfinished exams") || !strings.Contains(body, fmt.Sprintf(`href="/exam/%d">Continue`, id)) {
+		t.Errorf("no Continue link for the exam in progress")
+	}
+	if strings.Contains(body, `<option value="t"`) {
+		t.Errorf("topic t offered again while its exam is in progress")
+	}
+
+	if err := s.UpdateSessionStatus(id, model.StatusGraded); err != nil {
+		t.Fatal(err)
+	}
+	body = indexPage(t, h, student(7))
+	if !strings.Contains(body, "you have already taken this exam") {
+		t.Errorf("finished topic not marked as taken")
+	}
+}
+
+// TestIndexKeepsMatchingQuestionsInDifferentTopics keeps independent topic banks available.
+func TestIndexKeepsMatchingQuestionsInDifferentTopics(t *testing.T) {
+	s := newExamStore(t)
+	if _, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Exam"}); err != nil {
+		t.Fatal(err)
+	}
+	for i, topic := range []string{"t", "u"} {
+		q := examQuestion("What is energy?", topic)
+		// The existing uniqueness rule is scoped to a course. These are
+		// separate banks with matching text, each able to supply an exam.
+		q.CourseID = int64(i + 1)
+		insertExamQuestion(t, s, q)
+	}
+	for _, config := range []model.ExamConfig{
+		{Selection: model.Distribution{"easy": 1}},
+		{NumQuestions: 1},
+	} {
+		h := &Handler{store: s, config: config}
+		body := indexPage(t, h, student(7))
+		for _, topic := range []string{"t", "u"} {
+			if !strings.Contains(body, fmt.Sprintf(`<option value="%s">%s</option>`, topic, topic)) {
+				t.Errorf("topic %s must be available in config %+v", topic, config)
+			}
+		}
+	}
+}
+
+// TestEmptyExamTopic distinguishes an explicit empty bank from all other topics.
+func TestEmptyExamTopic(t *testing.T) {
+	s := newExamStore(t)
+	if _, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Exam"}); err != nil {
+		t.Fatal(err)
+	}
+	insertExamQuestion(t, s, examQuestion("Empty topic easy", ""))
+	hard := examQuestion("Other topic hard", "other")
+	hard.Difficulty = model.DifficultyHard
+	insertExamQuestion(t, s, hard)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 1, "hard": 1}}}
+	if rec := startExam(t, h, student(7), ""); rec.Code != http.StatusConflict {
+		t.Fatalf("empty topic borrowed questions from another bank: status %d", rec.Code)
+	}
+	hard.Text, hard.Topic = "Empty topic hard", ""
+	insertExamQuestion(t, s, hard)
+	id := startedSession(t, h, student(7), "")
+	for _, q := range sessionQuestions(t, s, id) {
+		if q.Topic != "" {
+			t.Fatalf("question escaped the selected topic: %+v", q)
+		}
+	}
+	body := indexPage(t, h, student(8))
+	if !strings.Contains(body, `<option value="">No topic</option>`) || strings.Contains(body, `<select id="topic" name="topic" required`) {
+		t.Fatal("the browser must allow the explicit empty topic")
+	}
+	rec := httptest.NewRecorder()
+	h.handleStartExam(rec, withExamUser(httptest.NewRequest(http.MethodPost, "/exam/start", nil), student(8)))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing selection must remain distinct from an empty topic: %d", rec.Code)
+	}
+	h.config.Topic = "other"
+	if rec := startExam(t, h, student(8), ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("empty topic bypassed configured-topic restriction: %d", rec.Code)
+	}
+}
+
+// TestIndexEmptyBankShowsDistribution keeps the exam size and shortage visible.
+func TestIndexEmptyBankShowsDistribution(t *testing.T) {
+	s := newExamStore(t)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 2, "medium": 2, "hard": 1}, Topic: "missing"}}
+	body := indexPage(t, h, student(7))
+	for _, want := range []string{"Each exam: 2 easy, 2 medium and 1 hard questions (5 in total).", "missing", "not enough hard questions: 1 needed, 0 available."} {
+		if !strings.Contains(body, want) {
+			t.Errorf("empty-bank page lacks %q", want)
+		}
+	}
+}
+
+// TestDrawQuestionsShuffle catches ignoring the order flag for exact distributions.
+func TestDrawQuestionsShuffle(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 1, 1, 1)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 1, "medium": 1, "hard": 1}}}
+	ordered, err := h.drawQuestions("t", rand.New(rand.NewPCG(42, 42)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.config.Shuffle = true
+	shuffled, err := h.drawQuestions("t", rand.New(rand.NewPCG(42, 42)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.Equal(questionIDs(ordered), questionIDs(shuffled)) {
+		t.Fatal("fixed seed must produce an order different from the unshuffled variant")
+	}
+	got := questionIDs(shuffled)
+	slices.Sort(got)
+	want := questionIDs(ordered)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Fatalf("shuffle changed composition: %v, want %v", got, want)
+	}
+}
+
+// TestTopicAvailabilityUsesDistribution prevents pre-deduplication hiding a valid bank.
+func TestTopicAvailabilityUsesDistribution(t *testing.T) {
+	s := newExamStore(t)
+	if _, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Exam"}); err != nil {
+		t.Fatal(err)
+	}
+	easy := examQuestion("Same text", "t")
+	insertExamQuestion(t, s, easy)
+	hard := easy
+	hard.CourseID, hard.Difficulty = 2, model.DifficultyHard
+	insertExamQuestion(t, s, hard)
+	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 0, "hard": 1}}}
+	body := indexPage(t, h, student(7))
+	if !strings.Contains(body, `action="/exam/start"`) {
+		t.Fatal("a duplicate in an unrequested difficulty hid a complete topic")
+	}
+	id := startedSession(t, h, student(7), "t")
+	if qs := sessionQuestions(t, s, id); len(qs) != 1 || qs[0].Difficulty != model.DifficultyHard {
+		t.Fatalf("incorrect drawn distribution: %+v", qs)
 	}
 }
 
@@ -246,20 +444,6 @@ func TestStartExamConcurrent(t *testing.T) {
 	}
 }
 
-func TestStartExamOrder(t *testing.T) {
-	s := newExamStore(t)
-	examStore(t, s, 3, 3, 3)
-	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 2, "medium": 1, "hard": 2}}}
-	qs := sessionQuestions(t, s, startedSession(t, h, student(7), "t"))
-	var levels []model.Difficulty
-	for _, q := range qs {
-		levels = append(levels, q.Difficulty)
-	}
-	if want := []model.Difficulty{"easy", "easy", "medium", "hard", "hard"}; !slices.Equal(levels, want) {
-		t.Errorf("without shuffle the order is %v, want easiest first %v", levels, want)
-	}
-}
-
 func TestStartExamRandomWithoutShuffle(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 6, 0, 0)
@@ -288,76 +472,5 @@ func TestStartExamNeedsTopic(t *testing.T) {
 	}
 	if sessions, _ := s.ListSessionsByUser(7); len(sessions) != 0 {
 		t.Errorf("sessions = %v, want none", sessions)
-	}
-}
-
-func indexPage(t *testing.T, h *Handler, user *model.User) string {
-	t.Helper()
-	rec := httptest.NewRecorder()
-	h.handleIndex(rec, withExamUser(httptest.NewRequest(http.MethodGet, "/", nil), user))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /: %d", rec.Code)
-	}
-	return rec.Body.String()
-}
-
-func TestIndexShowsDistributionAndContinue(t *testing.T) {
-	s := newExamStore(t)
-	examStore(t, s, 3, 3, 3)
-	short := examQuestion("Lonely question", "u")
-	short.Difficulty = "hard"
-	insertExamQuestion(t, s, short)
-	h := &Handler{store: s, config: model.ExamConfig{Selection: model.Distribution{"easy": 2, "medium": 2, "hard": 1}}}
-
-	body := indexPage(t, h, student(7))
-	if !strings.Contains(body, "Each exam: 2 easy, 2 medium and 1 hard questions (5 in total).") {
-		t.Errorf("exam size missing")
-	}
-	if !strings.Contains(body, `<option value="t">t</option>`) {
-		t.Errorf("topic t not offered")
-	}
-	if !strings.Contains(body, `<option value="u" disabled>u — not enough easy questions: 2 needed, 0 available.`) {
-		t.Errorf("topic u not shown as unavailable with the reason")
-	}
-
-	id := startedSession(t, h, student(7), "t")
-	body = indexPage(t, h, student(7))
-	if !strings.Contains(body, "Unfinished exams") || !strings.Contains(body, fmt.Sprintf(`href="/exam/%d">Continue`, id)) {
-		t.Errorf("no Continue link for the exam in progress")
-	}
-	if strings.Contains(body, `<option value="t"`) {
-		t.Errorf("topic t offered again while its exam is in progress")
-	}
-
-	if err := s.UpdateSessionStatus(id, model.StatusGraded); err != nil {
-		t.Fatal(err)
-	}
-	body = indexPage(t, h, student(7))
-	if !strings.Contains(body, "you have already taken this exam") {
-		t.Errorf("finished topic not marked as taken")
-	}
-}
-
-func TestIndexKeepsMatchingQuestionsInDifferentTopics(t *testing.T) {
-	s := newExamStore(t)
-	if _, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Exam"}); err != nil {
-		t.Fatal(err)
-	}
-	// Normalized duplicates are allowed across topics. Each topic still
-	// has a complete exam; only repeats inside one draw should be removed.
-	for topic, text := range map[string]string{"t": "What is energy?", "u": "WHAT IS ENERGY!"} {
-		insertExamQuestion(t, s, examQuestion(text, topic))
-	}
-	for _, config := range []model.ExamConfig{
-		{Selection: model.Distribution{"easy": 1}},
-		{NumQuestions: 1},
-	} {
-		h := &Handler{store: s, config: config}
-		body := indexPage(t, h, student(7))
-		for _, topic := range []string{"t", "u"} {
-			if !strings.Contains(body, fmt.Sprintf(`<option value="%s">%s</option>`, topic, topic)) {
-				t.Errorf("topic %s must be available in config %+v", topic, config)
-			}
-		}
 	}
 }

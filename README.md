@@ -79,7 +79,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
-| `--shuffle` | | `true` | Randomize question order; selection is always random, even when false |
+| `--shuffle` | | `true` | Randomize question order; the set is always selected randomly |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
@@ -157,12 +157,26 @@ chosen topic, drawn at random without repeats. The rules:
   variables or flags is an error, even with `num-questions: 0` or an empty
   `difficulty`. Unchanged flag defaults do not conflict.
 - An invalid value stops the server at startup with the list of
-  problems.
+  problems. An explicitly empty or `null` distribution is invalid; omit
+  the key entirely to keep legacy selection. Empty legacy environment
+  variables still count as explicitly supplied options.
 
 At startup the server logs how many questions of each difficulty every
 topic has and warns about topics that are too small. The home page
 offers only topics where an exam can be put together and shows why the
 others are unavailable. The home page also shows the exam size.
+
+Questions with an empty topic can be selected as **No topic**. The chosen
+topic is an exact filter, so its questions are never mixed with other topics.
+Duplicate texts in different difficulty pools remain alternatives until the
+requested distribution is allocated; each resulting exam uses a text only once.
+
+With `question_selection`, startup reconciles `num_questions` in prepared
+metadata with the distribution total. Existing attempts must have the same
+number of questions; otherwise startup fails without rewriting those attempts.
+Use a separate exam database when changing the exam size. Export derives the
+count from saved attempts and rejects mixed-size exports rather than giving
+the grader an incorrect exam-wide count.
 
 #### Exam variants
 

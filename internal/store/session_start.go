@@ -10,14 +10,14 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-const sessionColumns = `id, blueprint_id, student_id, topic, status, started_at, submitted_at`
+const sessionColumns = `id, blueprint_id, student_id, topic, topic_known, status, started_at, submitted_at`
 
 type rowScanner interface{ Scan(...any) error }
 
 // scanSession reads one row selected with sessionColumns.
 func scanSession(row rowScanner) (model.ExamSession, error) {
 	var sess model.ExamSession
-	err := row.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.Status, &sess.StartedAt, &sess.SubmittedAt)
+	err := row.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown, &sess.Status, &sess.StartedAt, &sess.SubmittedAt)
 	return sess, err
 }
 
@@ -47,7 +47,7 @@ func (s *Store) FindExamSession(blueprintID, studentID int64, topic string, reta
 }
 
 func findExamSession(q queryRower, blueprintID, studentID int64, topic string, retake bool) (*model.ExamSession, error) {
-	query := `SELECT ` + sessionColumns + ` FROM exam_sessions WHERE student_id = ? AND blueprint_id = ? AND topic = ?`
+	query := `SELECT ` + sessionColumns + ` FROM exam_sessions WHERE student_id = ? AND blueprint_id = ? AND topic = ? AND topic_known = 1`
 	if retake {
 		// Grading can return an attempt to in_progress when the LLM queue
 		// is busy (#47). A new attempt must not occupy its unique slot.
@@ -70,9 +70,6 @@ func findExamSession(q queryRower, blueprintID, studentID int64, topic string, r
 // concurrent starts end up in the same session and a student cannot get a
 // second variant (FR3-05). created reports whether a session was created.
 func (s *Store) StartSession(blueprintID, studentID int64, topic string, questionIDs []int64, retake bool) (sess model.ExamSession, created bool, err error) {
-	if topic == "" {
-		return model.ExamSession{}, false, errors.New("start session: no topic")
-	}
 	// _txlock=immediate takes the write lock here, before the lookup.
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -87,7 +84,7 @@ func (s *Store) StartSession(blueprintID, studentID int64, topic string, questio
 	if existing != nil {
 		return *existing, false, nil
 	}
-	id, err := createSession(tx, blueprintID, studentID, topic, questionIDs)
+	id, err := createSession(tx, blueprintID, studentID, topic, questionIDs, true)
 	if err != nil {
 		return model.ExamSession{}, false, err
 	}
@@ -103,10 +100,10 @@ func (s *Store) StartSession(blueprintID, studentID int64, topic string, questio
 
 // createSession inserts a session in progress and one thread per question,
 // numbered in the order given. Every question must still exist.
-func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, questionIDs []int64) (int64, error) {
+func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, questionIDs []int64, topicKnown bool) (int64, error) {
 	res, err := tx.Exec(
-		`INSERT INTO exam_sessions (blueprint_id, student_id, topic, status, started_at) VALUES (?, ?, ?, 'in_progress', ?)`,
-		blueprintID, studentID, topic, time.Now(),
+		`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, ?, ?, ?, 'in_progress', ?)`,
+		blueprintID, studentID, topic, topicKnown, time.Now(),
 	)
 	if err != nil {
 		return 0, err

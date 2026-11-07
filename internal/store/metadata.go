@@ -2,10 +2,42 @@ package store
 
 import (
 	"database/sql"
+	"errors"
+	"fmt"
 	"strconv"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
+
+// ConfigureQuestionCount reconciles a distribution's size with prepared metadata.
+// Existing attempts must all have that size; validation and update are atomic.
+func (s *Store) ConfigureQuestionCount(n int) error {
+	if n <= 0 {
+		return errors.New("question count must be positive")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	var sessionID int64
+	var actual int
+	err = tx.QueryRow(`SELECT s.id, COUNT(t.id)
+		FROM exam_sessions s LEFT JOIN question_threads t ON t.session_id = s.id
+		GROUP BY s.id HAVING COUNT(t.id) != ? ORDER BY s.id LIMIT 1`, n).Scan(&sessionID, &actual)
+	if err == nil {
+		return fmt.Errorf("configured question count %d conflicts with session %d (%d questions); use a separate exam database", n, sessionID, actual)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = tx.Exec(`INSERT INTO exam_metadata (key, value) VALUES ('num_questions', ?)
+		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, strconv.Itoa(n))
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 
 // SetMetadata upserts a key-value pair in the exam_metadata table.
 func (s *Store) SetMetadata(key, value string) error {
