@@ -300,3 +300,27 @@ func TestIndexShowsDistributionAndContinue(t *testing.T) {
 		t.Errorf("finished topic not marked as taken")
 	}
 }
+
+func TestIndexKeepsMatchingQuestionsInDifferentTopics(t *testing.T) {
+	s := newImportStore(t)
+	if _, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Exam"}); err != nil {
+		t.Fatal(err)
+	}
+	// Normalized duplicates are allowed across topics. Each topic still
+	// has a complete exam; only repeats inside one draw should be removed.
+	for topic, text := range map[string]string{"t": "What is energy?", "u": "WHAT IS ENERGY!"} {
+		insertQ(t, s, plainQ(text, topic, true))
+	}
+	for _, config := range []model.ExamConfig{
+		{Selection: model.Distribution{"easy": 1}},
+		{NumQuestions: 1},
+	} {
+		h := &Handler{store: s, config: config}
+		body := indexPage(t, h, student(7))
+		for _, topic := range []string{"t", "u"} {
+			if !strings.Contains(body, fmt.Sprintf(`<option value="%s">%s</option>`, topic, topic)) {
+				t.Errorf("topic %s must be available in config %+v", topic, config)
+			}
+		}
+	}
+}

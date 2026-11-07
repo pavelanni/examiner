@@ -73,13 +73,19 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	pool = selection.Unique(pool)
 	byTopic := make(map[string][]model.Question)
 	for _, q := range pool {
 		byTopic[q.Topic] = append(byTopic[q.Topic], q)
 	}
+	// A variant draws from one topic. Deduplicate within that topic, just
+	// as drawQuestions does; matching text in another topic is still usable.
+	availableCount := 0
+	for topic, questions := range byTopic {
+		byTopic[topic] = selection.Unique(questions)
+		availableCount += len(byTopic[topic])
+	}
 
-	examCount := len(pool)
+	examCount := availableCount
 	if d := h.config.Selection; d != nil {
 		examCount = d.Total()
 	} else if h.config.NumQuestions > 0 && h.config.NumQuestions < examCount {
@@ -90,7 +96,7 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 	w.WriteHeader(status)
 	err = views.IndexPage(views.IndexData{
 		Sessions:       sessions,
-		AvailableCount: len(pool),
+		AvailableCount: availableCount,
 		ExamCount:      examCount,
 		Config:         h.config,
 		Topics:         h.topicChoices(ctx, user, topics, byTopic, mine),

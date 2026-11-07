@@ -73,6 +73,14 @@ func TestStartSessionScope(t *testing.T) {
 	if err != nil || !created || topic.ID == first.ID {
 		t.Errorf("another topic: %+v, %v, %v; want a new session", topic, created, err)
 	}
+	otherBP, err := s.CreateBlueprint(model.ExamBlueprint{Name: "Another exam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	blueprint, created, err := s.StartSession(otherBP, 7, "t", q[:1], false)
+	if err != nil || !created || blueprint.ID == first.ID {
+		t.Errorf("another blueprint: %+v, %v, %v; want a new session", blueprint, created, err)
+	}
 }
 
 func TestStartSessionAfterFinish(t *testing.T) {
@@ -101,12 +109,20 @@ func TestStartSessionAfterFinish(t *testing.T) {
 
 func TestStartSessionConcurrent(t *testing.T) {
 	// A file database: every pooled connection of :memory: is a separate DB.
-	s, err := New(filepath.Join(t.TempDir(), "exam.db"))
+	path := filepath.Join(t.TempDir(), "exam.db")
+	s, err := New(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
 	bp, q := sessionEnv(t, s)
+	// Independent handles also share the lock and uniqueness guarantee.
+	other, err := New(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+	stores := []*Store{s, other}
 
 	const n = 10
 	ids := make([]int64, n)
@@ -114,7 +130,7 @@ func TestStartSessionConcurrent(t *testing.T) {
 	var wg sync.WaitGroup
 	for i := range n {
 		wg.Go(func() {
-			sess, _, err := s.StartSession(bp, 7, "t", q, false)
+			sess, _, err := stores[i%len(stores)].StartSession(bp, 7, "t", q, false)
 			ids[i], errs[i] = sess.ID, err
 		})
 	}
@@ -130,6 +146,50 @@ func TestStartSessionConcurrent(t *testing.T) {
 	sessions, err := s.ListSessionsByUser(7)
 	if err != nil || len(sessions) != 1 {
 		t.Errorf("sessions = %v, %v; want exactly one", sessions, err)
+	}
+}
+
+func TestStartSessionPinsVariantAcrossRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "exam.db")
+	open := func() *Store {
+		t.Helper()
+		s, err := New(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = s.Close() })
+		return s
+	}
+	s := open()
+	bp, qs := sessionEnv(t, s)
+	order := []int64{qs[2], qs[0], qs[1]}
+	first, created, err := s.StartSession(bp, 7, "t", order, false)
+	if err != nil || !created {
+		t.Fatalf("first start: %+v, %v, %v", first, created, err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s = open()
+	again, created, err := s.StartSession(bp, 7, "t", qs[:1], false)
+	if err != nil || created || again.ID != first.ID || again.Topic != "t" {
+		t.Fatalf("restart must resume the original variant: %+v, %v, %v", again, created, err)
+	}
+	if got := threadQuestionIDs(t, s, first.ID); !slices.Equal(got, order) {
+		t.Fatalf("restart changed question order: %v, want %v", got, order)
+	}
+	if err := s.UpdateSessionStatus(first.ID, model.StatusGraded); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s = open()
+	finished, created, err := s.StartSession(bp, 7, "t", qs[:1], false)
+	if err != nil || created || finished.ID != first.ID || finished.Status != model.StatusGraded {
+		t.Fatalf("restart must preserve the completed attempt: %+v, %v, %v", finished, created, err)
 	}
 }
 

@@ -190,7 +190,9 @@ func examSelection(v *viper.Viper) (model.Distribution, error) {
 	if err != nil {
 		return nil, fmt.Errorf("question_selection: %w", err)
 	}
-	if d != nil && (v.GetInt("num-questions") != 0 || v.GetString("difficulty") != "") {
+	// Unchanged CLI defaults are not explicit settings. IsSet also catches
+	// zero, empty and invalid legacy values that GetInt/GetString can hide.
+	if d != nil && (v.IsSet("num-questions") || v.IsSet("difficulty")) {
 		return nil, errors.New("question_selection cannot be combined with num-questions or difficulty: remove one of them")
 	}
 	return d, nil

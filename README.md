@@ -153,7 +153,9 @@ chosen topic, drawn at random without repeats. The rules:
   rejected), the levels are `easy`, `medium` and `hard`, and the total
   must be above 0.
 - `question_selection` replaces `num-questions` and `difficulty`;
-  setting it together with either of them is an error.
+  explicitly setting it together with either of them in YAML, environment
+  variables or flags is an error, even with `num-questions: 0` or an empty
+  `difficulty`. Unchanged flag defaults do not conflict.
 - An invalid value stops the server at startup with the list of
   problems.
 
