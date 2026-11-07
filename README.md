@@ -81,6 +81,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
 | `--secure-cookies` | | `true` | Set `Secure` flag on cookies (disable for local HTTP dev) |
+| `--allow-registration` | | `false` | Allow students to create their own accounts |
 
 #### Environment variables
 
@@ -172,7 +173,7 @@ See the [Windows recovery walkthrough](docs/development/admin-access-recovery-ru
 
 ### Adding users
 
-Only admins can create users. Log in as `admin`, then navigate to
+Admins can create users of any role. Log in as `admin`, then navigate to
 **Admin → User management** (`/admin/users`). The form lets you set:
 
 - **Username** — used for login
@@ -182,6 +183,29 @@ Only admins can create users. Log in as `admin`, then navigate to
 
 From the same page you can toggle a user's active status (deactivated
 users cannot log in).
+
+### Student self-registration
+
+Self-registration is disabled by default. To enable it, set
+`allow-registration: true` in `examiner.yaml`, export
+`EXAMINER_ALLOW_REGISTRATION=true`, or start with `--allow-registration`.
+When enabled, the login page offers a link to `/register` (or `/ru/register`
+for a `/ru` deployment).
+
+Students provide a username, display name, password, and password confirmation.
+Usernames are case-sensitive and contain 3–64 Latin letters, digits, dots,
+underscores or hyphens, starting with a letter or digit. Display names support
+Unicode and are limited to 120 characters. Passwords require at least eight
+characters and may not exceed bcrypt's 72-byte limit.
+
+New accounts are active students. Roles, activation state, and roster identifiers
+cannot be selected through this form. After registration, the student signs in
+through the normal login page. Existing accounts cannot be overwritten.
+
+Enabling this option permits anyone who can reach the login page to create a
+student account. Keep it disabled for exams that use administrator-created
+accounts or pre-generated roster credentials. Turning it off hides the link and
+removes the registration routes; existing accounts can still sign in.
 
 ### Roles
 

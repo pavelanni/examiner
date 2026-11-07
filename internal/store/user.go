@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
@@ -9,16 +10,26 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// ErrUsernameTaken означает атомарно обнаруженный конфликт уникального логина.
+var ErrUsernameTaken = errors.New("username already exists")
+
 // CreateUser inserts a new user.
 func (s *Store) CreateUser(u model.User) (int64, error) {
 	res, err := s.db.Exec(
 		`INSERT INTO users (username, external_id, display_name, password_hash, role, active, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username) DO NOTHING`,
 		u.Username, u.ExternalID, u.DisplayName, u.PasswordHash, u.Role, u.Active, time.Now(),
 	)
 	if err != nil {
 		slog.Error("failed to create user", "username", u.Username, "error", err)
 		return 0, err
+	}
+	count, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if count == 0 {
+		return 0, ErrUsernameTaken
 	}
 	id, err := res.LastInsertId()
 	if err != nil {

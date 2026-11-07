@@ -207,14 +207,15 @@ type Grade struct {
 
 // ExamConfig holds runtime exam parameters set via CLI flags.
 type ExamConfig struct {
-	NumQuestions  int    // 0 means all available
-	Difficulty    string // empty means all difficulties
-	Topic         string // empty means all topics
-	MaxFollowups  int
-	Shuffle       bool
-	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
-	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
-	PromptVariant string // Grading prompt variant (strict, standard, lenient)
+	NumQuestions      int    // 0 means all available
+	Difficulty        string // empty means all difficulties
+	Topic             string // empty means all topics
+	MaxFollowups      int
+	Shuffle           bool
+	BasePath          string // URL prefix for sub-path deployments (e.g. "/ru")
+	SecureCookies     bool   // Set Secure flag on cookies (disable for local dev)
+	AllowRegistration bool   // Enable public student self-registration (default false)
+	PromptVariant     string // Grading prompt variant (strict, standard, lenient)
 
 	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
 }

@@ -107,6 +107,14 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Post("/login", h.handleLogin)
 	})
 
+	if h.config.AllowRegistration {
+		r.Group(func(r chi.Router) {
+			r.Use(registrationFormLimit, h.csrfMiddleware)
+			r.Get("/register", h.handleRegisterPage)
+			r.Post("/register", h.handleRegister)
+		})
+	}
+
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireAuth)

@@ -78,6 +78,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	f.Bool("allow-registration", false, "Allow students to create their own accounts")
 	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
@@ -231,14 +232,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	examCfg := model.ExamConfig{
-		NumQuestions:  v.GetInt("num-questions"),
-		Difficulty:    v.GetString("difficulty"),
-		Topic:         v.GetString("topic"),
-		MaxFollowups:  v.GetInt("max-followups"),
-		Shuffle:       v.GetBool("shuffle"),
-		BasePath:      basePath,
-		SecureCookies: v.GetBool("secure-cookies"),
-		PromptVariant: promptVariant,
+		NumQuestions:      v.GetInt("num-questions"),
+		Difficulty:        v.GetString("difficulty"),
+		Topic:             v.GetString("topic"),
+		MaxFollowups:      v.GetInt("max-followups"),
+		Shuffle:           v.GetBool("shuffle"),
+		BasePath:          basePath,
+		SecureCookies:     v.GetBool("secure-cookies"),
+		AllowRegistration: v.GetBool("allow-registration"),
+		PromptVariant:     promptVariant,
 
 		ScoreVisibility: scoreVisibility,
 	}
@@ -277,6 +279,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,
 		"score_visibility", string(examCfg.ScoreVisibility),
+		"allow_registration", examCfg.AllowRegistration,
 		"shuffle", examCfg.Shuffle,
 		"base_path", basePath,
 	)
