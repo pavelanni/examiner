@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +42,7 @@ func main() {
 	}
 }
 
+// rootCmd регистрирует команды приложения и запускает сервер по умолчанию.
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "examiner",
@@ -48,7 +50,7 @@ func rootCmd() *cobra.Command {
 	}
 
 	serve := serveCmd()
-	root.AddCommand(serve, exportCmd(), prepCmd())
+	root.AddCommand(serve, exportCmd(), prepCmd(), reactivateAdminCmd())
 
 	// Make "serve" the default when no subcommand is given.
 	root.RunE = serve.RunE
@@ -72,6 +74,9 @@ func serveCmd() *cobra.Command {
 	f.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
 	f.String("llm-key", "ollama", "API key for LLM")
 	f.String("llm-model", "llama3.2", "LLM model name")
+	f.Duration("llm-timeout", llm.DefaultTimeout, "Timeout per LLM attempt, including queue wait")
+	f.Int("llm-max-retries", llm.DefaultMaxRetries, "LLM retries after the initial attempt (0-100)")
+	f.Int("llm-max-concurrency", llm.DefaultMaxConcurrency, "Maximum simultaneous LLM requests per process")
 	f.StringP("lang", "l", "en", "UI language (en, ru)")
 	f.IntP("num-questions", "n", 0, "Number of questions per exam (0 = all available)")
 	f.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
@@ -81,6 +86,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	f.Bool("allow-registration", false, "Allow students to create their own accounts")
 	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
@@ -225,9 +231,30 @@ func logTopicAvailability(db *store.Store, d model.Distribution) error {
 	return nil
 }
 
+// llmOptions отклоняет некорректные значения вместо неявного преобразования в ноль.
+func llmOptions(v *viper.Viper) ([]llm.Option, error) {
+	timeout, err := time.ParseDuration(strings.TrimSpace(v.GetString("llm-timeout")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-timeout: %w", err)
+	}
+	retries, err := strconv.Atoi(strings.TrimSpace(v.GetString("llm-max-retries")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-max-retries: %w", err)
+	}
+	concurrency, err := strconv.Atoi(strings.TrimSpace(v.GetString("llm-max-concurrency")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-max-concurrency: %w", err)
+	}
+	return []llm.Option{llm.WithTimeout(timeout), llm.WithMaxRetries(retries), llm.WithMaxConcurrency(concurrency)}, nil
+}
+
 func runServe(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
+	options, err := llmOptions(v)
+	if err != nil {
+		return err
+	}
 
 	// Check the exam settings before touching the database.
 	questionSelection, err := examSelection(v)
@@ -286,6 +313,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		v.GetString("llm-key"),
 		v.GetString("llm-model"),
 		promptVariant,
+		options...,
 	)
 	if err != nil {
 		return fmt.Errorf("create LLM client: %w", err)
@@ -302,15 +330,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	examCfg := model.ExamConfig{
-		NumQuestions:  v.GetInt("num-questions"),
-		Difficulty:    v.GetString("difficulty"),
-		Topic:         v.GetString("topic"),
-		MaxFollowups:  v.GetInt("max-followups"),
-		Shuffle:       v.GetBool("shuffle"),
-		Selection:     questionSelection,
-		BasePath:      basePath,
-		SecureCookies: v.GetBool("secure-cookies"),
-		PromptVariant: promptVariant,
+		NumQuestions:      v.GetInt("num-questions"),
+		Difficulty:        v.GetString("difficulty"),
+		Topic:             v.GetString("topic"),
+		MaxFollowups:      v.GetInt("max-followups"),
+		Shuffle:           v.GetBool("shuffle"),
+		Selection:         questionSelection,
+		BasePath:          basePath,
+		SecureCookies:     v.GetBool("secure-cookies"),
+		PromptVariant:     promptVariant,
+		AllowRegistration: v.GetBool("allow-registration"),
 
 		ScoreVisibility: scoreVisibility,
 	}
@@ -350,6 +379,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,
 		"score_visibility", string(examCfg.ScoreVisibility),
+		"allow_registration", examCfg.AllowRegistration,
 		"shuffle", examCfg.Shuffle,
 		"base_path", basePath,
 	)

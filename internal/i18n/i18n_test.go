@@ -40,6 +40,11 @@ func TestTranslateRussian(t *testing.T) {
 	if got != "Начать экзамен" {
 		t.Errorf("T(StartExam) = %q, want 'Начать экзамен'", got)
 	}
+
+	got = T(ctx, "CannotDeactivateSelf")
+	if got != "Свою учётную запись отключить нельзя." {
+		t.Errorf("T(CannotDeactivateSelf) = %q, want 'Свою учётную запись отключить нельзя.'", got)
+	}
 }
 
 func TestPluralTranslation(t *testing.T) {

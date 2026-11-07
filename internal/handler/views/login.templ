@@ -1,10 +1,13 @@
 package views
 
-templ LoginPage(errorMsg string) {
+templ LoginPage(errorMsg string, allowRegistration, registrationComplete bool) {
 	@Layout(t(ctx, "LoginTitle")) {
 		<h1>{ t(ctx, "LoginTitle") }</h1>
 		if errorMsg != "" {
 			<p style="color: var(--pico-del-color);">{ errorMsg }</p>
+		}
+		if registrationComplete {
+			<p role="status">{ t(ctx, "RegistrationComplete") }</p>
 		}
 		<form method="POST" action={ templ.SafeURL(p(ctx, "/login")) }>
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
@@ -14,5 +17,8 @@ templ LoginPage(errorMsg string) {
 			<input type="password" id="password" name="password" required/>
 			<button type="submit">{ t(ctx, "LoginButton") }</button>
 		</form>
+		if allowRegistration {
+			<p><a href={ templ.SafeURL(p(ctx, "/register")) }>{ t(ctx, "RegistrationLink") }</a></p>
+		}
 	}
 }

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
@@ -26,9 +28,10 @@ type Evaluator interface {
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	store  *store.Store
-	llm    Evaluator
-	config model.ExamConfig
+	store        *store.Store
+	llm          Evaluator
+	config       model.ExamConfig
+	registration registrationAdmission
 
 	// inFlight is the set of thread IDs with an answer being processed, so
 	// only one answer per thread runs at a time. Entries are removed when the
@@ -80,6 +83,14 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/login", h.handleLoginPage)
 		r.Post("/login", h.handleLogin)
 	})
+
+	if h.config.AllowRegistration {
+		r.Group(func(r chi.Router) {
+			r.Use(registrationFormLimit, h.csrfMiddleware)
+			r.Get("/register", h.handleRegisterPage)
+			r.Post("/register", h.handleRegister)
+		})
+	}
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
@@ -235,15 +246,27 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.store.AddMessage(model.Message{
-		ThreadID: threadID,
-		Role:     model.RoleStudent,
-		Content:  answer,
-	})
+	messages, err := h.store.GetMessages(threadID)
 	if err != nil {
-		slog.Error("failed to add student message", "thread_id", threadID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
+		http.Error(w, "failed to load answer", http.StatusInternalServerError)
 		return
+	}
+	pending := len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent
+	if pending && messages[len(messages)-1].Content != answer {
+		http.Error(w, "a saved answer is awaiting evaluation; retry that answer", http.StatusConflict)
+		return
+	}
+	if !pending {
+		_, err = h.store.AddMessage(model.Message{ThreadID: threadID, Role: model.RoleStudent, Content: answer})
+		if err == nil {
+			messages, err = h.store.GetMessages(threadID)
+		}
+		if err != nil {
+			slog.Error("failed to save student message", "thread_id", threadID, "error", err)
+			http.Error(w, "failed to save answer", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	question, err := h.store.GetQuestion(thread.QuestionID)
@@ -252,14 +275,8 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	messages, err := h.store.GetMessages(threadID)
-	if err != nil {
-		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
-	result, _, err := h.llm.EvaluateAnswer(context.Background(), question, messages, bp.MaxFollowups, sessionID, threadID)
+	result, _, err := h.llm.EvaluateAnswer(r.Context(), question, messages, bp.MaxFollowups, sessionID, threadID)
 	if err != nil {
 		slog.Error("LLM evaluation failed", "error", err)
 		http.Error(w, "LLM evaluation failed: "+err.Error(), http.StatusInternalServerError)
@@ -375,6 +392,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Финальная оценка не отменяется при закрытии браузера; каждый вызов
+	// ограничен бюджетом llm.Client. Постоянная очередь реализуется в #48.
+	gradingCtx := context.WithoutCancel(r.Context())
 	var totalScore float64
 	var totalMaxPoints int
 
@@ -396,9 +416,18 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		result, err := h.llm.GradeThread(context.Background(), question, messages, sessionID, t.ID)
+		result, err := h.llm.GradeThread(gradingCtx, question, messages, sessionID, t.ID)
 		if err != nil {
 			slog.Error("grading failed", "thread_id", t.ID, "error", err)
+			if errors.Is(err, llm.ErrQueueTimeout) {
+				if restoreErr := h.store.UpdateSessionStatus(sessionID, model.StatusInProgress); restoreErr != nil {
+					slog.Error("failed to restore exam after capacity timeout", "session_id", sessionID, "error", restoreErr)
+					http.Error(w, "failed to restore exam", http.StatusInternalServerError)
+					return
+				}
+				http.Error(w, appI18n.T(r.Context(), "LLMQueueBusy"), http.StatusServiceUnavailable)
+				return
+			}
 			if err := h.store.UpsertScore(model.QuestionScore{
 				ThreadID:    t.ID,
 				LLMScore:    0,

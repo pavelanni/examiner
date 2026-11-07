@@ -2,10 +2,11 @@ package llm
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
+	"time"
 	"unicode/utf8"
 
 	"github.com/pavelanni/examiner/internal/llm/prompts"
@@ -38,10 +39,23 @@ type Client struct {
 	api           *openai.Client
 	model         string
 	promptVariant prompts.PromptVariant
+	settings      settings
+	slots         chan struct{}
+	gradingSlots  chan struct{}
 }
 
 // New creates a new LLM client.
-func New(baseURL, apiKey, modelName string, variant string) (*Client, error) {
+func New(baseURL, apiKey, modelName string, variant string, options ...Option) (*Client, error) {
+	settings := defaultSettings()
+	for _, option := range options {
+		if option == nil {
+			return nil, fmt.Errorf("nil LLM option")
+		}
+		option(&settings)
+	}
+	if err := settings.validate(); err != nil {
+		return nil, err
+	}
 	v := prompts.PromptVariant(variant)
 	if !prompts.IsValidVariant(string(v)) {
 		v = prompts.PromptStandard
@@ -53,10 +67,15 @@ func New(baseURL, apiKey, modelName string, variant string) (*Client, error) {
 	}
 
 	config := openai.DefaultConfig(apiKey)
+	config.HTTPClient = &http.Client{Timeout: settings.timeout}
 	if baseURL != "" {
 		config.BaseURL = baseURL
 	}
+	gradingLimit := max(1, settings.maxConcurrency-1)
 	return &Client{
+		settings:      settings,
+		slots:         make(chan struct{}, settings.maxConcurrency),
+		gradingSlots:  make(chan struct{}, gradingLimit),
 		api:           openai.NewClientWithConfig(config),
 		model:         modelName,
 		promptVariant: v,
@@ -64,8 +83,19 @@ func New(baseURL, apiKey, modelName string, variant string) (*Client, error) {
 }
 
 // Ping checks that the LLM endpoint is reachable by listing available models.
-func (c *Client) Ping(ctx context.Context) error {
-	_, err := c.api.ListModels(ctx)
+func (c *Client) Ping(ctx context.Context) (err error) {
+	started := time.Now()
+	defer func() {
+		slog.Info("LLM request completed", "op", "ping", "model", c.model, "attempt", 1,
+			"duration", time.Since(started), "result", outcome(err), "status", statusCode(err))
+	}()
+	ctx, cancel := context.WithTimeout(ctx, c.settings.timeout)
+	defer cancel()
+	if err := acquire(ctx, c.slots); err != nil {
+		return err
+	}
+	defer func() { <-c.slots }()
+	_, err = c.api.ListModels(ctx)
 	if err != nil {
 		return fmt.Errorf("LLM endpoint unreachable: %w", err)
 	}
@@ -95,43 +125,19 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 
 	chatMsgs = appendTrigger(chatMsgs)
 
-	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:    c.model,
-		Messages: chatMsgs,
-		ResponseFormat: &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
-		},
-		Temperature: 0.3,
-	})
+	result, raw, err := c.complete(ctx, openai.ChatCompletionRequest{
+		Model:          c.model,
+		Messages:       chatMsgs,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
+		Temperature:    0.3,
+	}, "evaluate", sessionID, threadID)
 	if err != nil {
-		return nil, "", fmt.Errorf("LLM API call: %w", err)
+		return nil, raw, err
 	}
 
-	slog.Info("LLM token usage",
-		"op", "evaluate",
-		"model", c.model,
-		"session_id", sessionID,
-		"thread_id", threadID,
-		"prompt_tokens", resp.Usage.PromptTokens,
-		"completion_tokens", resp.Usage.CompletionTokens,
-		"total_tokens", resp.Usage.TotalTokens,
-	)
+	validateGradeResult(result, question.MaxPoints)
 
-	if len(resp.Choices) == 0 {
-		return nil, "", fmt.Errorf("LLM returned no choices")
-	}
-
-	raw := resp.Choices[0].Message.Content
-	slog.Debug("LLM response", "raw", raw)
-
-	var result GradeResult
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return nil, raw, fmt.Errorf("parse LLM response: %w (raw: %s)", err, raw)
-	}
-
-	validateGradeResult(&result, question.MaxPoints)
-
-	return &result, raw, nil
+	return result, raw, nil
 }
 
 // GradeThread produces a final score for an entire question thread.
@@ -147,41 +153,19 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 
 	chatMsgs = appendTrigger(chatMsgs)
 
-	resp, err := c.api.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model:    c.model,
-		Messages: chatMsgs,
-		ResponseFormat: &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
-		},
-		Temperature: 0.1,
-	})
+	result, _, err := c.complete(ctx, openai.ChatCompletionRequest{
+		Model:          c.model,
+		Messages:       chatMsgs,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
+		Temperature:    0.1,
+	}, "grade", sessionID, threadID)
 	if err != nil {
-		return nil, fmt.Errorf("LLM grading API call: %w", err)
+		return nil, err
 	}
 
-	slog.Info("LLM token usage",
-		"op", "grade",
-		"model", c.model,
-		"session_id", sessionID,
-		"thread_id", threadID,
-		"prompt_tokens", resp.Usage.PromptTokens,
-		"completion_tokens", resp.Usage.CompletionTokens,
-		"total_tokens", resp.Usage.TotalTokens,
-	)
+	validateGradeResult(result, question.MaxPoints)
 
-	if len(resp.Choices) == 0 {
-		return nil, fmt.Errorf("LLM returned no choices for grading")
-	}
-
-	raw := resp.Choices[0].Message.Content
-	var result GradeResult
-	if err := json.Unmarshal([]byte(raw), &result); err != nil {
-		return nil, fmt.Errorf("parse grading response: %w (raw: %s)", err, raw)
-	}
-
-	validateGradeResult(&result, question.MaxPoints)
-
-	return &result, nil
+	return result, nil
 }
 
 func validateGradeResult(result *GradeResult, maxPoints int) {
