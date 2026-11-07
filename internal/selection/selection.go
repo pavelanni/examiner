@@ -51,8 +51,17 @@ func Parse(raw any) (model.Distribution, error) {
 		}
 		d[level] = n
 	}
-	if len(errs) == 0 && d.Total() == 0 {
-		errs = append(errs, errors.New("the total number of questions must be greater than 0"))
+	var total int64
+	for _, n := range d {
+		total += int64(n)
+	}
+	if len(errs) == 0 {
+		switch {
+		case total == 0:
+			errs = append(errs, errors.New("the total number of questions must be greater than 0"))
+		case total > int64(int(^uint(0)>>1)):
+			errs = append(errs, errors.New("the total number of questions is too large for this platform"))
+		}
 	}
 	if len(errs) > 0 {
 		return nil, errors.Join(errs...)
@@ -60,6 +69,7 @@ func Parse(raw any) (model.Distribution, error) {
 	return d, nil
 }
 
+// toMap accepts the map representations returned by supported config decoders.
 func toMap(raw any) (map[string]any, bool) {
 	switch m := raw.(type) {
 	case map[string]any:
@@ -125,6 +135,7 @@ func count(v any) (int, error) {
 	return int(n), nil
 }
 
+// levelList formats the known difficulties for validation errors.
 func levelList() string {
 	names := make([]string, 0, len(model.Difficulties))
 	for _, l := range model.Difficulties {
@@ -143,7 +154,7 @@ func Unique(questions []model.Question) []model.Question {
 	seenText := make(map[string]bool, len(sorted))
 	out := sorted[:0]
 	for _, q := range sorted {
-		norm := q.Text
+		norm := questionKey(q)
 		if seenID[q.ID] || seenText[norm] {
 			continue
 		}
@@ -153,11 +164,23 @@ func Unique(questions []model.Question) []model.Question {
 	return out
 }
 
-// Pools groups the questions by difficulty after Unique.
+// questionKey identifies repeated question text. Normalized text is added in #46.
+func questionKey(q model.Question) string { return q.Text }
+
+// Pools removes repeated IDs and groups questions by difficulty. Equal text
+// in different difficulties stays eligible until the distribution is known.
 func Pools(questions []model.Question) map[model.Difficulty][]model.Question {
 	pools := make(map[model.Difficulty][]model.Question)
-	for _, q := range Unique(questions) {
+	seen := make(map[int64]bool)
+	for _, q := range questions {
+		if seen[q.ID] {
+			continue
+		}
+		seen[q.ID] = true
 		pools[q.Difficulty] = append(pools[q.Difficulty], q)
+	}
+	for level, qs := range pools {
+		pools[level] = Unique(qs)
 	}
 	return pools
 }
@@ -171,9 +194,17 @@ type Shortage struct {
 // Shortages lists, easiest first, the difficulties whose pool is too small
 // for d.
 func Shortages(pools map[model.Difficulty][]model.Question, d model.Distribution) []Shortage {
+	counts := make(model.Distribution)
+	if sharedText(pools) {
+		_, counts = allocate(pools, d, nil)
+	} else {
+		for _, level := range model.Difficulties {
+			counts[level] = len(pools[level])
+		}
+	}
 	var out []Shortage
 	for _, level := range model.Difficulties {
-		if need, have := d[level], len(pools[level]); need > have {
+		if need, have := d[level], counts[level]; need > have {
 			out = append(out, Shortage{Difficulty: level, Need: need, Have: have})
 		}
 	}
@@ -185,6 +216,7 @@ type ShortageError struct {
 	Shortages []Shortage
 }
 
+// Error describes the difficulties that cannot be filled without repeats.
 func (e *ShortageError) Error() string {
 	parts := make([]string, 0, len(e.Shortages))
 	for _, s := range e.Shortages {
@@ -200,12 +232,79 @@ func Draw(pools map[model.Difficulty][]model.Question, d model.Distribution, rng
 	if s := Shortages(pools, d); len(s) > 0 {
 		return nil, &ShortageError{Shortages: s}
 	}
-	out := make([]model.Question, 0, d.Total())
-	for _, level := range model.Difficulties {
-		out = append(out, sample(pools[level], d[level], rng)...)
+	var out []model.Question
+	if sharedText(pools) {
+		out, _ = allocate(pools, d, rng)
+	} else {
+		out = make([]model.Question, 0, d.Total())
+		for _, level := range model.Difficulties {
+			out = append(out, sample(pools[level], d[level], rng)...)
+		}
 	}
 	sortByLevel(out)
 	return out, nil
+}
+
+// sharedText reports whether two difficulty pools compete for the same text.
+func sharedText(pools map[model.Difficulty][]model.Question) bool {
+	seen := make(map[string]bool)
+	for _, level := range model.Difficulties {
+		for _, q := range pools[level] {
+			key := questionKey(q)
+			if seen[key] {
+				return true
+			}
+			seen[key] = true
+		}
+	}
+	return false
+}
+
+// allocate finds a maximum assignment of unique texts to difficulty slots.
+// Reassigning an already chosen text lets a different difficulty use it when
+// the previous one has an alternative. Random candidate order varies the draw;
+// nil rng gives deterministic availability checks without mutating the pools.
+func allocate(pools map[model.Difficulty][]model.Question, d model.Distribution, rng *rand.Rand) ([]model.Question, model.Distribution) {
+	candidates := make(map[model.Difficulty][]model.Question, len(pools))
+	for _, level := range model.Difficulties {
+		candidates[level] = slices.Clone(pools[level])
+		if rng != nil {
+			rng.Shuffle(len(candidates[level]), func(i, j int) {
+				candidates[level][i], candidates[level][j] = candidates[level][j], candidates[level][i]
+			})
+		}
+	}
+	chosen := make(map[string]model.Question)
+	var assign func(model.Difficulty, map[model.Difficulty]bool) bool
+	assign = func(level model.Difficulty, visited map[model.Difficulty]bool) bool {
+		if visited[level] {
+			return false
+		}
+		visited[level] = true
+		for _, q := range candidates[level] {
+			key := questionKey(q)
+			previous, used := chosen[key]
+			if !used || assign(previous.Difficulty, visited) {
+				chosen[key] = q
+				return true
+			}
+		}
+		return false
+	}
+	counts := make(model.Distribution)
+	for _, level := range model.Difficulties {
+		for counts[level] < d[level] {
+			if !assign(level, make(map[model.Difficulty]bool)) {
+				break
+			}
+			counts[level]++
+		}
+	}
+	out := make([]model.Question, 0, len(chosen))
+	for _, q := range chosen {
+		out = append(out, q)
+	}
+	return out, counts
 }
 
 // sample returns n distinct elements of qs chosen uniformly at random.
@@ -219,6 +318,7 @@ func sample(qs []model.Question, n int, rng *rand.Rand) []model.Question {
 	return c[:n]
 }
 
+// sortByLevel gives an unshuffled variant a stable difficulty/ID order.
 func sortByLevel(qs []model.Question) {
 	slices.SortFunc(qs, func(a, b model.Question) int {
 		if ra, rb := levelRank(a.Difficulty), levelRank(b.Difficulty); ra != rb {

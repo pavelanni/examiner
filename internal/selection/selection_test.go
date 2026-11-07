@@ -3,6 +3,7 @@ package selection
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/rand/v2"
 	"slices"
 	"strings"
@@ -25,6 +26,7 @@ func fromYAML(t *testing.T, doc string) any {
 	return v.Get("question_selection")
 }
 
+// TestParseValid accepts supported distributions decoded from YAML.
 func TestParseValid(t *testing.T) {
 	tests := []struct {
 		name string
@@ -50,6 +52,7 @@ func TestParseValid(t *testing.T) {
 	}
 }
 
+// TestParseNotSet keeps legacy mode when the distribution key is absent.
 func TestParseNotSet(t *testing.T) {
 	d, err := Parse(fromYAML(t, "num-questions: 3\n"))
 	if d != nil || err != nil {
@@ -57,6 +60,7 @@ func TestParseNotSet(t *testing.T) {
 	}
 }
 
+// TestParseInvalid rejects malformed counts and reports all invalid entries.
 func TestParseInvalid(t *testing.T) {
 	tests := []struct {
 		name string
@@ -92,6 +96,7 @@ func TestParseInvalid(t *testing.T) {
 	}
 }
 
+// TestParseJSONNumbers accepts integral numbers decoded from JSON.
 func TestParseJSONNumbers(t *testing.T) {
 	d, err := Parse(map[string]any{"easy": float64(2), "hard": float64(1)})
 	if err != nil || d["easy"] != 2 || d["hard"] != 1 {
@@ -113,6 +118,7 @@ func bank(n int) []model.Question {
 	return qs
 }
 
+// ids extracts IDs for set and order comparisons.
 func ids(qs []model.Question) []int64 {
 	out := make([]int64, 0, len(qs))
 	for _, q := range qs {
@@ -121,6 +127,7 @@ func ids(qs []model.Question) []int64 {
 	return out
 }
 
+// TestDrawExactDistribution checks exact counts, uniqueness and varied sets across seeds.
 func TestDrawExactDistribution(t *testing.T) {
 	d := model.Distribution{"easy": 2, "medium": 2, "hard": 1}
 	pools := Pools(bank(10))
@@ -150,6 +157,7 @@ func TestDrawExactDistribution(t *testing.T) {
 	}
 }
 
+// TestDrawShortage rejects incomplete variants with per-difficulty diagnostics.
 func TestDrawShortage(t *testing.T) {
 	pools := Pools(bank(1))
 	got, err := Draw(pools, model.Distribution{"easy": 1, "medium": 3, "hard": 2}, rand.New(rand.NewPCG(1, 1)))
@@ -163,6 +171,7 @@ func TestDrawShortage(t *testing.T) {
 	}
 }
 
+// TestUniqueDropsRepeats keeps canonical IDs without discarding other difficulty alternatives.
 func TestUniqueDropsRepeats(t *testing.T) {
 	qs := []model.Question{
 		{ID: 3, Text: "what is x", Difficulty: "easy"},
@@ -174,7 +183,118 @@ func TestUniqueDropsRepeats(t *testing.T) {
 		t.Errorf("Unique = %v, want [1 2]", got)
 	}
 	pools := Pools(qs)
-	if len(pools["hard"]) != 1 || len(pools["easy"]) != 1 {
+	if len(pools["hard"]) != 1 || len(pools["easy"]) != 2 {
 		t.Errorf("pools = %v", pools)
+	}
+}
+
+// TestParseTotalBounds checks the same raw values on both 32- and 64-bit builds.
+func TestParseTotalBounds(t *testing.T) {
+	d, err := Parse(map[string]any{"easy": int64(math.MaxInt32), "medium": 1})
+	if int64(int(^uint(0)>>1)) == math.MaxInt32 {
+		if err == nil || !strings.Contains(err.Error(), "too large for this platform") {
+			t.Fatalf("overflow must be rejected: %v, %v", d, err)
+		}
+	} else if err != nil || int64(d.Total()) != int64(math.MaxInt32)+1 {
+		t.Fatalf("representable total must be preserved: %v, %v", d, err)
+	}
+}
+
+// TestDrawAllocatesDuplicateDifficulties exercises alternatives and impossible overlaps.
+func TestDrawAllocatesDuplicateDifficulties(t *testing.T) {
+	bank := []model.Question{
+		{ID: 1, Text: "shared", Difficulty: "easy"},
+		{ID: 2, Text: "shared", Difficulty: "hard"},
+		{ID: 3, Text: "alternative", Difficulty: "easy"},
+	}
+	for _, test := range []struct {
+		name string
+		qs   []model.Question
+		d    model.Distribution
+		ok   bool
+	}{
+		{"zero easy", bank[:2], model.Distribution{"easy": 0, "hard": 1}, true},
+		{"must reassign", bank, model.Distribution{"easy": 1, "hard": 1}, true},
+		{"shared text cannot fill two slots", bank[:2], model.Distribution{"easy": 1, "hard": 1}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pools := Pools(test.qs)
+			if got := len(Shortages(pools, test.d)) == 0; got != test.ok {
+				t.Fatalf("availability=%v, want %v", got, test.ok)
+			}
+			for seed := range uint64(20) {
+				qs, err := Draw(pools, test.d, rand.New(rand.NewPCG(seed, 1)))
+				if (err == nil) != test.ok {
+					t.Fatalf("seed %d: %v", seed, err)
+				}
+				if !test.ok {
+					if qs != nil {
+						t.Fatal("shortage returned partial questions")
+					}
+					continue
+				}
+				if len(qs) != test.d.Total() || len(Unique(qs)) != len(qs) {
+					t.Fatalf("invalid draw: %v", qs)
+				}
+				counts := make(model.Distribution)
+				for _, q := range qs {
+					counts[q.Difficulty]++
+				}
+				for level, need := range test.d {
+					if counts[level] != need {
+						t.Fatalf("distribution %v, want %v", counts, test.d)
+					}
+				}
+			}
+		})
+	}
+}
+
+// TestAllocationAgainstExhaustiveChoices compares availability with every small valid set.
+func TestAllocationAgainstExhaustiveChoices(t *testing.T) {
+	for a := 1; a < 8; a++ {
+		for b := 1; b < 8; b++ {
+			for c := 1; c < 8; c++ {
+				masks := []int{a, b, c}
+				var qs []model.Question
+				for group, mask := range masks {
+					for level, difficulty := range model.Difficulties {
+						if mask&(1<<level) != 0 {
+							qs = append(qs, model.Question{ID: int64(len(qs) + 1), Text: fmt.Sprint("text", group), Difficulty: difficulty})
+						}
+					}
+				}
+				var possible func(int, [3]int) bool
+				possible = func(group int, remaining [3]int) bool {
+					if group == len(masks) {
+						return remaining == [3]int{}
+					}
+					if possible(group+1, remaining) {
+						return true
+					}
+					for level := range 3 {
+						if remaining[level] > 0 && masks[group]&(1<<level) != 0 {
+							next := remaining
+							next[level]--
+							if possible(group+1, next) {
+								return true
+							}
+						}
+					}
+					return false
+				}
+				pools := Pools(qs)
+				for easy := range 3 {
+					for medium := range 3 {
+						for hard := range 3 {
+							d := model.Distribution{"easy": easy, "medium": medium, "hard": hard}
+							if got, want := len(Shortages(pools, d)) == 0, possible(0, [3]int{easy, medium, hard}); got != want {
+								t.Fatalf("masks=%v, distribution=%v: available=%v, want %v", masks, d, got, want)
+							}
+						}
+					}
+				}
+			}
+		}
 	}
 }

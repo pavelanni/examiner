@@ -312,6 +312,19 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 // Empty strings mean no filtering on that field.
 // Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
+	if topic != "" {
+		return s.listQuestionsFiltered(difficulty, &topic)
+	}
+	return s.listQuestionsFiltered(difficulty, nil)
+}
+
+// ListQuestionsInTopic filters by the exact topic, including an empty topic.
+func (s *Store) ListQuestionsInTopic(difficulty, topic string) ([]model.Question, error) {
+	return s.listQuestionsFiltered(difficulty, &topic)
+}
+
+// listQuestionsFiltered distinguishes an exact topic from the unfiltered bank.
+func (s *Store) listQuestionsFiltered(difficulty string, topic *string) ([]model.Question, error) {
 	query := `SELECT id, course_id, text, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
@@ -328,9 +341,9 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 			}
 		}
 	}
-	if topic != "" {
+	if topic != nil {
 		query += ` AND topic = ?`
-		args = append(args, topic)
+		args = append(args, *topic)
 	}
 	rows, err := s.db.Query(query, args...)
 	if err != nil {

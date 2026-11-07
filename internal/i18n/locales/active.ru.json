@@ -142,5 +142,6 @@
   {"id": "ExamShortage", "other": "В теме «{{.Topic}}» недостаточно вопросов уровня {{.Difficulty}}: требуется {{.Need}}, доступно {{.Have}}."},
   {"id": "ExamNoQuestions", "other": "нет вопросов, подходящих под настройки экзамена"},
   {"id": "ExamNoQuestionsInTopic", "other": "В теме «{{.Topic}}» нет вопросов, подходящих под настройки экзамена."},
-  {"id": "ExamChooseTopic", "other": "Чтобы начать экзамен, выберите одну из предложенных тем."}
+  {"id": "ExamChooseTopic", "other": "Чтобы начать экзамен, выберите одну из предложенных тем."},
+  {"id": "ExamUntitledTopic", "other": "Без темы"}
 ]

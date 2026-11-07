@@ -8,6 +8,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// isStudentOnly identifies students for links that differ from teacher review.
 func isStudentOnly(ctx context.Context) bool {
 	u := model.UserFromContext(ctx)
 	return u != nil && u.Role == model.UserRoleStudent
@@ -30,6 +31,7 @@ type IndexData struct {
 	Error          string // why the last start failed
 }
 
+// openTopics filters the topics that can supply a complete new exam.
 func openTopics(topics []TopicChoice) []TopicChoice {
 	var out []TopicChoice
 	for _, c := range topics {
@@ -40,6 +42,7 @@ func openTopics(topics []TopicChoice) []TopicChoice {
 	return out
 }
 
+// distributionParams supplies the localized summary of an exam's exact counts.
 func distributionParams(d model.Distribution) map[string]any {
 	return map[string]any{
 		"Easy":   d[model.DifficultyEasy],
@@ -47,6 +50,14 @@ func distributionParams(d model.Distribution) map[string]any {
 		"Hard":   d[model.DifficultyHard],
 		"Total":  d.Total(),
 	}
+}
+
+// topicLabel gives an explicitly empty topic a visible, localized name.
+func topicLabel(ctx context.Context, topic string) string {
+	if topic == "" {
+		return t(ctx, "ExamUntitledTopic")
+	}
+	return topic
 }
 
 templ IndexPage(d IndexData) {
@@ -60,14 +71,14 @@ templ IndexPage(d IndexData) {
 		}
 		<section>
 			<h2>{ t(ctx, "StartNewExam") }</h2>
-			if d.AvailableCount > 0 {
+			if d.AvailableCount > 0 || d.Config.Selection != nil {
 				@examSize(d)
 				if len(openTopics(d.Topics)) == 0 {
 					<p>{ t(ctx, "ExamNoTopicsAvailable") }</p>
 					<ul>
 						for _, c := range d.Topics {
 							if c.Note != "" {
-								<li>{ c.Topic }: { c.Note }</li>
+								<li>{ topicLabel(ctx, c.Topic) }: { c.Note }</li>
 							}
 						}
 					</ul>
@@ -76,18 +87,18 @@ templ IndexPage(d IndexData) {
 						<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 						if len(d.Topics) > 1 {
 							<label for="topic">{ t(ctx, "SelectTopic") }</label>
-							<select id="topic" name="topic" required>
+							<select id="topic" name="topic">
 								for _, c := range d.Topics {
 									if c.Available {
-										<option value={ c.Topic }>{ c.Topic }</option>
+										<option value={ c.Topic }>{ topicLabel(ctx, c.Topic) }</option>
 									} else {
-										<option value={ c.Topic } disabled>{ c.Topic } — { c.Note }</option>
+										<option value={ c.Topic } disabled>{ topicLabel(ctx, c.Topic) } — { c.Note }</option>
 									}
 								}
 							</select>
 						} else {
 							<input type="hidden" name="topic" value={ d.Topics[0].Topic }/>
-							<p><small>{ t(ctx, "FilterTopic") }: <strong>{ d.Topics[0].Topic }</strong></small></p>
+							<p><small>{ t(ctx, "FilterTopic") }: <strong>{ topicLabel(ctx, d.Topics[0].Topic) }</strong></small></p>
 						}
 						<button type="submit">
 							if len(d.Topics) <= 1 || d.Config.Selection != nil {
