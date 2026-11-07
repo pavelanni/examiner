@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -26,6 +28,7 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/store"
 	"github.com/pavelanni/examiner/internal/userutil"
 )
@@ -177,6 +180,58 @@ func viperForCmd(cmd *cobra.Command) *viper.Viper {
 	return v
 }
 
+// examSelection reads question_selection, the number of questions per
+// difficulty (FR3-01). It replaces num-questions and difficulty; setting
+// both is an error rather than silently ignoring one of them.
+func examSelection(v *viper.Viper) (model.Distribution, error) {
+	// Read the raw value: GetInt would turn "abc" into 0 and 1.5 into 1.
+	d, err := selection.Parse(v.Get("question_selection"))
+	if err != nil {
+		return nil, fmt.Errorf("question_selection: %w", err)
+	}
+	// Unchanged CLI defaults are not explicit settings. IsSet also catches
+	// zero, empty and invalid legacy values that GetInt/GetString can hide.
+	if d != nil && (v.IsSet("num-questions") || v.IsSet("difficulty")) {
+		return nil, errors.New("question_selection cannot be combined with num-questions or difficulty: remove one of them")
+	}
+	return d, nil
+}
+
+// logTopicAvailability logs, per topic, how many questions of
+// each difficulty exams can draw from, and warns about topics too small
+// for d. Students are not offered such topics.
+func logTopicAvailability(db *store.Store, d model.Distribution) error {
+	questions, err := db.ListQuestionsFiltered("", "")
+	if err != nil {
+		return err
+	}
+	byTopic := make(map[string][]model.Question)
+	for _, q := range questions {
+		byTopic[q.Topic] = append(byTopic[q.Topic], q)
+	}
+	if len(byTopic) == 0 {
+		slog.Warn("no questions: no exam can start")
+	}
+	topics := make([]string, 0, len(byTopic))
+	for t := range byTopic {
+		topics = append(topics, t)
+	}
+	slices.Sort(topics)
+	for _, topic := range topics {
+		pools := selection.Pools(byTopic[topic])
+		attrs := []any{"topic", topic}
+		for _, level := range model.Difficulties {
+			attrs = append(attrs, string(level), len(pools[level]))
+		}
+		slog.Info("questions available", attrs...)
+		for _, s := range selection.Shortages(pools, d) {
+			slog.Warn("not enough questions for an exam in topic", "topic", topic,
+				"difficulty", string(s.Difficulty), "need", s.Need, "have", s.Have)
+		}
+	}
+	return nil
+}
+
 // llmOptions отклоняет некорректные значения вместо неявного преобразования в ноль.
 func llmOptions(v *viper.Viper) ([]llm.Option, error) {
 	timeout, err := time.ParseDuration(strings.TrimSpace(v.GetString("llm-timeout")))
@@ -202,6 +257,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	// Validate the distribution before opening or changing the database.
+	questionSelection, err := examSelection(v)
+	if err != nil {
+		return err
+	}
+
 	// Open database.
 	db, err := store.New(v.GetString("db"))
 	if err != nil {
@@ -217,6 +278,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// Load questions from all specified files.
 	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
 		return fmt.Errorf("load questions: %w", err)
+	}
+
+	if questionSelection != nil {
+		if err := logTopicAvailability(db, questionSelection); err != nil {
+			return fmt.Errorf("question availability: %w", err)
+		}
 	}
 
 	scoreVisibility, err := model.ParseScoreVisibility(strings.ToLower(strings.TrimSpace(v.GetString("score-visibility"))))
@@ -263,6 +330,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		Topic:             v.GetString("topic"),
 		MaxFollowups:      v.GetInt("max-followups"),
 		Shuffle:           v.GetBool("shuffle"),
+		Selection:         questionSelection,
 		BasePath:          basePath,
 		SecureCookies:     v.GetBool("secure-cookies"),
 		AllowRegistration: v.GetBool("allow-registration"),
@@ -307,6 +375,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"score_visibility", string(examCfg.ScoreVisibility),
 		"allow_registration", examCfg.AllowRegistration,
 		"shuffle", examCfg.Shuffle,
+		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"base_path", basePath,
 	)
 	return http.ListenAndServe(addr, r)

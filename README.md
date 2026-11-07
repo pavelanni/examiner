@@ -79,7 +79,7 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
-| `--shuffle` | | `false` | Randomize question order |
+| `--shuffle` | | `true` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
@@ -132,6 +132,37 @@ base-path: /ru
 prompt-variant: standard
 secure-cookies: true
 ```
+
+#### Questions per difficulty
+
+To give every student the same number of questions of each difficulty,
+set `question_selection` in the config file (it has no flag or
+environment variable):
+
+```yaml
+question_selection:
+  easy: 2
+  medium: 2
+  hard: 1
+```
+
+Each exam then has exactly 2 easy, 2 medium and 1 hard question from the
+chosen topic, drawn at random without repeats. The rules:
+
+- Counts are whole numbers of at least 0 (`-1`, `1.5` and `"two"` are
+  rejected), the levels are `easy`, `medium` and `hard`, and the total
+  must be above 0.
+- `question_selection` replaces `num-questions` and `difficulty`;
+  explicitly setting it together with either of them in YAML, environment
+  variables or flags is an error, even with `num-questions: 0` or an empty
+  `difficulty`. Unchanged flag defaults do not conflict.
+- An invalid value stops the server at startup with the list of
+  problems.
+
+At startup the server logs how many questions of each difficulty every
+topic has and warns about topics that are too small. The home page
+offers only topics where an exam can be put together and shows why the
+others are unavailable. The home page also shows the exam size.
 
 #### Examples
 

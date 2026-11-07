@@ -135,5 +135,12 @@
   {"id": "RegistrationUsernameTaken", "other": "This username is already taken. Choose another one."},
   {"id": "RegistrationUnavailable", "other": "Registration is temporarily unavailable. Please try again later."},
   {"id": "RegistrationInvalidForm", "other": "The registration form is invalid or too large."},
-  {"id": "RegistrationRateLimited", "other": "Too many registration attempts. Wait a moment and try again."}
+  {"id": "RegistrationRateLimited", "other": "Too many registration attempts. Wait a moment and try again."},
+  {"id": "ExamNoTopicsAvailable", "other": "No topic is open for a new exam right now."},
+  {"id": "ExamDistribution", "other": "Each exam: {{.Easy}} easy, {{.Medium}} medium and {{.Hard}} hard questions ({{.Total}} in total)."},
+  {"id": "ExamShortageShort", "other": "not enough {{.Difficulty}} questions: {{.Need}} needed, {{.Have}} available."},
+  {"id": "ExamShortage", "other": "Not enough {{.Difficulty}} questions in topic \"{{.Topic}}\": {{.Need}} needed, {{.Have}} available."},
+  {"id": "ExamNoQuestions", "other": "no questions match the exam settings"},
+  {"id": "ExamNoQuestionsInTopic", "other": "No questions in topic \"{{.Topic}}\" match the exam settings."},
+  {"id": "ExamChooseTopic", "other": "Choose one of the listed topics to start an exam."}
 ]

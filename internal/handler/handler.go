@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -155,117 +154,6 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Post("/admin/questions", h.handleUploadQuestions)
 		})
 	})
-}
-
-func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	user := model.UserFromContext(r.Context())
-
-	var sessions []model.ExamSession
-	var err error
-	if user.Role == model.UserRoleStudent {
-		sessions, err = h.store.ListSessionsByUser(user.ID)
-	} else {
-		sessions, err = h.store.ListSessions()
-	}
-	if err != nil {
-		slog.Error("failed to list sessions", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Get available topics for the dropdown.
-	allTopics, err := h.store.ListDistinctTopics()
-	if err != nil {
-		slog.Error("failed to list topics", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// If --topic is set, restrict topics to only that value.
-	var topics []string
-	if h.config.Topic != "" {
-		for _, t := range allTopics {
-			if t == h.config.Topic {
-				topics = append(topics, t)
-				break
-			}
-		}
-	} else {
-		topics = allTopics
-	}
-
-	// Count questions matching the configured filters.
-	filtered, err := h.store.ListQuestionsFiltered(h.config.Difficulty, h.config.Topic)
-	if err != nil {
-		slog.Error("failed to list filtered questions", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	availableCount := len(filtered)
-	examCount := availableCount
-	if h.config.NumQuestions > 0 && h.config.NumQuestions < availableCount {
-		examCount = h.config.NumQuestions
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.IndexPage(sessions, availableCount, examCount, h.config, topics).Render(r.Context(), w); err != nil {
-		slog.Error("render error", "error", err)
-	}
-}
-
-func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
-	// Use topic from form (dropdown) if provided, otherwise fall back to CLI flag.
-	topic := r.FormValue("topic")
-	if topic == "" {
-		topic = h.config.Topic
-	}
-
-	questions, err := h.store.ListQuestionsFiltered(h.config.Difficulty, topic)
-	if err != nil {
-		slog.Error("failed to list questions for exam", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if len(questions) == 0 {
-		http.Error(w, "No questions match the configured filters.", http.StatusBadRequest)
-		return
-	}
-
-	// Deduplicate questions by text (guards against legacy DB duplicates).
-	seen := make(map[string]bool, len(questions))
-	unique := questions[:0]
-	for _, q := range questions {
-		if !seen[q.Text] {
-			seen[q.Text] = true
-			unique = append(unique, q)
-		}
-	}
-	questions = unique
-
-	if h.config.Shuffle {
-		rand.Shuffle(len(questions), func(i, j int) {
-			questions[i], questions[j] = questions[j], questions[i]
-		})
-	}
-
-	if h.config.NumQuestions > 0 && h.config.NumQuestions < len(questions) {
-		questions = questions[:h.config.NumQuestions]
-	}
-
-	var questionIDs []int64
-	for _, q := range questions {
-		questionIDs = append(questionIDs, q.ID)
-	}
-
-	user := model.UserFromContext(r.Context())
-	sessionID, err := h.store.CreateSession(1, user.ID, questionIDs)
-	if err != nil {
-		slog.Error("failed to create session", "error", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, h.path(fmt.Sprintf("/exam/%d", sessionID)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
