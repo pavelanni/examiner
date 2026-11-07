@@ -12,6 +12,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4
 	golang.org/x/crypto v0.53.0
 	golang.org/x/text v0.38.0
+	golang.org/x/time v0.14.0
 	modernc.org/sqlite v1.47.0
 )
 

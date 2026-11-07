@@ -131,5 +131,6 @@
   {"id": "RegistrationPasswordMismatch", "other": "Пароли не совпадают."},
   {"id": "RegistrationUsernameTaken", "other": "Этот логин уже занят. Выберите другой."},
   {"id": "RegistrationUnavailable", "other": "Регистрация временно недоступна. Попробуйте позже."},
-  {"id": "RegistrationInvalidForm", "other": "Форма регистрации некорректна или слишком велика."}
+  {"id": "RegistrationInvalidForm", "other": "Форма регистрации некорректна или слишком велика."},
+  {"id": "RegistrationRateLimited", "other": "Слишком много попыток регистрации. Подождите немного и попробуйте ещё раз."}
 ]

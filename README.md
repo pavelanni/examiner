@@ -198,6 +198,11 @@ underscores or hyphens, starting with a letter or digit. Display names support
 Unicode and are limited to 120 characters. Passwords require at least eight
 characters and may not exceed bcrypt's 72-byte limit.
 
+Registration is limited per process to one attempt per second with a burst of
+four, and at most two concurrent password hashes. Excess attempts receive
+HTTP 429 with `Retry-After: 1`; the user can retry after waiting. These limits
+also apply to attempts using an existing username.
+
 New accounts are active students. Roles, activation state, and roster identifiers
 cannot be selected through this form. After registration, the student signs in
 through the normal login page. Existing accounts cannot be overwritten.

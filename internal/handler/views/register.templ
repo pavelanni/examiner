@@ -13,7 +13,7 @@ templ RegisterPage(username, displayName, errorMsg string) {
 			<input type="text" id="username" name="username" value={ username } minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,63}" autocomplete="username" aria-describedby="username-help" required autofocus/>
 			<small id="username-help">{ t(ctx, "RegistrationUsernameHelp") }</small>
 			<label for="display_name">{ t(ctx, "DisplayName") }</label>
-			<input type="text" id="display_name" name="display_name" value={ displayName } maxlength="120" autocomplete="name" required/>
+			<input type="text" id="display_name" name="display_name" value={ displayName } autocomplete="name" required/>
 			<label for="password">{ t(ctx, "Password") }</label>
 			<input type="password" id="password" name="password" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="password-help" required/>
 			<small id="password-help">{ t(ctx, "RegistrationPasswordHelp") }</small>

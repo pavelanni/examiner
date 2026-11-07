@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/time/rate"
 
 	"github.com/pavelanni/examiner/internal/handler/views"
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
@@ -17,6 +20,34 @@ import (
 )
 
 var registrationUsername = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{2,63}$`)
+
+// registrationAdmission ограничивает дорогое хеширование в пределах одного процесса.
+// Общий bucket не доверяет подделываемым forwarded-заголовкам: 1 запрос/с,
+// burst 4 и максимум 2 одновременных операции без очереди ожидания.
+type registrationAdmission struct {
+	once    sync.Once
+	limiter *rate.Limiter
+	slots   chan struct{}
+}
+
+// acquire отклоняет перегрузку до обращения к хранилищу или bcrypt.
+func (a *registrationAdmission) acquire() bool {
+	a.once.Do(func() {
+		a.limiter = rate.NewLimiter(rate.Every(time.Second), 4)
+		a.slots = make(chan struct{}, 2)
+	})
+	if !a.limiter.Allow() {
+		return false
+	}
+	select {
+	case a.slots <- struct{}{}:
+		return true
+	default:
+		return false
+	}
+}
+
+func (a *registrationAdmission) release() { <-a.slots }
 
 // registrationFormLimit ограничивает тело до разбора CSRF-токена и полей формы.
 func registrationFormLimit(next http.Handler) http.Handler {
@@ -65,6 +96,12 @@ func (h *Handler) handleRegister(w http.ResponseWriter, r *http.Request) {
 		h.renderRegistration(w, r, username, displayName, errorKey, http.StatusBadRequest)
 		return
 	}
+	if !h.registration.acquire() {
+		w.Header().Set("Retry-After", "1")
+		h.renderRegistration(w, r, username, displayName, "RegistrationRateLimited", http.StatusTooManyRequests)
+		return
+	}
+	defer h.registration.release()
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.Error("failed to hash registration password", "error", err)

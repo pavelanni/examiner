@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/time/rate"
 
 	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
@@ -21,10 +22,11 @@ import (
 )
 
 type registrationEnv struct {
-	store  *store.Store
-	server *httptest.Server
-	client *http.Client
-	prefix string
+	handler *Handler
+	store   *store.Store
+	server  *httptest.Server
+	client  *http.Client
+	prefix  string
 }
 
 // newRegistrationEnv использует настоящий роутер, SQLite и cookies браузера.
@@ -60,7 +62,7 @@ func newRegistrationEnv(t *testing.T, enabled bool, prefix, lang string, secure 
 		t.Fatal(err)
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &registrationEnv{s, server, client, prefix}
+	return &registrationEnv{handler: h, store: s, server: server, client: client, prefix: prefix}
 }
 
 // request сохраняет статус, cookies и редиректы для проверок полного сценария.
@@ -200,7 +202,8 @@ func TestRegistrationValidation(t *testing.T) {
 	cases := []struct{ name, field, value, confirm string }{
 		{"short username", "username", "ab", ""}, {"invalid username", "username", "bad name", ""}, {"long username", "username", strings.Repeat("a", 65), ""},
 		{"blank name", "display_name", "  ", ""}, {"long name", "display_name", strings.Repeat("Ж", 121), ""},
-		{"short password", "password", "short", "short"}, {"long password", "password", strings.Repeat("a", 73), strings.Repeat("a", 73)},
+		{"short password", "password", "short", "short"},
+		{"short multibyte password", "password", strings.Repeat("Ж", 7), strings.Repeat("Ж", 7)}, {"long password", "password", strings.Repeat("a", 73), strings.Repeat("a", 73)},
 		{"UTF8 byte limit", "password", strings.Repeat("Ж", 37), strings.Repeat("Ж", 37)},
 		{"mismatch", "password_confirm", "different-password", ""},
 	}
@@ -258,7 +261,7 @@ func TestRegistrationCSRFAndBodyLimit(t *testing.T) {
 func TestConcurrentRegistrationKeepsOneAccount(t *testing.T) {
 	env := newRegistrationEnv(t, true, "", "en", false)
 	token := env.token(t)
-	const clients = 4
+	const clients = 2
 	statuses := make(chan int, clients)
 	var wg sync.WaitGroup
 	for range clients {
@@ -344,5 +347,121 @@ func TestRegistrationCannotOverwriteExistingAdmin(t *testing.T) {
 	}
 	if admin == nil || admin.Role != model.UserRoleAdmin || admin.Active || admin.PasswordHash != string(hash) || admin.ExternalID != "admin-id" || admin.DisplayName != "Existing Administrator" {
 		t.Fatalf("existing admin was changed: %+v", admin)
+	}
+}
+
+// TestRegistrationBackpressure отклоняет перегрузку до создания пользователя и позволяет повторить запрос.
+func TestRegistrationBackpressure(t *testing.T) {
+	for _, kind := range []string{"rate", "concurrency"} {
+		t.Run(kind, func(t *testing.T) {
+			env := newRegistrationEnv(t, true, "", "en", false)
+			token := env.token(t)
+			admission := &env.handler.registration
+			if !admission.acquire() {
+				t.Fatal("initial admission rejected")
+			}
+			admission.release()
+			held := 0
+			t.Cleanup(func() {
+				for held > 0 {
+					admission.release()
+					held--
+				}
+			})
+			if kind == "rate" {
+				admission.limiter = rate.NewLimiter(0, 0)
+			} else {
+				admission.limiter.SetLimit(rate.Inf)
+				for range 2 {
+					if !admission.acquire() {
+						t.Fatal("could not fill hash slots")
+					}
+					held++
+				}
+			}
+			resp, body := env.request(t, "/register", registrationForm(token))
+			if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") != "1" {
+				t.Fatalf("backpressure: %d %s", resp.StatusCode, body)
+			}
+			if !strings.Contains(body, "Too many registration attempts") {
+				t.Fatal("missing overload explanation")
+			}
+			count, err := env.store.UserCount()
+			if err != nil || count != 0 {
+				t.Fatalf("rejected request created users: %d %v", count, err)
+			}
+			if kind == "concurrency" {
+				admission.release()
+				held--
+			} else {
+				admission.limiter = rate.NewLimiter(rate.Inf, 4)
+			}
+			resp, body = env.request(t, "/register", registrationForm(token))
+			if resp.StatusCode != http.StatusSeeOther {
+				t.Fatalf("retry: %d %s", resp.StatusCode, body)
+			}
+		})
+	}
+}
+
+// TestRegistrationHashConcurrency удерживает слоты до завершения всех параллельных попыток допуска.
+func TestRegistrationHashConcurrency(t *testing.T) {
+	var admission registrationAdmission
+	if !admission.acquire() {
+		t.Fatal("initial admission rejected")
+	}
+	admission.release()
+	admission.limiter.SetLimit(rate.Inf)
+	const clients = 32
+	release := make(chan struct{})
+	results := make(chan bool, clients)
+	var wg sync.WaitGroup
+	for range clients {
+		wg.Go(func() {
+			admitted := admission.acquire()
+			results <- admitted
+			if admitted {
+				<-release
+				admission.release()
+			}
+		})
+	}
+	admitted := 0
+	for range clients {
+		if <-results {
+			admitted++
+		}
+	}
+	close(release)
+	wg.Wait()
+	if admitted != 2 {
+		t.Fatalf("concurrent password hashes=%d, want 2", admitted)
+	}
+	if !admission.acquire() {
+		t.Fatal("hash slot leaked")
+	}
+	admission.release()
+}
+
+// TestRegistrationSupportsSupplementaryUnicode принимает допустимое имя и пароль без ограничения UTF-16.
+func TestRegistrationSupportsSupplementaryUnicode(t *testing.T) {
+	env := newRegistrationEnv(t, true, "", "en", false)
+	_, page := env.request(t, "/register", nil)
+	field := regexp.MustCompile(`<input[^>]*id="display_name"[^>]*>`).FindString(page)
+	if field == "" || strings.Contains(field, "maxlength") {
+		t.Fatal("browser rejects valid supplementary Unicode names")
+	}
+	form := registrationForm(env.token(t))
+	name := strings.Repeat("𐍈", 120)
+	form.Set("display_name", name)
+	form.Set("password", strings.Repeat("Ж", 8))
+	form.Set("password_confirm", strings.Repeat("Ж", 8))
+	resp, body := env.request(t, "/register", form)
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Fatalf("Unicode registration: %d %s", resp.StatusCode, body)
+	}
+	user, err := env.store.GetUserByUsername(form.Get("username"))
+	if err != nil || user == nil || user.DisplayName != name {
+		t.Fatal("Unicode name was not preserved", err)
 	}
 }
