@@ -6,6 +6,8 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// TestSaveTeacherQuestionsRollsBackBeforePublication
+// verifies that a database failure leaves no partial writes and prevents publication.
 func TestSaveTeacherQuestionsRollsBackBeforePublication(t *testing.T) {
 	s := newTestStore(t)
 	if _, err := s.db.Exec(`CREATE TRIGGER reject_question BEFORE INSERT ON questions

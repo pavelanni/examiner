@@ -181,6 +181,9 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	editingFile := r.FormValue("editing_file")
+	if editingFile != "" {
+		editingFile = filepath.Base(editingFile)
+	}
 	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
 
 	h.teacherUploadMu.Lock()
@@ -193,7 +196,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		oldPath = filepath.Join("questions", filepath.Base(editingFile))
+		oldPath = filepath.Join("questions", editingFile)
 		oldBytes, err := os.ReadFile(oldPath)
 		if err != nil {
 			slog.Error("failed to read previous question file", "error", err)
@@ -211,7 +214,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		base := strings.TrimSuffix(filepath.Base(customFilename), ".json")
 		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
 	case oldPath != "":
-		safeName = filepath.Base(oldPath)
+		safeName = editingFile
 	default:
 		safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
 	}

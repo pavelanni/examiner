@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+// TestSaveTeacherQuestionFileRestoresFilesAfterCommitFailure
+// verifies that a failed commit restores both the original and the replaced destination files.
 func TestSaveTeacherQuestionFileRestoresFilesAfterCommitFailure(t *testing.T) {
 	dir := t.TempDir()
 	oldPath := filepath.Join(dir, "old.json")
