@@ -686,6 +686,8 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Only GetSession can report a missing URL record. Child errors
+	// intentionally use %v so lookupError logs them and returns 500.
 	bp, err := s.GetBlueprint(sess.BlueprintID)
 	if err != nil {
 		return nil, fmt.Errorf("load session blueprint: %v", err)

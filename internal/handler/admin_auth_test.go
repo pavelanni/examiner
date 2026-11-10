@@ -152,3 +152,22 @@ func TestAdminCannotDeactivateSelfAndCanLogInAgain(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminCreateUserReturnsConflictForDuplicateUsername(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	h := &Handler{store: s}
+	form := url.Values{"username": {"duplicate"}, "password": {"test-password"}, "role": {"student"}}
+	for _, want := range []int{http.StatusSeeOther, http.StatusConflict} {
+		req := httptest.NewRequest(http.MethodPost, "/admin/users", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		h.handleCreateUser(rec, req)
+		if rec.Code != want {
+			t.Fatalf("status = %d, want %d: %s", rec.Code, want, rec.Body.String())
+		}
+	}
+}

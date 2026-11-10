@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/pavelanni/examiner/internal/handler/views"
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/store"
 )
 
 // handleAdminUsersPage serves the admin users management page.
@@ -62,6 +64,10 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Role:         model.UserRole(role),
 		Active:       true,
 	})
+	if errors.Is(err, store.ErrUsernameTaken) {
+		http.Error(w, "username already exists", http.StatusConflict)
+		return
+	}
 	if err != nil {
 		slog.Error("failed to create user", "error", err)
 		http.Error(w, "failed to create user", http.StatusInternalServerError)

@@ -757,3 +757,29 @@ func TestMessageScoreRoundTrip(t *testing.T) {
 		t.Errorf("LLM message score = %v, want 7.5", msgs[1].Score)
 	}
 }
+
+func TestGetSessionViewDistinguishesMissingQuestionFromMissingSession(t *testing.T) {
+	s := newTestStore(t)
+	s.db.SetMaxOpenConns(1)
+	bpID, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "Final"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qID := insertTestQuestion(t, s, "Q1", "easy", "t1")
+	sessID, err := s.CreateSession(bpID, 1, []int64{qID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("DELETE FROM questions WHERE id = ?", qID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetSessionView(sessID); err == nil || errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing question should produce an internal error, got %v", err)
+	}
+	if _, err := s.GetSessionView(sessID + 1); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing session should produce sql.ErrNoRows, got %v", err)
+	}
+}
