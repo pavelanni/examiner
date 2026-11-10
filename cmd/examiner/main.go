@@ -538,9 +538,18 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit 
 		}
 
 		for _, qi := range questions {
-			_, err := db.InsertQuestion(model.Question{
+			norm := model.NormalizeQuestionText(qi.Text)
+			existing, err := db.FindQuestionByTopicAndTextNorm(qi.Topic, norm)
+			if err != nil {
+				return fmt.Errorf("check duplicate question from %s: %w", path, err)
+			}
+			if existing != nil {
+				continue
+			}
+			_, err = db.InsertQuestion(model.Question{
 				CourseID:    1,
 				Text:        qi.Text,
+				TextNorm:    norm,
 				Difficulty:  qi.Difficulty,
 				Topic:       qi.Topic,
 				Rubric:      qi.Rubric,
