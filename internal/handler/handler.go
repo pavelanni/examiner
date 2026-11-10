@@ -32,11 +32,12 @@ type Evaluator interface {
 
 // Handler holds shared dependencies for HTTP handlers.
 type Handler struct {
-	store          *store.Store
-	llm            Evaluator
-	config         model.ExamConfig
-	questionSchema *jsonschema.Schema
-	registration   registrationAdmission
+	store           *store.Store
+	llm             Evaluator
+	config          model.ExamConfig
+	questionSchema  *jsonschema.Schema
+	registration    registrationAdmission
+	teacherUploadMu sync.Mutex
 
 	// inFlight is the set of thread IDs with an answer being processed, so
 	// only one answer per thread runs at a time. Entries are removed when the

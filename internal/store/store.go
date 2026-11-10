@@ -234,6 +234,12 @@ func (s *Store) UpdateQuestionByCourseAndText(q model.Question) error {
 // DeleteUnusedQuestionsByTexts deletes questions whose text is in oldTexts but not in keepTexts
 // and that are not referenced by any question_thread.
 func (s *Store) DeleteUnusedQuestionsByTexts(courseID int, oldTexts, keepTexts []string) error {
+	return deleteUnusedQuestionsByTexts(s.db, int64(courseID), oldTexts, keepTexts)
+}
+
+func deleteUnusedQuestionsByTexts(db interface {
+	Exec(string, ...any) (sql.Result, error)
+}, courseID int64, oldTexts, keepTexts []string) error {
 	if len(oldTexts) == 0 {
 		return nil
 	}
@@ -255,7 +261,7 @@ func (s *Store) DeleteUnusedQuestionsByTexts(courseID int, oldTexts, keepTexts [
 		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
 		  )`
 
-	_, err := s.db.Exec(query, args...)
+	_, err := db.Exec(query, args...)
 	return err
 }
 

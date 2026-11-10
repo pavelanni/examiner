@@ -2,10 +2,8 @@ package handler
 
 import (
 	"crypto/sha256"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -185,102 +183,56 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	editingFile := r.FormValue("editing_file")
 	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
 
-	var safeName string
-	var outPath string
-	var oldQuestions []model.QuestionImport
+	h.teacherUploadMu.Lock()
+	defer h.teacherUploadMu.Unlock()
 
+	var oldPath string
+	var oldTexts []string
 	if editingFile != "" {
 		if !teacherOwnsQuestionFile(user.Username, editingFile) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		oldPath := filepath.Join("questions", filepath.Base(editingFile))
-		if oldBytes, err := os.ReadFile(oldPath); err == nil {
-			oldQuestions = parseQuestionsFromJSON(oldBytes)
-		}
-		if customFilename != "" {
-			base := filepath.Base(customFilename)
-			base = strings.TrimSuffix(base, ".json")
-			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
-		} else {
-			safeName = filepath.Base(editingFile)
-		}
-		outPath = filepath.Join("questions", safeName)
-	} else {
-		if customFilename != "" {
-			base := filepath.Base(customFilename)
-			base = strings.TrimSuffix(base, ".json")
-			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
-		} else {
-			safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
-		}
-		outPath = filepath.Join("questions", safeName)
-	}
-
-	if err := os.WriteFile(outPath, data, 0644); err != nil {
-		slog.Error("failed to save questions file", "error", err)
-		http.Error(w, "failed to save file", http.StatusInternalServerError)
-		return
-	}
-
-	// Remove the old file when the edit flow renames it.
-	if editingFile != "" && safeName != filepath.Base(editingFile) {
-		oldPath := filepath.Join("questions", filepath.Base(editingFile))
-		if err := os.Remove(oldPath); err != nil {
-			slog.Warn("failed to remove old question file", "path", oldPath, "error", err)
-		}
-	}
-
-	newTexts := make(map[string]struct{}, len(questions))
-	for _, qi := range questions {
-		q := model.Question{
-			// TODO: derive course ID from context/config when multi-course support lands.
-			CourseID:    1,
-			Text:        qi.Text,
-			Difficulty:  qi.Difficulty,
-			Topic:       qi.Topic,
-			Rubric:      qi.Rubric,
-			ModelAnswer: qi.ModelAnswer,
-			MaxPoints:   qi.MaxPoints,
-		}
-		if err := h.store.UpdateQuestionByCourseAndText(q); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				slog.Error("failed to update question", "error", err)
-				http.Error(w, "failed to update question", http.StatusInternalServerError)
-				return
-			}
-			if _, err := h.store.InsertQuestion(q); err != nil {
-				slog.Error("failed to insert question", "error", err)
-				http.Error(w, "failed to insert question", http.StatusInternalServerError)
-				return
-			}
-		}
-		newTexts[q.Text] = struct{}{}
-	}
-
-	if len(oldQuestions) > 0 {
-		oldTexts := make([]string, 0, len(oldQuestions))
-		for _, q := range oldQuestions {
-			oldTexts = append(oldTexts, q.Text)
-		}
-		keepTexts := make([]string, 0, len(newTexts))
-		for text := range newTexts {
-			keepTexts = append(keepTexts, text)
-		}
-		if err := h.store.DeleteUnusedQuestionsByTexts(1, oldTexts, keepTexts); err != nil {
-			slog.Error("failed to remove old questions", "error", err)
-			http.Error(w, "failed to update questions", http.StatusInternalServerError)
+		oldPath = filepath.Join("questions", filepath.Base(editingFile))
+		oldBytes, err := os.ReadFile(oldPath)
+		if err != nil {
+			slog.Error("failed to read previous question file", "error", err)
+			http.Error(w, "failed to read previous question file", http.StatusInternalServerError)
 			return
 		}
+		for _, q := range parseQuestionsFromJSON(oldBytes) {
+			oldTexts = append(oldTexts, q.Text)
+		}
+	}
+
+	var safeName string
+	switch {
+	case customFilename != "":
+		base := strings.TrimSuffix(filepath.Base(customFilename), ".json")
+		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
+	case oldPath != "":
+		safeName = filepath.Base(oldPath)
+	default:
+		safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
+	}
+	outPath := filepath.Join("questions", safeName)
+	newQuestions := make([]model.Question, 0, len(questions))
+	for _, qi := range questions {
+		newQuestions = append(newQuestions, model.Question{
+			// TODO: derive course ID from context/config when multi-course support lands.
+			CourseID: 1, Text: qi.Text, Difficulty: qi.Difficulty, Topic: qi.Topic,
+			Rubric: qi.Rubric, ModelAnswer: qi.ModelAnswer, MaxPoints: qi.MaxPoints,
+		})
 	}
 
 	sum := sha256.Sum256(data)
-	hash := hex.EncodeToString(sum[:])
-
-	// Fix: Changed from 'filename' to 'safeName' to ensure the exact
-	// disk destination filename is tracked in the database index.
-	if err := h.store.SetImportedFileHash(safeName, hash); err != nil {
-		slog.Warn("failed to set import hash", "error", err)
+	err = saveTeacherQuestionFile(oldPath, outPath, data, func(publish func() error) error {
+		return h.store.SaveTeacherQuestions(newQuestions, oldTexts, editingFile, safeName, hex.EncodeToString(sum[:]), publish)
+	})
+	if err != nil {
+		slog.Error("failed to save teacher questions", "file", outPath, "error", err)
+		http.Error(w, "failed to save questions", http.StatusInternalServerError)
+		return
 	}
 
 	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath, "count", len(questions))
