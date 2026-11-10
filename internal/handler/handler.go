@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
@@ -36,6 +36,7 @@ type Handler struct {
 	llm            Evaluator
 	config         model.ExamConfig
 	questionSchema *jsonschema.Schema
+	registration   registrationAdmission
 
 	// inFlight is the set of thread IDs with an answer being processed, so
 	// only one answer per thread runs at a time. Entries are removed when the
@@ -131,6 +132,14 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Post("/login", h.handleLogin)
 	})
 
+	if h.config.AllowRegistration {
+		r.Group(func(r chi.Router) {
+			r.Use(registrationFormLimit, h.csrfMiddleware)
+			r.Get("/register", h.handleRegisterPage)
+			r.Post("/register", h.handleRegister)
+		})
+	}
+
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		r.Use(h.requireAuth)
@@ -168,117 +177,6 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Post("/admin/questions", h.handleUploadQuestions)
 		})
 	})
-}
-
-func (h *Handler) handleIndex(w http.ResponseWriter, r *http.Request) {
-	user := model.UserFromContext(r.Context())
-
-	var sessions []model.ExamSession
-	var err error
-	if user.Role == model.UserRoleStudent {
-		sessions, err = h.store.ListSessionsByUser(user.ID)
-	} else {
-		sessions, err = h.store.ListSessions()
-	}
-	if err != nil {
-		slog.Error("failed to list sessions", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	// Get available topics for the dropdown.
-	allTopics, err := h.store.ListDistinctTopics()
-	if err != nil {
-		slog.Error("failed to list topics", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	// If --topic is set, restrict topics to only that value.
-	var topics []string
-	if h.config.Topic != "" {
-		for _, t := range allTopics {
-			if t == h.config.Topic {
-				topics = append(topics, t)
-				break
-			}
-		}
-	} else {
-		topics = allTopics
-	}
-
-	// Count questions matching the configured filters.
-	filtered, err := h.store.ListQuestionsFiltered(h.config.Difficulty, h.config.Topic)
-	if err != nil {
-		slog.Error("failed to list filtered questions", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	availableCount := len(filtered)
-	examCount := availableCount
-	if h.config.NumQuestions > 0 && h.config.NumQuestions < availableCount {
-		examCount = h.config.NumQuestions
-	}
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.IndexPage(sessions, availableCount, examCount, h.config, topics).Render(r.Context(), w); err != nil {
-		slog.Error("render error", "error", err)
-	}
-}
-
-func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
-	// Use topic from form (dropdown) if provided, otherwise fall back to CLI flag.
-	topic := r.FormValue("topic")
-	if topic == "" {
-		topic = h.config.Topic
-	}
-
-	questions, err := h.store.ListQuestionsFiltered(h.config.Difficulty, topic)
-	if err != nil {
-		slog.Error("failed to list questions for exam", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if len(questions) == 0 {
-		http.Error(w, "No questions match the configured filters.", http.StatusBadRequest)
-		return
-	}
-
-	// Deduplicate questions by text (guards against legacy DB duplicates).
-	seen := make(map[string]bool, len(questions))
-	unique := questions[:0]
-	for _, q := range questions {
-		if !seen[q.Text] {
-			seen[q.Text] = true
-			unique = append(unique, q)
-		}
-	}
-	questions = unique
-
-	if h.config.Shuffle {
-		rand.Shuffle(len(questions), func(i, j int) {
-			questions[i], questions[j] = questions[j], questions[i]
-		})
-	}
-
-	if h.config.NumQuestions > 0 && h.config.NumQuestions < len(questions) {
-		questions = questions[:h.config.NumQuestions]
-	}
-
-	var questionIDs []int64
-	for _, q := range questions {
-		questionIDs = append(questionIDs, q.ID)
-	}
-
-	user := model.UserFromContext(r.Context())
-	sessionID, err := h.store.CreateSession(1, user.ID, questionIDs)
-	if err != nil {
-		slog.Error("failed to create session", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	http.Redirect(w, r, h.path(fmt.Sprintf("/exam/%d", sessionID)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
@@ -398,15 +296,27 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.store.AddMessage(model.Message{
-		ThreadID: threadID,
-		Role:     model.RoleStudent,
-		Content:  answer,
-	})
+	messages, err := h.store.GetMessages(threadID)
 	if err != nil {
-		slog.Error("failed to add student message", "thread_id", threadID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
+		http.Error(w, "failed to load answer", http.StatusInternalServerError)
 		return
+	}
+	pending := len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent
+	if pending && messages[len(messages)-1].Content != answer {
+		http.Error(w, "a saved answer is awaiting evaluation; retry that answer", http.StatusConflict)
+		return
+	}
+	if !pending {
+		_, err = h.store.AddMessage(model.Message{ThreadID: threadID, Role: model.RoleStudent, Content: answer})
+		if err == nil {
+			messages, err = h.store.GetMessages(threadID)
+		}
+		if err != nil {
+			slog.Error("failed to save student message", "thread_id", threadID, "error", err)
+			http.Error(w, "failed to save answer", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	question, err := h.store.GetQuestion(thread.QuestionID)
@@ -415,14 +325,8 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	messages, err := h.store.GetMessages(threadID)
-	if err != nil {
-		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
 
-	result, _, err := h.llm.EvaluateAnswer(context.Background(), question, messages, bp.MaxFollowups, sessionID, threadID)
+	result, _, err := h.llm.EvaluateAnswer(r.Context(), question, messages, bp.MaxFollowups, sessionID, threadID)
 	if err != nil {
 		slog.Error("LLM evaluation failed", "error", err)
 		http.Error(w, "LLM evaluation failed", http.StatusInternalServerError)
@@ -540,6 +444,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Финальная оценка не отменяется при закрытии браузера; каждый вызов
+	// ограничен бюджетом llm.Client. Постоянная очередь реализуется в #48.
+	gradingCtx := context.WithoutCancel(r.Context())
 	var totalScore float64
 	var totalMaxPoints int
 
@@ -561,13 +468,22 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		result, err := h.llm.GradeThread(context.Background(), question, messages, sessionID, t.ID)
+		result, err := h.llm.GradeThread(gradingCtx, question, messages, sessionID, t.ID)
 		if err != nil {
 			slog.Error("grading failed", "thread_id", t.ID, "error", err)
+			if errors.Is(err, llm.ErrQueueTimeout) {
+				if restoreErr := h.store.UpdateSessionStatus(sessionID, model.StatusInProgress); restoreErr != nil {
+					slog.Error("failed to restore exam after capacity timeout", "session_id", sessionID, "error", restoreErr)
+					http.Error(w, "failed to restore exam", http.StatusInternalServerError)
+					return
+				}
+				http.Error(w, appI18n.T(r.Context(), "LLMQueueBusy"), http.StatusServiceUnavailable)
+				return
+			}
 			if err := h.store.UpsertScore(model.QuestionScore{
 				ThreadID:    t.ID,
 				LLMScore:    0,
-				LLMFeedback: "Grading error: " + err.Error(),
+				LLMFeedback: "Automatic grading failed.",
 			}); err != nil {
 				slog.Warn("failed to upsert error score", "thread_id", t.ID, "error", err)
 			}

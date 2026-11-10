@@ -31,7 +31,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 					if m.Role == model.RoleStudent {
 						<div>{ m.Text() }</div>
 					} else {
-						<div class="markdown">@markdown(m.Text())</div>
+						<div class="markdown">@evaluatorMessage(m)</div>
 					}
 					if liveScore.Show && m.Score != nil {
 						<div class="message-score">
@@ -47,6 +47,9 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 	}
 	if session.Status == model.StatusInProgress {
 		if thread.Status != model.ThreadCompleted {
+			if pendingAnswer(messages) != "" {
+				<p>{ t(ctx, "SavedAnswerPending") }</p>
+			}
 			<form
 				hx-post={ p(ctx, fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID)) }
 				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
@@ -67,13 +70,20 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 					if timeExceeded {
 						disabled
 					}
-				></textarea>
-				<button class="answer-submit" type="submit"
+					if pendingAnswer(messages) != "" {
+						readonly
+					}
+				>{ pendingAnswer(messages) }</textarea>
+				<button
+					class="answer-submit"
+					type="submit"
 					if timeExceeded {
 						disabled
 					}
 				>
-					if len(messages) > 0 {
+					if pendingAnswer(messages) != "" {
+						{ t(ctx, "RetryEvaluation") }
+					} else if len(messages) > 0 {
 						{ t(ctx, "Reply") }
 					} else {
 						{ t(ctx, "Answer") }
@@ -90,4 +100,12 @@ func messageClass(role model.Role) string {
 		return "message-student"
 	}
 	return "message-assistant"
+}
+
+// pendingAnswer возвращает сохранённый ответ без последующей обратной связи.
+func pendingAnswer(messages []model.Message) string {
+	if len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent {
+		return messages[len(messages)-1].Content
+	}
+	return ""
 }

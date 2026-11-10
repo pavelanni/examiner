@@ -312,6 +312,19 @@ func (s *Store) ListQuestions() ([]model.Question, error) {
 // Empty strings mean no filtering on that field.
 // Difficulty supports comma-separated values (e.g. "easy,medium").
 func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.Question, error) {
+	if topic != "" {
+		return s.listQuestionsFiltered(difficulty, &topic)
+	}
+	return s.listQuestionsFiltered(difficulty, nil)
+}
+
+// ListQuestionsInTopic filters by the exact topic, including an empty topic.
+func (s *Store) ListQuestionsInTopic(difficulty, topic string) ([]model.Question, error) {
+	return s.listQuestionsFiltered(difficulty, &topic)
+}
+
+// listQuestionsFiltered distinguishes an exact topic from the unfiltered bank.
+func (s *Store) listQuestionsFiltered(difficulty string, topic *string) ([]model.Question, error) {
 	query := `SELECT id, course_id, text, difficulty, topic, rubric, model_answer, max_points FROM questions WHERE 1=1`
 	var args []any
 	if difficulty != "" {
@@ -328,9 +341,9 @@ func (s *Store) ListQuestionsFiltered(difficulty string, topic string) ([]model.
 			}
 		}
 	}
-	if topic != "" {
+	if topic != nil {
 		query += ` AND topic = ?`
-		args = append(args, topic)
+		args = append(args, *topic)
 	}
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
@@ -675,26 +688,26 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 	}
 	bp, err := s.GetBlueprint(sess.BlueprintID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load session blueprint: %v", err)
 	}
 	threads, err := s.GetThreadsForSession(sessionID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load session threads: %v", err)
 	}
 
 	var threadViews []model.ThreadView
 	for _, t := range threads {
 		q, err := s.GetQuestion(t.QuestionID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load session question: %v", err)
 		}
 		msgs, err := s.GetMessages(t.ID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load session messages: %v", err)
 		}
 		score, err := s.GetScore(t.ID)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("load session score: %v", err)
 		}
 		threadViews = append(threadViews, model.ThreadView{
 			Thread:   t,
@@ -706,7 +719,7 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 
 	grade, err := s.GetGrade(sessionID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load session grade: %v", err)
 	}
 
 	return &model.SessionView{

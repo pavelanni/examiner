@@ -186,7 +186,7 @@ func (h *Handler) redirectToLogin(w http.ResponseWriter, r *http.Request) {
 // handleLoginPage serves the login page.
 func (h *Handler) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.LoginPage("").Render(r.Context(), w); err != nil {
+	if err := views.LoginPage("", h.config.AllowRegistration, h.config.AllowRegistration && r.URL.Query().Get("registered") == "1").Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -268,7 +268,7 @@ func (h *Handler) handleLogout(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) renderLoginError(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusUnauthorized)
-	if err := views.LoginPage(appI18n.T(r.Context(), "LoginError")).Render(r.Context(), w); err != nil {
+	if err := views.LoginPage(appI18n.T(r.Context(), "LoginError"), h.config.AllowRegistration, false).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

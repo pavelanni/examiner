@@ -70,17 +70,21 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--llm-url` | | `http://localhost:11434/v1` | OpenAI-compatible API base URL |
 | `--llm-key` | | `ollama` | API key for the LLM |
 | `--llm-model` | | `llama3.2` | Model name |
+| `--llm-timeout` | | `90s` | Timeout per LLM attempt, including queue wait |
+| `--llm-max-retries` | | `3` | Retries after the initial attempt (`0` disables retries; maximum `100`) |
+| `--llm-max-concurrency` | | `4` | Maximum simultaneous LLM requests per process |
 | `--lang` | `-l` | `en` | UI language (`en`, `ru`) |
 | `--num-questions` | `-n` | `0` (all) | Number of questions per exam |
 | `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
-| `--shuffle` | | `false` | Randomize question order |
+| `--shuffle` | | `true` | Randomize question order |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
 | `--secure-cookies` | | `true` | Set `Secure` flag on cookies (disable for local HTTP dev) |
+| `--allow-registration` | | `false` | Allow students to create their own accounts |
 
 #### Environment variables
 
@@ -91,6 +95,9 @@ prefix. Hyphens become underscores:
 export EXAMINER_LLM_URL=https://api.openai.com/v1
 export EXAMINER_LLM_KEY=sk-...
 export EXAMINER_LLM_MODEL=gpt-4o
+export EXAMINER_LLM_TIMEOUT=90s
+export EXAMINER_LLM_MAX_RETRIES=3
+export EXAMINER_LLM_MAX_CONCURRENCY=4
 export EXAMINER_LANG=ru
 export EXAMINER_NUM_QUESTIONS=10
 export EXAMINER_SHUFFLE=true
@@ -114,6 +121,9 @@ questions: questions/physics_ru.json
 lang: ru
 llm-url: https://api.openai.com/v1
 llm-model: gpt-4o
+llm-timeout: 90s
+llm-max-retries: 3
+llm-max-concurrency: 4
 num-questions: 10
 difficulty: easy,medium
 shuffle: true
@@ -122,6 +132,51 @@ base-path: /ru
 prompt-variant: standard
 secure-cookies: true
 ```
+
+#### Questions per difficulty
+
+To give every student the same number of questions of each difficulty,
+set `question_selection` in the config file (it has no flag or
+environment variable):
+
+```yaml
+question_selection:
+  easy: 2
+  medium: 2
+  hard: 1
+```
+
+Each exam then has exactly 2 easy, 2 medium and 1 hard question from the
+chosen topic, drawn at random without repeats. The rules:
+
+- Counts are whole numbers of at least 0 (`-1`, `1.5` and `"two"` are
+  rejected), the levels are `easy`, `medium` and `hard`, and the total
+  must be above 0.
+- `question_selection` replaces `num-questions` and `difficulty`;
+  explicitly setting it together with either of them in YAML, environment
+  variables or flags is an error, even with `num-questions: 0` or an empty
+  `difficulty`. Unchanged flag defaults do not conflict.
+- An invalid value stops the server at startup with the list of
+  problems. An explicitly empty or `null` distribution is invalid; omit
+  the key entirely to keep legacy selection. Empty legacy environment
+  variables still count as explicitly supplied options.
+
+At startup the server logs how many questions of each difficulty every
+topic has and warns about topics that are too small. The home page
+offers only topics where an exam can be put together and shows why the
+others are unavailable. The home page also shows the exam size.
+
+Questions with an empty topic can be selected as **No topic**. The chosen
+topic is an exact filter, so its questions are never mixed with other topics.
+Duplicate texts in different difficulty pools remain alternatives until the
+requested distribution is allocated; each resulting exam uses a text only once.
+
+With `question_selection`, startup reconciles `num_questions` in prepared
+metadata with the distribution total. Existing attempts must have the same
+number of questions; otherwise startup fails without rewriting those attempts.
+Use a separate exam database when changing the exam size. Export derives the
+count from saved attempts and rejects mixed-size exports rather than giving
+the grader an incorrect exam-wide count.
 
 #### Examples
 
@@ -132,6 +187,21 @@ secure-cookies: true
 # Only "Mechanics" topic, 5 questions
 ./examiner -t "Законы Ньютона" -n 5 --shuffle
 ```
+
+### LLM timeouts and retries
+
+LLM calls retry timeouts, network errors, HTTP 429 and 5xx, malformed JSON,
+and empty choices with exponential backoff and jitter. HTTP 400 and 401 are
+not retried. `Retry-After` is respected while the overall call budget allows;
+waiting and retries stop when the calling context is cancelled. Interactive
+feedback inherits the browser request's context.
+
+The concurrency limit is shared by feedback and final grading. When the limit
+is greater than one, final grading uses at most `limit - 1` slots, reserving
+one for feedback. Limits apply to one process, and the default of four is a
+conservative starting point pending load tests with the selected LLM.
+See [LLM reliability](docs/development/llm-reliability.md) for timing budgets,
+configuration, and the boundary with background grading.
 
 ## Authentication and user management
 
@@ -156,9 +226,23 @@ users exist in the database yet. The admin user is only created once
 (when the `users` table is empty). On subsequent runs the password
 setting is ignored.
 
+### Recovering a deactivated administrator
+
+If the only administrator was accidentally deactivated in an older version,
+stop the server, back up its database (including any SQLite WAL files), and run:
+
+```bash
+./bin/examiner reactivate-admin --db examiner.db --username admin
+```
+
+This local recovery command reactivates an existing administrator without
+changing their password or creating users. It requires an existing database file
+and uses the explicit `--db` path, independently of environment/config-file settings.
+See the [Windows recovery walkthrough](docs/development/admin-access-recovery-ru.md).
+
 ### Adding users
 
-Only admins can create users. Log in as `admin`, then navigate to
+Admins can create users of any role. Log in as `admin`, then navigate to
 **Admin → User management** (`/admin/users`). The form lets you set:
 
 - **Username** — used for login
@@ -168,6 +252,34 @@ Only admins can create users. Log in as `admin`, then navigate to
 
 From the same page you can toggle a user's active status (deactivated
 users cannot log in).
+
+### Student self-registration
+
+Self-registration is disabled by default. To enable it, set
+`allow-registration: true` in `examiner.yaml`, export
+`EXAMINER_ALLOW_REGISTRATION=true`, or start with `--allow-registration`.
+When enabled, the login page offers a link to `/register` (or `/ru/register`
+for a `/ru` deployment).
+
+Students provide a username, display name, password, and password confirmation.
+Usernames are case-sensitive and contain 3–64 Latin letters, digits, dots,
+underscores or hyphens, starting with a letter or digit. Display names support
+Unicode and are limited to 120 characters. Passwords require at least eight
+characters and may not exceed bcrypt's 72-byte limit.
+
+Registration is limited per process to one attempt per second with a burst of
+four, and at most two concurrent password hashes. Excess attempts receive
+HTTP 429 with `Retry-After: 1`; the user can retry after waiting. These limits
+also apply to attempts using an existing username.
+
+New accounts are active students. Roles, activation state, and roster identifiers
+cannot be selected through this form. After registration, the student signs in
+through the normal login page. Existing accounts cannot be overwritten.
+
+Enabling this option permits anyone who can reach the login page to create a
+student account. Keep it disabled for exams that use administrator-created
+accounts or pre-generated roster credentials. Turning it off hides the link and
+removes the registration routes; existing accounts can still sign in.
 
 ### Roles
 

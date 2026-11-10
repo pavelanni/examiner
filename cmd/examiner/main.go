@@ -5,11 +5,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,6 +28,7 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/store"
 	"github.com/pavelanni/examiner/internal/userutil"
 )
@@ -37,6 +41,7 @@ func main() {
 	}
 }
 
+// rootCmd регистрирует команды приложения и запускает сервер по умолчанию.
 func rootCmd() *cobra.Command {
 	root := &cobra.Command{
 		Use:   "examiner",
@@ -44,7 +49,7 @@ func rootCmd() *cobra.Command {
 	}
 
 	serve := serveCmd()
-	root.AddCommand(serve, exportCmd(), prepCmd())
+	root.AddCommand(serve, exportCmd(), prepCmd(), reactivateAdminCmd())
 
 	// Make "serve" the default when no subcommand is given.
 	root.RunE = serve.RunE
@@ -68,6 +73,9 @@ func serveCmd() *cobra.Command {
 	f.String("llm-url", "http://localhost:11434/v1", "OpenAI-compatible API base URL")
 	f.String("llm-key", "ollama", "API key for LLM")
 	f.String("llm-model", "llama3.2", "LLM model name")
+	f.Duration("llm-timeout", llm.DefaultTimeout, "Timeout per LLM attempt, including queue wait")
+	f.Int("llm-max-retries", llm.DefaultMaxRetries, "LLM retries after the initial attempt (0-100)")
+	f.Int("llm-max-concurrency", llm.DefaultMaxConcurrency, "Maximum simultaneous LLM requests per process")
 	f.StringP("lang", "l", "en", "UI language (en, ru)")
 	f.IntP("num-questions", "n", 0, "Number of questions per exam (0 = all available)")
 	f.StringP("difficulty", "d", "", "Filter questions by difficulty (easy, medium, hard)")
@@ -77,6 +85,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("shuffle", true, "Randomize question order")
 	f.String("base-path", "", "URL prefix for sub-path deployments (e.g. /ru)")
 	f.Bool("secure-cookies", true, "Set Secure flag on session cookies")
+	f.Bool("allow-registration", false, "Allow students to create their own accounts")
 	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
@@ -171,9 +180,96 @@ func viperForCmd(cmd *cobra.Command) *viper.Viper {
 	return v
 }
 
+// examSelection reads question_selection, the number of questions per
+// difficulty (FR3-01). It replaces num-questions and difficulty; setting
+// both is an error rather than silently ignoring one of them.
+func examSelection(v *viper.Viper) (model.Distribution, error) {
+	// Read the raw value: GetInt would turn "abc" into 0 and 1.5 into 1.
+	raw := v.Get("question_selection")
+	_, selectionEnv := os.LookupEnv("EXAMINER_QUESTION_SELECTION")
+	if raw == nil && (slices.Contains(v.AllKeys(), "question_selection") || selectionEnv) {
+		return nil, errors.New("question_selection: must map difficulties to counts; null or empty values are not allowed")
+	}
+	d, err := selection.Parse(raw)
+	if err != nil {
+		return nil, fmt.Errorf("question_selection: %w", err)
+	}
+	// Unchanged CLI defaults are not explicit settings. IsSet also catches
+	// zero, empty and invalid legacy values that GetInt/GetString can hide.
+	_, countEnv := os.LookupEnv("EXAMINER_NUM_QUESTIONS")
+	_, difficultyEnv := os.LookupEnv("EXAMINER_DIFFICULTY")
+	if d != nil && (v.IsSet("num-questions") || v.IsSet("difficulty") || countEnv || difficultyEnv) {
+		return nil, errors.New("question_selection cannot be combined with num-questions or difficulty: remove one of them")
+	}
+	return d, nil
+}
+
+// logTopicAvailability logs, per topic, how many questions of
+// each difficulty exams can draw from, and warns about topics too small
+// for d. Students are not offered such topics.
+func logTopicAvailability(db *store.Store, d model.Distribution) error {
+	questions, err := db.ListQuestionsFiltered("", "")
+	if err != nil {
+		return err
+	}
+	byTopic := make(map[string][]model.Question)
+	for _, q := range questions {
+		byTopic[q.Topic] = append(byTopic[q.Topic], q)
+	}
+	if len(byTopic) == 0 {
+		slog.Warn("no questions: no exam can start")
+	}
+	topics := make([]string, 0, len(byTopic))
+	for t := range byTopic {
+		topics = append(topics, t)
+	}
+	slices.Sort(topics)
+	for _, topic := range topics {
+		pools := selection.Pools(byTopic[topic])
+		attrs := []any{"topic", topic}
+		for _, level := range model.Difficulties {
+			attrs = append(attrs, string(level), len(pools[level]))
+		}
+		slog.Info("questions available", attrs...)
+		for _, s := range selection.Shortages(pools, d) {
+			slog.Warn("not enough questions for an exam in topic", "topic", topic,
+				"difficulty", string(s.Difficulty), "need", s.Need, "have", s.Have)
+		}
+	}
+	return nil
+}
+
+// llmOptions отклоняет некорректные значения вместо неявного преобразования в ноль.
+func llmOptions(v *viper.Viper) ([]llm.Option, error) {
+	timeout, err := time.ParseDuration(strings.TrimSpace(v.GetString("llm-timeout")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-timeout: %w", err)
+	}
+	retries, err := strconv.Atoi(strings.TrimSpace(v.GetString("llm-max-retries")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-max-retries: %w", err)
+	}
+	concurrency, err := strconv.Atoi(strings.TrimSpace(v.GetString("llm-max-concurrency")))
+	if err != nil {
+		return nil, fmt.Errorf("llm-max-concurrency: %w", err)
+	}
+	return []llm.Option{llm.WithTimeout(timeout), llm.WithMaxRetries(retries), llm.WithMaxConcurrency(concurrency)}, nil
+}
+
+// runServe validates configuration and initializes the exam HTTP service.
 func runServe(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
+	options, err := llmOptions(v)
+	if err != nil {
+		return err
+	}
+
+	// Validate the distribution before opening or changing the database.
+	questionSelection, err := examSelection(v)
+	if err != nil {
+		return err
+	}
 
 	// Open database.
 	db, err := store.New(v.GetString("db"))
@@ -181,6 +277,11 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	defer func() { _ = db.Close() }()
+	if questionSelection != nil {
+		if err := db.ConfigureQuestionCount(questionSelection.Total()); err != nil {
+			return fmt.Errorf("question_selection: %w", err)
+		}
+	}
 
 	// Seed default admin user if no users exist.
 	if err := seedAdmin(db, v.GetString("admin-password")); err != nil {
@@ -190,6 +291,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	// Load questions from all specified files.
 	if err := loadQuestions(db, v.GetStringSlice("questions"), v.GetInt("max-followups"), v.GetInt("time-limit")); err != nil {
 		return fmt.Errorf("load questions: %w", err)
+	}
+
+	if questionSelection != nil {
+		if err := logTopicAvailability(db, questionSelection); err != nil {
+			return fmt.Errorf("question availability: %w", err)
+		}
 	}
 
 	scoreVisibility, err := model.ParseScoreVisibility(strings.ToLower(strings.TrimSpace(v.GetString("score-visibility"))))
@@ -214,6 +321,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		v.GetString("llm-key"),
 		v.GetString("llm-model"),
 		promptVariant,
+		options...,
 	)
 	if err != nil {
 		return fmt.Errorf("create LLM client: %w", err)
@@ -230,14 +338,16 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 
 	examCfg := model.ExamConfig{
-		NumQuestions:  v.GetInt("num-questions"),
-		Difficulty:    v.GetString("difficulty"),
-		Topic:         v.GetString("topic"),
-		MaxFollowups:  v.GetInt("max-followups"),
-		Shuffle:       v.GetBool("shuffle"),
-		BasePath:      basePath,
-		SecureCookies: v.GetBool("secure-cookies"),
-		PromptVariant: promptVariant,
+		NumQuestions:      v.GetInt("num-questions"),
+		Difficulty:        v.GetString("difficulty"),
+		Topic:             v.GetString("topic"),
+		MaxFollowups:      v.GetInt("max-followups"),
+		Shuffle:           v.GetBool("shuffle"),
+		Selection:         questionSelection,
+		BasePath:          basePath,
+		SecureCookies:     v.GetBool("secure-cookies"),
+		AllowRegistration: v.GetBool("allow-registration"),
+		PromptVariant:     promptVariant,
 
 		ScoreVisibility: scoreVisibility,
 	}
@@ -276,12 +386,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"topic", examCfg.Topic,
 		"max_followups", examCfg.MaxFollowups,
 		"score_visibility", string(examCfg.ScoreVisibility),
+		"allow_registration", examCfg.AllowRegistration,
 		"shuffle", examCfg.Shuffle,
+		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"base_path", basePath,
 	)
 	return http.ListenAndServe(addr, r)
 }
 
+// runExport writes an exam export whose metadata matches its saved attempts.
 func runExport(cmd *cobra.Command, _ []string) error {
 	setupLogging(cmd)
 	v := viperForCmd(cmd)
@@ -334,10 +447,11 @@ func runExport(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("export sessions: %w", err)
 	}
 
-	// Use DB metadata for num_questions; fall back to first result.
-	numQuestions := info.NumQuestions
-	if numQuestions == 0 && len(results) > 0 {
-		numQuestions = len(results[0].Questions)
+	// Existing sessions are authoritative; stale prep metadata must not
+	// misstate the question count imported by the grader.
+	numQuestions, err := exportQuestionCount(results, info.NumQuestions)
+	if err != nil {
+		return err
 	}
 
 	export := model.ExamExport{

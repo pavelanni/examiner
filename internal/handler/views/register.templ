@@ -1,0 +1,26 @@
+package views
+
+templ RegisterPage(username, displayName, errorMsg string) {
+	@Layout(t(ctx, "RegisterTitle")) {
+		<h1>{ t(ctx, "RegisterTitle") }</h1>
+		<p>{ t(ctx, "RegistrationStudentNotice") }</p>
+		if errorMsg != "" {
+			<p role="alert" style="color: var(--pico-del-color);">{ errorMsg }</p>
+		}
+		<form method="POST" action={ templ.SafeURL(p(ctx, "/register")) }>
+			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+			<label for="username">{ t(ctx, "Username") }</label>
+			<input type="text" id="username" name="username" value={ username } minlength="3" maxlength="64" pattern="[A-Za-z0-9][A-Za-z0-9_.\-]{2,63}" autocomplete="username" aria-describedby="username-help" required autofocus/>
+			<small id="username-help">{ t(ctx, "RegistrationUsernameHelp") }</small>
+			<label for="display_name">{ t(ctx, "DisplayName") }</label>
+			<input type="text" id="display_name" name="display_name" value={ displayName } autocomplete="name" required/>
+			<label for="password">{ t(ctx, "Password") }</label>
+			<input type="password" id="password" name="password" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="password-help" required/>
+			<small id="password-help">{ t(ctx, "RegistrationPasswordHelp") }</small>
+			<label for="password_confirm">{ t(ctx, "RegistrationConfirmPassword") }</label>
+			<input type="password" id="password_confirm" name="password_confirm" minlength="8" maxlength="72" autocomplete="new-password" required/>
+			<button type="submit">{ t(ctx, "RegisterButton") }</button>
+		</form>
+		<p><a href={ templ.SafeURL(p(ctx, "/login")) }>{ t(ctx, "RegistrationLoginLink") }</a></p>
+	}
+}

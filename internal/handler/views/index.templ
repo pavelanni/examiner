@@ -8,75 +8,113 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// isStudentOnly identifies students for links that differ from teacher review.
 func isStudentOnly(ctx context.Context) bool {
 	u := model.UserFromContext(ctx)
 	return u != nil && u.Role == model.UserRoleStudent
 }
 
-templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int, config model.ExamConfig, topics []string) {
+// TopicChoice is one exam topic on the home page, as the user sees it.
+type TopicChoice struct {
+	Topic     string
+	Available bool   // a new exam can start in this topic
+	Note      string // why a complete exam cannot be drawn
+}
+
+// IndexData is what the home page shows.
+type IndexData struct {
+	Sessions       []model.ExamSession
+	AvailableCount int // questions exams can draw from
+	ExamCount      int // questions in one exam
+	Config         model.ExamConfig
+	Topics         []TopicChoice
+	Error          string // why the last start failed
+}
+
+// openTopics filters the topics that can supply a complete new exam.
+func openTopics(topics []TopicChoice) []TopicChoice {
+	var out []TopicChoice
+	for _, c := range topics {
+		if c.Available {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// distributionParams supplies the localized summary of an exam's exact counts.
+func distributionParams(d model.Distribution) map[string]any {
+	return map[string]any{
+		"Easy":   d[model.DifficultyEasy],
+		"Medium": d[model.DifficultyMedium],
+		"Hard":   d[model.DifficultyHard],
+		"Total":  d.Total(),
+	}
+}
+
+// topicLabel gives an explicitly empty topic a visible, localized name.
+func topicLabel(ctx context.Context, topic string) string {
+	if topic == "" {
+		return t(ctx, "ExamUntitledTopic")
+	}
+	return topic
+}
+
+templ IndexPage(d IndexData) {
 	@Layout(t(ctx, "AppTitle")) {
 		<h1>{ t(ctx, "AppTitle") }</h1>
 		<p>{ t(ctx, "AppSubtitle") }</p>
+		if d.Error != "" {
+			<article role="alert" style="border-left: 4px solid var(--pico-del-color);">
+				<p>{ d.Error }</p>
+			</article>
+		}
 		<section>
 			<h2>{ t(ctx, "StartNewExam") }</h2>
-			if availableCount > 0 {
-				if len(topics) <= 1 {
-					<p>{ tp(ctx, "QuestionsAvailable", availableCount) }</p>
-					if config.Difficulty != "" || config.Topic != "" {
-						<p>
-							<small>
-								if config.Difficulty != "" {
-									{ t(ctx, "FilterDifficulty") }: <strong>{ config.Difficulty }</strong>
-									if config.Topic != "" {
-										{ " · " }
+			if d.AvailableCount > 0 || d.Config.Selection != nil {
+				@examSize(d)
+				if len(openTopics(d.Topics)) == 0 {
+					<p>{ t(ctx, "ExamNoTopicsAvailable") }</p>
+					<ul>
+						for _, c := range d.Topics {
+							if c.Note != "" {
+								<li>{ topicLabel(ctx, c.Topic) }: { c.Note }</li>
+							}
+						}
+					</ul>
+				} else {
+					<form method="POST" action={ templ.SafeURL(p(ctx, "/exam/start")) }>
+						<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+						if len(d.Topics) > 1 {
+							<label for="topic">{ t(ctx, "SelectTopic") }</label>
+							<select id="topic" name="topic">
+								for _, c := range d.Topics {
+									if c.Available {
+										<option value={ c.Topic }>{ topicLabel(ctx, c.Topic) }</option>
+									} else {
+										<option value={ c.Topic } disabled>{ topicLabel(ctx, c.Topic) } — { c.Note }</option>
 									}
 								}
-								if config.Topic != "" {
-									{ t(ctx, "FilterTopic") }: <strong>{ config.Topic }</strong>
-								}
-							</small>
-						</p>
-					}
-					if examCount != availableCount {
-						<p>
-							<small>
-								{ td(ctx, "ExamWillUse", map[string]any{"Count": strconv.Itoa(examCount)}) }
-								if config.Shuffle {
-									{ " " }({ t(ctx, "Shuffled") })
-								}
-							</small>
-						</p>
-					} else if config.Shuffle {
-						<p><small>{ t(ctx, "Shuffled") }</small></p>
-					}
-				}
-				<form method="POST" action={ templ.SafeURL(p(ctx, "/exam/start")) }>
-					<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
-					if len(topics) > 1 {
-						<label for="topic">{ t(ctx, "SelectTopic") }</label>
-						<select id="topic" name="topic" required>
-							for _, topic := range topics {
-								<option value={ topic }>{ topic }</option>
-							}
-						</select>
-					} else if len(topics) == 1 {
-						<input type="hidden" name="topic" value={ topics[0] }/>
-						<p><small>{ t(ctx, "FilterTopic") }: <strong>{ topics[0] }</strong></small></p>
-					}
-					<button type="submit">
-						if len(topics) <= 1 {
-							{ t(ctx, "StartExam") }
-							({ td(ctx, "NQuestions", map[string]any{"N": strconv.Itoa(examCount)}) })
+							</select>
 						} else {
-							{ t(ctx, "StartExam") }
+							<input type="hidden" name="topic" value={ d.Topics[0].Topic }/>
+							<p><small>{ t(ctx, "FilterTopic") }: <strong>{ topicLabel(ctx, d.Topics[0].Topic) }</strong></small></p>
 						}
-					</button>
-				</form>
+						<button type="submit">
+							if len(d.Topics) <= 1 || d.Config.Selection != nil {
+								{ t(ctx, "StartExam") }
+								({ td(ctx, "NQuestions", map[string]any{"N": strconv.Itoa(d.ExamCount)}) })
+							} else {
+								{ t(ctx, "StartExam") }
+							}
+						</button>
+					</form>
+				}
 			} else {
 				<p>{ t(ctx, "NoQuestionsLoaded") }</p>
 			}
 		</section>
-		if len(sessions) > 0 {
+		if len(d.Sessions) > 0 {
 			<section>
 				<h2>{ t(ctx, "PreviousSessions") }</h2>
 				<table>
@@ -89,7 +127,7 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 						</tr>
 					</thead>
 					<tbody>
-						for _, s := range sessions {
+						for _, s := range d.Sessions {
 							<tr>
 								<td>{ fmt.Sprint(s.ID) }</td>
 								<td>{ string(s.Status) }</td>
@@ -114,6 +152,49 @@ templ IndexPage(sessions []model.ExamSession, availableCount int, examCount int,
 				<h2>{ t(ctx, "TeacherReview") }</h2>
 				<a href={ templ.SafeURL(p(ctx, "/review")) } role="button" class="secondary">{ t(ctx, "GoToReviewDashboard") }</a>
 			</section>
+		}
+	}
+}
+
+// examSize describes how many questions an exam has.
+templ examSize(d IndexData) {
+	if d.Config.Selection != nil {
+		<p>
+			<small>
+				{ td(ctx, "ExamDistribution", distributionParams(d.Config.Selection)) }
+				if d.Config.Shuffle {
+					{ " " }({ t(ctx, "Shuffled") })
+				}
+			</small>
+		</p>
+	} else if len(d.Topics) <= 1 {
+		<p>{ tp(ctx, "QuestionsAvailable", d.AvailableCount) }</p>
+		if d.Config.Difficulty != "" || d.Config.Topic != "" {
+			<p>
+				<small>
+					if d.Config.Difficulty != "" {
+						{ t(ctx, "FilterDifficulty") }: <strong>{ d.Config.Difficulty }</strong>
+						if d.Config.Topic != "" {
+							{ " · " }
+						}
+					}
+					if d.Config.Topic != "" {
+						{ t(ctx, "FilterTopic") }: <strong>{ d.Config.Topic }</strong>
+					}
+				</small>
+			</p>
+		}
+		if d.ExamCount != d.AvailableCount {
+			<p>
+				<small>
+					{ td(ctx, "ExamWillUse", map[string]any{"Count": strconv.Itoa(d.ExamCount)}) }
+					if d.Config.Shuffle {
+						{ " " }({ t(ctx, "Shuffled") })
+					}
+				</small>
+			</p>
+		} else if d.Config.Shuffle {
+			<p><small>{ t(ctx, "Shuffled") }</small></p>
 		}
 	}
 }

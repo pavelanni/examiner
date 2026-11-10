@@ -115,6 +115,22 @@ const (
 	DifficultyHard   Difficulty = "hard"
 )
 
+// Difficulties lists the difficulty levels from easiest to hardest.
+var Difficulties = []Difficulty{DifficultyEasy, DifficultyMedium, DifficultyHard}
+
+// Distribution is the exact number of questions of each difficulty in an
+// exam (FR3-01). A nil Distribution means none is configured.
+type Distribution map[Difficulty]int
+
+// Total returns the number of questions in an exam.
+func (d Distribution) Total() int {
+	n := 0
+	for _, c := range d {
+		n += c
+	}
+	return n
+}
+
 // Question represents an exam question.
 type Question struct {
 	ID          int64      `json:"id"`
@@ -207,14 +223,16 @@ type Grade struct {
 
 // ExamConfig holds runtime exam parameters set via CLI flags.
 type ExamConfig struct {
-	NumQuestions  int    // 0 means all available
-	Difficulty    string // empty means all difficulties
-	Topic         string // empty means all topics
-	MaxFollowups  int
-	Shuffle       bool
-	BasePath      string // URL prefix for sub-path deployments (e.g. "/ru")
-	SecureCookies bool   // Set Secure flag on cookies (disable for local dev)
-	PromptVariant string // Grading prompt variant (strict, standard, lenient)
+	NumQuestions      int    // 0 means all available
+	Difficulty        string // empty means all difficulties
+	Topic             string // empty means all topics
+	MaxFollowups      int
+	Shuffle           bool
+	Selection         Distribution // exact questions per difficulty when configured
+	BasePath          string       // URL prefix for sub-path deployments (e.g. "/ru")
+	SecureCookies     bool         // Set Secure flag on cookies (disable for local dev)
+	AllowRegistration bool         // Enable public student self-registration (default false)
+	PromptVariant     string       // Grading prompt variant (strict, standard, lenient)
 
 	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
 }

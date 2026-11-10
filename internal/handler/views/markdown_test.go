@@ -59,3 +59,24 @@ func TestMarkdownCannotInjectMarkup(t *testing.T) {
 		})
 	}
 }
+
+func TestMarkdownImageRendersAltWithoutURL(t *testing.T) {
+	got := renderMarkdown(t, "![A < B](https://example.com/image.png)")
+	if !strings.Contains(got, "A &lt; B") || strings.Contains(got, "<img") || strings.Contains(got, "example.com") {
+		t.Fatalf("expected escaped alt text without an image URL, got %q", got)
+	}
+}
+
+func TestEvaluatorFollowupRendersOutsideUnclosedCodeBlock(t *testing.T) {
+	message := model.Message{Content: "```\nfeedback", Followup: "Why **now**?"}
+	var buf bytes.Buffer
+	if err := evaluatorMessage(message).Render(context.Background(), &buf); err != nil {
+		t.Fatal(err)
+	}
+	got := buf.String()
+	closeCode := strings.Index(got, "</pre>")
+	label := strings.Index(got, "<strong>Follow-up question:</strong>")
+	if closeCode < 0 || label <= closeCode || !strings.Contains(got, "Why <strong>now</strong>?") {
+		t.Fatalf("expected follow-up after the code block, got %q", got)
+	}
+}

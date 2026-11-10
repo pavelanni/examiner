@@ -58,7 +58,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 								if m.Role == model.RoleStudent {
 									<div>{ m.Text() }</div>
 								} else {
-									<div class="markdown">@markdown(m.Text())</div>
+									<div class="markdown">@evaluatorMessage(m)</div>
 								}
 							</div>
 						}

@@ -73,7 +73,7 @@ templ ReviewPage(view model.SessionView) {
 								if m.Role == model.RoleStudent {
 									<div>{ m.Text() }</div>
 								} else {
-									<div class="markdown">@markdown(m.Text())</div>
+									<div class="markdown">@evaluatorMessage(m)</div>
 								}
 							</div>
 						}
