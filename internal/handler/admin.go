@@ -196,7 +196,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		seenInFile[key] = qNum
 
 		// Check duplicate against existing questions in DB (normalized)
-		existing, err := h.store.FindQuestionByTopicAndTextNorm(qi.Topic, norm)
+		existing, err := h.store.FindQuestionByTopicAndTextNorm(1, qi.Topic, norm)
 		if err != nil {
 			slog.Error("failed to check question duplicate", "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

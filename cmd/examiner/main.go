@@ -539,7 +539,7 @@ func loadQuestions(db *store.Store, paths []string, maxFollowups int, timeLimit 
 
 		for _, qi := range questions {
 			norm := model.NormalizeQuestionText(qi.Text)
-			existing, err := db.FindQuestionByTopicAndTextNorm(qi.Topic, norm)
+			existing, err := db.FindQuestionByTopicAndTextNorm(1, qi.Topic, norm)
 			if err != nil {
 				return fmt.Errorf("check duplicate question from %s: %w", path, err)
 			}

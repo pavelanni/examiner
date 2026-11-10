@@ -145,7 +145,7 @@ type Question struct {
 }
 
 // DuplicateQuestionGroup represents existing questions in the database that share
-// the same topic and normalized text.
+// the same course, topic and normalized text.
 type DuplicateQuestionGroup struct {
 	Topic     string     `json:"topic"`
 	TextNorm  string     `json:"text_norm"`

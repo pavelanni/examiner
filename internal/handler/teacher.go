@@ -206,6 +206,12 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	editingFile := r.FormValue("editing_file")
+	if editingFile != "" {
+		editingFile = filepath.Base(editingFile)
+	}
+	h.teacherUploadMu.Lock()
+	defer h.teacherUploadMu.Unlock()
+	var oldPath string
 	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
 
 	var safeName string
@@ -217,7 +223,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
-		oldPath := filepath.Join("questions", filepath.Base(editingFile))
+		oldPath = filepath.Join("questions", editingFile)
 		if oldBytes, err := os.ReadFile(oldPath); err == nil {
 			oldQuestions = parseQuestionsFromJSON(oldBytes)
 		}
@@ -226,7 +232,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			base = strings.TrimSuffix(base, ".json")
 			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
 		} else {
-			safeName = filepath.Base(editingFile)
+			safeName = editingFile
 		}
 		outPath = filepath.Join("questions", safeName)
 	} else {
@@ -281,12 +287,31 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	oldTexts := make([]string, 0, len(oldQuestions))
-	for _, q := range oldQuestions {
-		oldTexts = append(oldTexts, q.Text)
-	}
-
-	savedIndices, skips, err := h.store.SaveTeacherQuestions(1, candidates, oldTexts)
+	var savedIndices []int
+	var skips []store.TeacherQuestionSkip
+	err = saveTeacherQuestionFile(oldPath, outPath, func(publish func([]byte) error) error {
+		var saveErr error
+		savedIndices, skips, saveErr = h.store.SaveTeacherQuestionFile(1, candidates, oldQuestions, editingFile, safeName, func(indices []int) (string, error) {
+			writtenData := data
+			if len(indices) < len(questions) {
+				saved := make([]model.QuestionImport, 0, len(indices))
+				for _, index := range indices {
+					saved = append(saved, questions[index-1])
+				}
+				encoded, err := json.MarshalIndent(saved, "", "  ")
+				if err != nil {
+					return "", err
+				}
+				writtenData = encoded
+			}
+			if err := publish(writtenData); err != nil {
+				return "", err
+			}
+			sum := sha256.Sum256(writtenData)
+			return hex.EncodeToString(sum[:]), nil
+		})
+		return saveErr
+	})
 	if err != nil {
 		slog.Error("failed to save teacher questions", "error", err)
 		http.Error(w, "failed to save questions", http.StatusInternalServerError)
@@ -295,59 +320,10 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	for _, skip := range skips {
 		warnings = append(warnings, appI18n.Td(r.Context(), "UploadDuplicateInDB", map[string]any{
-			"Num":   skip.QuestionIndex,
-			"ID":    skip.ExistingID,
-			"Topic": skip.Topic,
+			"Num": skip.QuestionIndex, "ID": skip.ExistingID, "Topic": skip.Topic,
 		}))
 	}
-
-	savedSet := make(map[int]struct{}, len(savedIndices))
-	for _, idx := range savedIndices {
-		savedSet[idx] = struct{}{}
-	}
-	savedQuestions := make([]model.QuestionImport, 0, len(savedIndices))
-	for i, qi := range questions {
-		if _, ok := savedSet[i+1]; ok {
-			savedQuestions = append(savedQuestions, qi)
-		}
-	}
-	savedCount := len(savedQuestions)
-
-	if len(savedQuestions) > 0 {
-		writtenData := data
-		if len(savedQuestions) < len(questions) {
-			encoded, err := json.MarshalIndent(savedQuestions, "", "  ")
-			if err != nil {
-				slog.Error("failed to encode saved questions", "error", err)
-				http.Error(w, "failed to save file", http.StatusInternalServerError)
-				return
-			}
-			writtenData = encoded
-		}
-
-		if err := os.WriteFile(outPath, writtenData, 0644); err != nil {
-			slog.Error("failed to save questions file", "error", err)
-			http.Error(w, "failed to save file", http.StatusInternalServerError)
-			return
-		}
-
-		// Remove the old file when the edit flow renames it.
-		if editingFile != "" && safeName != filepath.Base(editingFile) {
-			oldPath := filepath.Join("questions", filepath.Base(editingFile))
-			if err := os.Remove(oldPath); err != nil {
-				slog.Warn("failed to remove old question file", "path", oldPath, "error", err)
-			}
-		}
-
-		sum := sha256.Sum256(writtenData)
-		hash := hex.EncodeToString(sum[:])
-
-		// Fix: Changed from 'filename' to 'safeName' to ensure the exact
-		// disk destination filename is tracked in the database index.
-		if err := h.store.SetImportedFileHash(safeName, hash); err != nil {
-			slog.Warn("failed to set import hash", "error", err)
-		}
-	}
+	savedCount := len(savedIndices)
 
 	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath, "saved", savedCount, "warnings", len(warnings))
 

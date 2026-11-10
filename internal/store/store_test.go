@@ -735,7 +735,7 @@ func TestFindQuestionByTopicAndTextNorm(t *testing.T) {
 	}
 
 	norm := model.NormalizeQuestionText("  что такое пид-регулятор  ")
-	found, err := s.FindQuestionByTopicAndTextNorm("control", norm)
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "control", norm)
 	if err != nil {
 		t.Fatalf("FindQuestionByTopicAndTextNorm: %v", err)
 	}
@@ -744,7 +744,7 @@ func TestFindQuestionByTopicAndTextNorm(t *testing.T) {
 	}
 
 	// Different topic should not match.
-	otherTopic, err := s.FindQuestionByTopicAndTextNorm("other", norm)
+	otherTopic, err := s.FindQuestionByTopicAndTextNorm(1, "other", norm)
 	if err != nil {
 		t.Fatalf("FindQuestionByTopicAndTextNorm(other): %v", err)
 	}
@@ -833,11 +833,15 @@ func TestFindExistingDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("insert 1: %v", err)
 	}
-	id2, err := s.InsertQuestion(model.Question{
-		CourseID: 1, Text: "  what is docker ", Difficulty: model.DifficultyMedium, Topic: "devops", MaxPoints: 5,
-	})
+	result, err := s.db.Exec(`INSERT INTO questions
+		(course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points, archived)
+		VALUES (1, 'what is docker', 'what is docker', 'medium', 'devops', '', '', 5, 1)`)
 	if err != nil {
-		t.Fatalf("insert 2: %v", err)
+		t.Fatal(err)
+	}
+	id2, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
 	}
 	// Same normalized text in a different topic should NOT form a duplicate group.
 	if _, err := s.InsertQuestion(model.Question{
@@ -872,8 +876,11 @@ func TestFindExistingDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuestionCount: %v", err)
 	}
-	if count != 4 {
-		t.Errorf("expected 4 questions preserved, got %d", count)
+	if count != 3 {
+		t.Errorf("expected 3 active questions, got %d", count)
+	}
+	if _, err := s.GetQuestion(id2); err != nil {
+		t.Fatalf("archived question must remain readable: %v", err)
 	}
 }
 
@@ -924,7 +931,7 @@ func TestSaveTeacherQuestionsAtomicAndCrossTopic(t *testing.T) {
 		t.Fatal("expected SaveTeacherQuestions to fail on trigger")
 	}
 
-	found, err := s.FindQuestionByTopicAndTextNorm("tx", model.NormalizeQuestionText("Valid atomic question?"))
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "tx", model.NormalizeQuestionText("Valid atomic question?"))
 	if err != nil {
 		t.Fatalf("FindQuestionByTopicAndTextNorm: %v", err)
 	}

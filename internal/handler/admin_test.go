@@ -139,11 +139,11 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 		t.Errorf("expected Russian warning about existing question in DB, got: %s", bodyRuNew)
 	}
 
-	// Проверяем отображение отчёта о существующих в БД дубликатах (не удаляя их).
-	if _, err := s.InsertQuestion(model.Question{
+	// Новый дубль не должен попадать в отчёт о старых записях.
+	if id, err := s.InsertQuestion(model.Question{
 		CourseID: 1, Text: "что такое пид-регулятор", Difficulty: model.DifficultyEasy, Topic: "control", MaxPoints: 10,
-	}); err != nil {
-		t.Fatalf("InsertQuestion legacy near-duplicate: %v", err)
+	}); err != nil || id != 0 {
+		t.Fatalf("expected duplicate insert to be skipped, got id=%d, err=%v", id, err)
 	}
 	reqPage := httptest.NewRequest(http.MethodGet, "/admin/questions", nil)
 	reqPage = reqPage.WithContext(i18n.WithLocalizer(model.ContextWithUser(reqPage.Context(), &model.User{ID: 1, Role: model.UserRoleAdmin}), i18n.NewLocalizer("en")))
@@ -152,15 +152,15 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 	if recPage.Code != http.StatusOK {
 		t.Fatalf("GET /admin/questions status = %d", recPage.Code)
 	}
-	if !strings.Contains(recPage.Body.String(), "Existing duplicate questions in database (1)") {
-		t.Errorf("expected existing duplicates report on admin page, got: %s", recPage.Body.String())
+	if strings.Contains(recPage.Body.String(), "Existing duplicate questions in database (1)") {
+		t.Errorf("unexpected duplicates report on admin page, got: %s", recPage.Body.String())
 	}
 	countAfterReport, err := s.QuestionCount()
 	if err != nil {
 		t.Fatalf("QuestionCount after report: %v", err)
 	}
-	if countAfterReport != 2 {
-		t.Errorf("expected both legacy near-duplicates to remain (2), got %d", countAfterReport)
+	if countAfterReport != 1 {
+		t.Errorf("expected one active question before cross-topic import, got %d", countAfterReport)
 	}
 
 	// Вопрос с тем же текстом в ДРУГОЙ теме должен импортироваться отдельно (не падать в silent ignore).
@@ -175,7 +175,7 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QuestionCount after cross-topic: %v", err)
 	}
-	if countAfterCrossTopic != 3 {
-		t.Errorf("expected 3 questions in DB after cross-topic import, got %d", countAfterCrossTopic)
+	if countAfterCrossTopic != 2 {
+		t.Errorf("expected 2 questions in DB after cross-topic import, got %d", countAfterCrossTopic)
 	}
 }

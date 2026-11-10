@@ -118,7 +118,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("expected question count to remain 1, got %d", count)
 	}
-	found, err := s.FindQuestionByTopicAndTextNorm("control", model.NormalizeQuestionText("Что такое ПИД-регулятор?"))
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "control", model.NormalizeQuestionText("Что такое ПИД-регулятор?"))
 	if err != nil || found == nil {
 		t.Fatalf("FindQuestionByTopicAndTextNorm: %v, %+v", err, found)
 	}
@@ -278,5 +278,68 @@ func TestTeacherUploadRedirectRespectsBasePath(t *testing.T) {
 	expectedLocation := "/ru/teacher/profile"
 	if loc := rec.Header().Get("Location"); loc != expectedLocation {
 		t.Errorf("Location = %q, want %q", loc, expectedLocation)
+	}
+}
+
+// TestTeacherUploadRenameUsesBaseName verifies that a rename removes the old
+// file and its import hash even when the form includes a directory prefix.
+func TestTeacherUploadRenameUsesBaseName(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	t.Chdir(filepath.Join("..", ".."))
+	h, err := New(s, nil, model.ExamConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+	if err := os.Mkdir("questions", 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	const oldName = "teacher_alice_old.json"
+	const newName = "teacher_alice_new.json"
+	const data = `[{"text":"Q1","difficulty":"easy","topic":"t","rubric":"r","model_answer":"a","max_points":10}]`
+	oldPath := filepath.Join("questions", oldName)
+	if err := os.WriteFile(oldPath, []byte(data), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetImportedFileHash(oldName, "old hash"); err != nil {
+		t.Fatal(err)
+	}
+
+	var body bytes.Buffer
+	form := multipart.NewWriter(&body)
+	for key, value := range map[string]string{
+		"editing_file": oldPath, "custom_filename": "new", "questions_json": data,
+	} {
+		if err := form.WriteField(key, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := form.Close(); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/teacher/tests", &body)
+	req.Header.Set("Content-Type", form.FormDataContentType())
+	req = req.WithContext(model.ContextWithUser(req.Context(), &model.User{Username: "alice", Role: model.UserRoleTeacher}))
+	rec := httptest.NewRecorder()
+	h.handleTeacherUpload(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, body = %q", rec.Code, rec.Body.String())
+	}
+	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
+		t.Fatalf("expected old file to be removed, got %v", err)
+	}
+	if got, err := os.ReadFile(filepath.Join("questions", newName)); err != nil || string(got) != data {
+		t.Fatalf("new file = %q, err = %v", got, err)
+	}
+	if hash, err := s.GetImportedFileHash(oldName); err != nil || hash != "" {
+		t.Fatalf("old import hash = %q, err = %v", hash, err)
+	}
+	if hash, err := s.GetImportedFileHash(newName); err != nil || hash == "" {
+		t.Fatalf("new import hash = %q, err = %v", hash, err)
 	}
 }

@@ -221,6 +221,8 @@ func (h *Handler) drawQuestionsFiltered(topic *string, rng *rand.Rand) ([]model.
 			return nil, err
 		}
 	} else {
+		// A session must not repeat normalized text, even when a legacy
+		// request without a topic draws from multiple topics (issue #46).
 		picked = selection.Unique(questions)
 	}
 	if len(picked) == 0 {
