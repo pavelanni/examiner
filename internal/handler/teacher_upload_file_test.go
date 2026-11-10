@@ -20,8 +20,8 @@ func TestSaveTeacherQuestionFileRestoresFilesAfterCommitFailure(t *testing.T) {
 		}
 	}
 	commitErr := errors.New("test commit failure")
-	err := saveTeacherQuestionFile(oldPath, outPath, []byte("new"), func(publish func() error) error {
-		if err := publish(); err != nil {
+	err := saveTeacherQuestionFile(oldPath, outPath, func(publish func([]byte) error) error {
+		if err := publish([]byte("new")); err != nil {
 			return err
 		}
 		return commitErr

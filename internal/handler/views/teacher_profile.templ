@@ -6,9 +6,12 @@ import (
 	"path/filepath" // Добавляем импорт для работы с путями файлов
 )
 
-templ TeacherProfilePage(displayName string, files []string) {
+templ TeacherProfilePage(displayName string, files []string, flashMsg string) {
 	@Layout(t(ctx, "TeacherProfile")) {
 		<h1>{ displayName }</h1>
+		if flashMsg != "" {
+			<p style="color: var(--pico-del-color);">{ flashMsg }</p>
+		}
 		<p>{ t(ctx, "TeacherUploadIntro") }</p>
 		<p>
 			<a href={ templ.SafeURL(p(ctx, "/teacher/create-test")) } class="contrast">{ t(ctx, "Create Questions") }</a>

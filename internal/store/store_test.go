@@ -489,46 +489,6 @@ func TestImportedFileHash(t *testing.T) {
 	}
 }
 
-func TestUpdateQuestionByCourseAndText(t *testing.T) {
-	s := newTestStore(t)
-
-	q := model.Question{
-		CourseID:    1,
-		Text:        "update me",
-		Difficulty:  model.DifficultyEasy,
-		Topic:       "go",
-		Rubric:      "original",
-		ModelAnswer: "original answer",
-		MaxPoints:   5,
-	}
-	id, err := s.InsertQuestion(q)
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if id == 0 {
-		t.Fatal("expected inserted id")
-	}
-
-	q.Rubric = "updated"
-	q.MaxPoints = 10
-	if err := s.UpdateQuestionByCourseAndText(q); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-
-	updated, err := s.GetQuestion(id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if updated.Rubric != "updated" || updated.MaxPoints != 10 {
-		t.Fatalf("unexpected updated values: %+v", updated)
-	}
-
-	missing := model.Question{CourseID: 1, Text: "missing", Difficulty: model.DifficultyEasy, Topic: "x"}
-	if err := s.UpdateQuestionByCourseAndText(missing); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expected sql.ErrNoRows, got %v", err)
-	}
-}
-
 func TestDeleteUnusedQuestionsByTexts(t *testing.T) {
 	s := newTestStore(t)
 
@@ -755,6 +715,228 @@ func TestMessageScoreRoundTrip(t *testing.T) {
 	}
 	if msgs[1].Score == nil || *msgs[1].Score != 7.5 {
 		t.Errorf("LLM message score = %v, want 7.5", msgs[1].Score)
+	}
+}
+
+func TestFindQuestionByTopicAndTextNorm(t *testing.T) {
+	s := newTestStore(t)
+
+	id1, err := s.InsertQuestion(model.Question{
+		CourseID:    1,
+		Text:        "Что такое ПИД-регулятор?",
+		Difficulty:  model.DifficultyEasy,
+		Topic:       "control",
+		Rubric:      "r",
+		ModelAnswer: "a",
+		MaxPoints:   5,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+
+	norm := model.NormalizeQuestionText("  что такое пид-регулятор  ")
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "control", norm)
+	if err != nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm: %v", err)
+	}
+	if found == nil || found.ID != id1 {
+		t.Fatalf("expected question #%d, got %+v", id1, found)
+	}
+
+	// Different topic should not match.
+	otherTopic, err := s.FindQuestionByTopicAndTextNorm(1, "other", norm)
+	if err != nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm(other): %v", err)
+	}
+	if otherTopic != nil {
+		t.Fatalf("expected nil for different topic, got %+v", otherTopic)
+	}
+}
+
+func TestUpdateQuestion(t *testing.T) {
+	s := newTestStore(t)
+
+	id, err := s.InsertQuestion(model.Question{
+		CourseID:    1,
+		Text:        "Original question?",
+		Difficulty:  model.DifficultyEasy,
+		Topic:       "go",
+		Rubric:      "old rubric",
+		ModelAnswer: "old answer",
+		MaxPoints:   3,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+
+	err = s.UpdateQuestion(model.Question{
+		ID:          id,
+		Text:        "Updated Question!",
+		Difficulty:  model.DifficultyHard,
+		Topic:       "concurrency",
+		Rubric:      "new rubric",
+		ModelAnswer: "new answer",
+		MaxPoints:   10,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuestion: %v", err)
+	}
+
+	got, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("GetQuestion: %v", err)
+	}
+	if got.Text != "Updated Question!" || got.TextNorm != "updated question" ||
+		got.Difficulty != model.DifficultyHard || got.Topic != "concurrency" ||
+		got.Rubric != "new rubric" || got.ModelAnswer != "new answer" || got.MaxPoints != 10 {
+		t.Fatalf("unexpected updated question: %+v", got)
+	}
+
+	if err := s.UpdateQuestion(model.Question{ID: 99999, Text: "missing"}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows for missing ID, got %v", err)
+	}
+}
+
+func TestPopulateQuestionTextNorm(t *testing.T) {
+	s := newTestStore(t)
+
+	// Simulate a legacy row created before text_norm was populated.
+	res, err := s.db.Exec(
+		`INSERT INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points)
+		 VALUES (1, '  Ёжик и мёд? ', '', 'easy', 'nature', 'r', 'a', 1)`,
+	)
+	if err != nil {
+		t.Fatalf("raw insert: %v", err)
+	}
+	id, _ := res.LastInsertId()
+
+	if err := s.populateQuestionTextNorm(); err != nil {
+		t.Fatalf("populateQuestionTextNorm: %v", err)
+	}
+
+	got, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("GetQuestion: %v", err)
+	}
+	if got.TextNorm != "ежик и мед" {
+		t.Errorf("TextNorm = %q, want %q", got.TextNorm, "ежик и мед")
+	}
+}
+
+func TestFindExistingDuplicates(t *testing.T) {
+	s := newTestStore(t)
+
+	// Two near-duplicate questions in the same topic (different raw text, same text_norm).
+	id1, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is Docker?", Difficulty: model.DifficultyEasy, Topic: "devops", MaxPoints: 5,
+	})
+	if err != nil {
+		t.Fatalf("insert 1: %v", err)
+	}
+	result, err := s.db.Exec(`INSERT INTO questions
+		(course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points, archived)
+		VALUES (1, 'what is docker', 'what is docker', 'medium', 'devops', '', '', 5, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same normalized text in a different topic should NOT form a duplicate group.
+	if _, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "what is docker?!", Difficulty: model.DifficultyEasy, Topic: "containers", MaxPoints: 5,
+	}); err != nil {
+		t.Fatalf("insert 3: %v", err)
+	}
+	// Unique question in same topic should NOT appear.
+	if _, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is Kubernetes?", Difficulty: model.DifficultyEasy, Topic: "devops", MaxPoints: 5,
+	}); err != nil {
+		t.Fatalf("insert 4: %v", err)
+	}
+
+	groups, err := s.FindExistingDuplicates()
+	if err != nil {
+		t.Fatalf("FindExistingDuplicates: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 duplicate group, got %d: %+v", len(groups), groups)
+	}
+	g := groups[0]
+	if g.Topic != "devops" || g.TextNorm != "what is docker" {
+		t.Errorf("unexpected group metadata: %+v", g)
+	}
+	if len(g.Questions) != 2 || g.Questions[0].ID != id1 || g.Questions[1].ID != id2 {
+		t.Errorf("expected questions [%d, %d], got %+v", id1, id2, g.Questions)
+	}
+
+	// Ensure FindExistingDuplicates is non-destructive.
+	count, err := s.QuestionCount()
+	if err != nil {
+		t.Fatalf("QuestionCount: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3 active questions, got %d", count)
+	}
+	if _, err := s.GetQuestion(id2); err != nil {
+		t.Fatalf("archived question must remain readable: %v", err)
+	}
+}
+
+func TestSaveTeacherQuestionsAtomicAndCrossTopic(t *testing.T) {
+	s := newTestStore(t)
+
+	// Cross-topic identical text should be allowed independently.
+	idA, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is state?", Difficulty: model.DifficultyEasy, Topic: "react", MaxPoints: 5,
+	})
+	if err != nil || idA == 0 {
+		t.Fatalf("InsertQuestion topic A: id=%d err=%v", idA, err)
+	}
+	idB, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is state?", Difficulty: model.DifficultyEasy, Topic: "redux", MaxPoints: 5,
+	})
+	if err != nil || idB == 0 || idB == idA {
+		t.Fatalf("InsertQuestion topic B: id=%d err=%v", idB, err)
+	}
+
+	// Verify SaveTeacherQuestions rolls back everything if an operation fails mid-transaction.
+	if _, err := s.db.Exec(`
+		CREATE TRIGGER fail_tx_question BEFORE INSERT ON questions
+		WHEN NEW.text = 'FAIL_TX'
+		BEGIN
+			SELECT RAISE(ABORT, 'simulated mid-tx failure');
+		END
+	`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	items := []TeacherQuestionUploadItem{
+		{
+			QuestionIndex: 1,
+			Owned:         false,
+			Question: model.Question{
+				CourseID: 1, Text: "Valid atomic question?", Difficulty: model.DifficultyEasy, Topic: "tx", MaxPoints: 5,
+			},
+		},
+		{
+			QuestionIndex: 2,
+			Owned:         false,
+			Question: model.Question{
+				CourseID: 1, Text: "FAIL_TX", Difficulty: model.DifficultyEasy, Topic: "tx", MaxPoints: 5,
+			},
+		},
+	}
+	if _, _, err := s.SaveTeacherQuestions(1, items, nil); err == nil {
+		t.Fatal("expected SaveTeacherQuestions to fail on trigger")
+	}
+
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "tx", model.NormalizeQuestionText("Valid atomic question?"))
+	if err != nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm: %v", err)
+	}
+	if found != nil {
+		t.Fatalf("expected rollback to remove question 1, but found %+v", found)
 	}
 }
 

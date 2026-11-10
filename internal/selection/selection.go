@@ -164,8 +164,14 @@ func Unique(questions []model.Question) []model.Question {
 	return out
 }
 
-// questionKey identifies repeated question text. Normalized text is added in #46.
-func questionKey(q model.Question) string { return q.Text }
+// questionKey identifies repeated questions by (topic, text_norm), matching store identity.
+func questionKey(q model.Question) string {
+	norm := q.TextNorm
+	if norm == "" {
+		norm = model.NormalizeQuestionText(q.Text)
+	}
+	return q.Topic + "\x00" + norm
+}
 
 // Pools removes repeated IDs and groups questions by difficulty. Equal text
 // in different difficulties stays eligible until the distribution is known.

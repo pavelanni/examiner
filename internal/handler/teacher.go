@@ -15,7 +15,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/store"
 )
 
 func teacherQuestionFilePrefix(username string) string {
@@ -24,6 +26,42 @@ func teacherQuestionFilePrefix(username string) string {
 
 func teacherOwnsQuestionFile(username, filename string) bool {
 	return strings.HasPrefix(filepath.Base(filename), teacherQuestionFilePrefix(username))
+}
+
+func listTeacherFiles(username string) []string {
+	files := []string{}
+	entries, err := os.ReadDir("questions")
+	if err != nil {
+		return files
+	}
+	prefix := teacherQuestionFilePrefix(username)
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if filepath.Ext(name) == ".json" && strings.HasPrefix(name, prefix) {
+			files = append(files, name)
+		}
+	}
+	return files
+}
+
+func teacherOwnedQuestionKeys(username string, oldQuestions []model.QuestionImport) map[string]struct{} {
+	owned := make(map[string]struct{}, len(oldQuestions))
+	for _, q := range oldQuestions {
+		owned[questionDupKey(q.Topic, model.NormalizeQuestionText(q.Text))] = struct{}{}
+	}
+	for _, name := range listTeacherFiles(username) {
+		b, err := os.ReadFile(filepath.Join("questions", name))
+		if err != nil {
+			continue
+		}
+		for _, q := range parseQuestionsFromJSON(b) {
+			owned[questionDupKey(q.Topic, model.NormalizeQuestionText(q.Text))] = struct{}{}
+		}
+	}
+	return owned
 }
 
 func parseQuestionsFromJSON(data []byte) []model.QuestionImport {
@@ -47,23 +85,10 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	files := []string{}
-	entries, err := os.ReadDir("questions")
-	if err == nil {
-		prefix := teacherQuestionFilePrefix(user.Username)
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			name := e.Name()
-			if filepath.Ext(name) == ".json" && strings.HasPrefix(name, prefix) {
-				files = append(files, name)
-			}
-		}
-	}
+	files := listTeacherFiles(user.Username)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.TeacherProfilePage(user.DisplayName, files).Render(r.Context(), w); err != nil {
+	if err := views.TeacherProfilePage(user.DisplayName, files, "").Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -184,61 +209,132 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	if editingFile != "" {
 		editingFile = filepath.Base(editingFile)
 	}
-	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
-
 	h.teacherUploadMu.Lock()
 	defer h.teacherUploadMu.Unlock()
-
 	var oldPath string
-	var oldTexts []string
+	customFilename := strings.TrimSpace(r.FormValue("custom_filename"))
+
+	var safeName string
+	var outPath string
+	var oldQuestions []model.QuestionImport
+
 	if editingFile != "" {
 		if !teacherOwnsQuestionFile(user.Username, editingFile) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		oldPath = filepath.Join("questions", editingFile)
-		oldBytes, err := os.ReadFile(oldPath)
-		if err != nil {
-			slog.Error("failed to read previous question file", "error", err)
-			http.Error(w, "failed to read previous question file", http.StatusInternalServerError)
-			return
+		if oldBytes, err := os.ReadFile(oldPath); err == nil {
+			oldQuestions = parseQuestionsFromJSON(oldBytes)
 		}
-		for _, q := range parseQuestionsFromJSON(oldBytes) {
-			oldTexts = append(oldTexts, q.Text)
+		if customFilename != "" {
+			base := filepath.Base(customFilename)
+			base = strings.TrimSuffix(base, ".json")
+			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
+		} else {
+			safeName = editingFile
 		}
+		outPath = filepath.Join("questions", safeName)
+	} else {
+		if customFilename != "" {
+			base := filepath.Base(customFilename)
+			base = strings.TrimSuffix(base, ".json")
+			safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
+		} else {
+			safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
+		}
+		outPath = filepath.Join("questions", safeName)
 	}
 
-	var safeName string
-	switch {
-	case customFilename != "":
-		base := strings.TrimSuffix(filepath.Base(customFilename), ".json")
-		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
-	case oldPath != "":
-		safeName = editingFile
-	default:
-		safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
-	}
-	outPath := filepath.Join("questions", safeName)
-	newQuestions := make([]model.Question, 0, len(questions))
-	for _, qi := range questions {
-		newQuestions = append(newQuestions, model.Question{
-			// TODO: derive course ID from context/config when multi-course support lands.
-			CourseID: 1, Text: qi.Text, Difficulty: qi.Difficulty, Topic: qi.Topic,
-			Rubric: qi.Rubric, ModelAnswer: qi.ModelAnswer, MaxPoints: qi.MaxPoints,
+	// Collect questions already owned by this teacher before writing outPath.
+	ownedKeys := teacherOwnedQuestionKeys(user.Username, oldQuestions)
+
+	var warnings []string
+	var candidates []store.TeacherQuestionUploadItem
+	seenInUpload := make(map[string]int, len(questions)) // topic + "\x00" + text_norm -> 1-based question number
+
+	for i, qi := range questions {
+		qNum := i + 1
+		norm := model.NormalizeQuestionText(qi.Text)
+		key := questionDupKey(qi.Topic, norm)
+
+		// Check duplicate within the uploaded questions.
+		if prevNum, seen := seenInUpload[key]; seen {
+			warnings = append(warnings, appI18n.Td(r.Context(), "UploadDuplicateInFile", map[string]any{
+				"Num":     qNum,
+				"PrevNum": prevNum,
+				"Topic":   qi.Topic,
+			}))
+			continue
+		}
+		seenInUpload[key] = qNum
+
+		_, owned := ownedKeys[key]
+		candidates = append(candidates, store.TeacherQuestionUploadItem{
+			QuestionIndex: qNum,
+			Owned:         owned,
+			Question: model.Question{
+				// TODO: derive course ID from context/config when multi-course support lands.
+				CourseID:    1,
+				Text:        qi.Text,
+				TextNorm:    norm,
+				Difficulty:  qi.Difficulty,
+				Topic:       qi.Topic,
+				Rubric:      qi.Rubric,
+				ModelAnswer: qi.ModelAnswer,
+				MaxPoints:   qi.MaxPoints,
+			},
 		})
 	}
 
-	sum := sha256.Sum256(data)
-	err = saveTeacherQuestionFile(oldPath, outPath, data, func(publish func() error) error {
-		return h.store.SaveTeacherQuestions(newQuestions, oldTexts, editingFile, safeName, hex.EncodeToString(sum[:]), publish)
+	var savedIndices []int
+	var skips []store.TeacherQuestionSkip
+	err = saveTeacherQuestionFile(oldPath, outPath, func(publish func([]byte) error) error {
+		var saveErr error
+		savedIndices, skips, saveErr = h.store.SaveTeacherQuestionFile(1, candidates, oldQuestions, editingFile, safeName, func(indices []int) (string, error) {
+			writtenData := data
+			if len(indices) < len(questions) {
+				saved := make([]model.QuestionImport, 0, len(indices))
+				for _, index := range indices {
+					saved = append(saved, questions[index-1])
+				}
+				encoded, err := json.MarshalIndent(saved, "", "  ")
+				if err != nil {
+					return "", err
+				}
+				writtenData = encoded
+			}
+			if err := publish(writtenData); err != nil {
+				return "", err
+			}
+			sum := sha256.Sum256(writtenData)
+			return hex.EncodeToString(sum[:]), nil
+		})
+		return saveErr
 	})
 	if err != nil {
-		slog.Error("failed to save teacher questions", "file", outPath, "error", err)
+		slog.Error("failed to save teacher questions", "error", err)
 		http.Error(w, "failed to save questions", http.StatusInternalServerError)
 		return
 	}
 
-	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath, "count", len(questions))
+	for _, skip := range skips {
+		warnings = append(warnings, appI18n.Td(r.Context(), "UploadDuplicateInDB", map[string]any{
+			"Num": skip.QuestionIndex, "ID": skip.ExistingID, "Topic": skip.Topic,
+		}))
+	}
+	savedCount := len(savedIndices)
+
+	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath, "saved", savedCount, "warnings", len(warnings))
+
+	if len(warnings) > 0 {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		msg := formatUploadSummary(r.Context(), savedCount, warnings)
+		if err := views.TeacherProfilePage(user.DisplayName, listTeacherFiles(user.Username), msg).Render(r.Context(), w); err != nil {
+			slog.Error("render error", "error", err)
+		}
+		return
+	}
 
 	// Automatically redirect to teacher's profile
 	http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)

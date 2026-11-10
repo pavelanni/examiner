@@ -11,7 +11,7 @@ import (
 // saveTeacherQuestionFile stages the upload on the same filesystem and keeps
 // the previous files until the database commit succeeds. This compensates for
 // returned errors; a process crash between publication and commit needs recovery.
-func saveTeacherQuestionFile(oldPath, outPath string, data []byte, save func(func() error) error) error {
+func saveTeacherQuestionFile(oldPath, outPath string, save func(func([]byte) error) error) error {
 	dir, err := os.MkdirTemp(filepath.Dir(outPath), ".upload-")
 	if err != nil {
 		return err
@@ -26,14 +26,14 @@ func saveTeacherQuestionFile(oldPath, outPath string, data []byte, save func(fun
 	}()
 
 	staged := filepath.Join(dir, "new")
-	if err := os.WriteFile(staged, data, 0644); err != nil {
-		return err
-	}
 	previous := filepath.Join(dir, "previous")
 	retired := filepath.Join(dir, "retired")
 	var backedUp, published, movedOld bool
 
-	err = save(func() error {
+	err = save(func(data []byte) error {
+		if err := os.WriteFile(staged, data, 0644); err != nil {
+			return err
+		}
 		info, err := os.Lstat(outPath)
 		switch {
 		case err == nil:
