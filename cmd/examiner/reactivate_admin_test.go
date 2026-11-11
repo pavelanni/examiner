@@ -11,6 +11,7 @@ import (
 	"github.com/pavelanni/examiner/internal/store"
 )
 
+// TestReactivateAdminRecovery checks local recovery without changing the password or unrelated users.
 func TestReactivateAdminRecovery(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "examiner.db")
 	s, err := store.New(dbPath)
@@ -72,6 +73,7 @@ func TestReactivateAdminRecovery(t *testing.T) {
 	}
 }
 
+// TestReactivateAdminDoesNotCreateDatabase rejects a missing database without creating it.
 func TestReactivateAdminDoesNotCreateDatabase(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "missing.db")
 	cmd := rootCmd()
@@ -86,6 +88,7 @@ func TestReactivateAdminDoesNotCreateDatabase(t *testing.T) {
 	}
 }
 
+// TestReactivateAdminRejectsEmptyFileAndDirectory rejects invalid paths before SQLite can create schema or sidecars.
 func TestReactivateAdminRejectsEmptyFileAndDirectory(t *testing.T) {
 	for _, directory := range []bool{false, true} {
 		name := "empty file"
