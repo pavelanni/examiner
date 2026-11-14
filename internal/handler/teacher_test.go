@@ -170,6 +170,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	}
 }
 
+// TestStartExamDeduplicatesByTextNorm keeps each explicit topic variant unique.
 func TestStartExamDeduplicatesByTextNorm(t *testing.T) {
 	s, err := store.New(":memory:")
 	if err != nil {
@@ -186,7 +187,7 @@ func TestStartExamDeduplicatesByTextNorm(t *testing.T) {
 		t.Fatalf("InsertQuestion 1: %v", err)
 	}
 	if _, err := s.InsertQuestion(model.Question{
-		CourseID: 1, Text: "what is go", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5,
+		CourseID: 2, Text: "what is go", Difficulty: model.DifficultyEasy, Topic: "go", MaxPoints: 5,
 	}); err != nil {
 		t.Fatalf("InsertQuestion 2: %v", err)
 	}
@@ -197,26 +198,26 @@ func TestStartExamDeduplicatesByTextNorm(t *testing.T) {
 	}
 
 	h := &Handler{store: s, config: model.ExamConfig{}}
-	req := httptest.NewRequest(http.MethodPost, "/exam/start", nil)
-	req = req.WithContext(model.ContextWithUser(req.Context(), &model.User{ID: 1, Role: model.UserRoleStudent}))
-
-	rec := httptest.NewRecorder()
-	h.handleStartExam(rec, req)
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("handleStartExam status = %d, body: %s", rec.Code, rec.Body.String())
+	for _, topic := range []string{"go", "history"} {
+		rec := startExam(t, h, &model.User{ID: 1, Role: model.UserRoleStudent}, topic)
+		if rec.Code != http.StatusSeeOther {
+			t.Fatalf("topic %s: status %d, body: %s", topic, rec.Code, rec.Body.String())
+		}
 	}
 
 	sessions, err := s.ListSessionsByUser(1)
-	if err != nil || len(sessions) != 1 {
+	if err != nil || len(sessions) != 2 {
 		t.Fatalf("ListSessionsByUser: err=%v, sessions=%+v", err, sessions)
 	}
-	threads, err := s.GetThreadsForSession(sessions[0].ID)
-	if err != nil {
-		t.Fatalf("GetThreadsForSession: %v", err)
-	}
-	// 2 in "go" collapse to 1, plus 1 in "history" = 2 threads total.
-	if len(threads) != 2 {
-		t.Errorf("expected 2 threads (1 per topic), got %d", len(threads))
+	for _, session := range sessions {
+		threads, err := s.GetThreadsForSession(session.ID)
+		if err != nil || len(threads) != 1 {
+			t.Fatalf("topic %s: expected one unique question, got %v, %v", session.Topic, threads, err)
+		}
+		q, err := s.GetQuestion(threads[0].QuestionID)
+		if err != nil || q.Topic != session.Topic {
+			t.Fatalf("topic %s contains a question from another topic: %+v, %v", session.Topic, q, err)
+		}
 	}
 }
 

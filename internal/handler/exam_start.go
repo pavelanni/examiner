@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/pavelanni/examiner/internal/handler/views"
@@ -43,6 +44,15 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+	// The user's own sessions decide which topics they can continue or start.
+	mine := sessions
+	if user.Role != model.UserRoleStudent {
+		if mine, err = h.store.ListSessionsByUser(user.ID); err != nil {
+			slog.Error("failed to list own sessions", "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+			return
+		}
+	}
 
 	allTopics, err := h.store.ListDistinctTopics()
 	if err != nil {
@@ -59,6 +69,13 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 	}
 	if h.config.Topic != "" && len(topics) == 0 {
 		topics = append(topics, h.config.Topic)
+	}
+	// A pinned attempt remains resumable when the available bank or the
+	// configured topic changes after it was issued.
+	for _, sess := range mine {
+		if sess.TopicKnown && sess.BlueprintID == blueprintID && sess.Status == model.StatusInProgress && !slices.Contains(topics, sess.Topic) {
+			topics = append(topics, sess.Topic)
+		}
 	}
 
 	// The questions exams draw from, by topic.
@@ -97,7 +114,7 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 		AvailableCount: availableCount,
 		ExamCount:      examCount,
 		Config:         h.config,
-		Topics:         h.topicChoices(ctx, topics, byTopic),
+		Topics:         h.topicChoices(ctx, user, topics, byTopic, mine),
 		Error:          errMsg,
 	}).Render(ctx, w)
 	if err != nil {
@@ -114,12 +131,38 @@ func (h *Handler) difficultyFilter() string {
 	return h.config.Difficulty
 }
 
-// topicChoices marks topics that can supply a complete exam.
-func (h *Handler) topicChoices(ctx context.Context, topics []string, byTopic map[string][]model.Question) []views.TopicChoice {
+// topicChoices says, per topic, whether the user can continue an exam,
+// start one, or neither and why. mine are the user's sessions, newest first.
+func (h *Handler) topicChoices(ctx context.Context, user *model.User, topics []string, byTopic map[string][]model.Question, mine []model.ExamSession) []views.TopicChoice {
+	// Per topic, the session a start would return: in progress, else newest.
+	latest := make(map[string]model.ExamSession)
+	for _, s := range mine {
+		if !s.TopicKnown || s.BlueprintID != blueprintID {
+			continue
+		}
+		if cur, ok := latest[s.Topic]; !ok || (s.Status == model.StatusInProgress && cur.Status != model.StatusInProgress) {
+			latest[s.Topic] = s
+		}
+	}
+	retake := canRetake(user)
+
 	out := make([]views.TopicChoice, 0, len(topics))
 	for _, topic := range topics {
-		note := h.unavailableNote(ctx, byTopic[topic])
-		out = append(out, views.TopicChoice{Topic: topic, Available: note == "", Note: note})
+		c := views.TopicChoice{Topic: topic, Available: true}
+		if s, ok := latest[topic]; ok {
+			switch {
+			case s.Status == model.StatusInProgress:
+				c.Available, c.Active = false, &s
+			case !retake:
+				c.Available, c.Note = false, appI18n.T(ctx, "ExamTaken")
+			}
+		}
+		if c.Available {
+			if note := h.unavailableNote(ctx, byTopic[topic]); note != "" {
+				c.Available, c.Note = false, note
+			}
+		}
+		out = append(out, c)
 	}
 	return out
 }
@@ -147,9 +190,17 @@ func shortageText(ctx context.Context, msgID, topic string, shortages []selectio
 	return strings.Join(parts, " ")
 }
 
+// canRetake reports whether user may start a new exam in a topic after
+// finishing one. Students get one attempt per topic (FR3-05); teachers and
+// admins try exams out.
+func canRetake(user *model.User) bool {
+	return user.Role != model.UserRoleStudent
+}
+
 // handleStartExam validates the selected topic and creates a complete variant.
 func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	user := model.UserFromContext(ctx)
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "invalid form", http.StatusBadRequest)
 		return
@@ -159,16 +210,27 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	if !selected {
 		topic = h.config.Topic
 	}
-	if h.config.Selection != nil && ((!selected && topic == "") || (h.config.Topic != "" && topic != h.config.Topic)) {
+	if (!selected && topic == "") || (h.config.Topic != "" && topic != h.config.Topic) {
 		h.renderIndex(w, r, http.StatusBadRequest, appI18n.T(ctx, "ExamChooseTopic"))
 		return
 	}
-	rng := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
-	var topicFilter *string
-	if selected || h.config.Topic != "" {
-		topicFilter = &topic
+	retake := canRetake(user)
+
+	// The variant is fixed (FR3-05): a student who already has a session
+	// for this exam goes back to it instead of drawing new questions.
+	existing, err := h.store.FindExamSession(blueprintID, user.ID, topic, retake)
+	if err != nil {
+		slog.Error("failed to find exam session", "user", user.ID, "topic", topic, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
 	}
-	questions, err := h.drawQuestionsFiltered(topicFilter, rng)
+	if existing != nil {
+		h.redirectToSession(w, r, *existing)
+		return
+	}
+
+	rng := rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64()))
+	questions, err := h.drawQuestions(topic, rng)
 	var short *selection.ShortageError
 	switch {
 	case errors.As(err, &short):
@@ -182,22 +244,30 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
+
 	questionIDs := make([]int64, 0, len(questions))
 	for _, q := range questions {
 		questionIDs = append(questionIDs, q.ID)
 	}
-	user := model.UserFromContext(ctx)
-	sessionID, err := h.store.CreateSession(blueprintID, user.ID, questionIDs)
+	// StartSession checks again inside its transaction: of two concurrent
+	// starts, the second gets the first one's session.
+	sess, created, err := h.store.StartSession(blueprintID, user.ID, topic, questionIDs, retake)
 	if err != nil {
 		slog.Error("failed to create session", "user", user.ID, "topic", topic, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	http.Redirect(w, r, h.path(fmt.Sprintf("/exam/%d", sessionID)), http.StatusSeeOther)
+	if created {
+		slog.Info("exam started", "session_id", sess.ID, "user", user.ID, "topic", topic, "questions", len(questionIDs))
+	}
+	h.redirectToSession(w, r, sess)
 }
 
-// drawQuestions uses the exact distribution when configured. Without it,
-// num-questions, difficulty and shuffle retain their previous behavior.
+// drawQuestions draws the question set of a new session in topic: exactly
+// the configured number per difficulty or, without a distribution,
+// num-questions from the allowed difficulties. The set is always random;
+// the shuffle setting only randomizes the order, which is otherwise
+// easiest first.
 func (h *Handler) drawQuestions(topic string, rng *rand.Rand) ([]model.Question, error) {
 	return h.drawQuestionsFiltered(&topic, rng)
 }
@@ -216,14 +286,11 @@ func (h *Handler) drawQuestionsFiltered(topic *string, rng *rand.Rand) ([]model.
 	}
 	var picked []model.Question
 	if d := h.config.Selection; d != nil {
-		picked, err = selection.Draw(selection.Pools(questions), d, rng)
-		if err != nil {
+		if picked, err = selection.Draw(selection.Pools(questions), d, rng); err != nil {
 			return nil, err
 		}
 	} else {
-		// A session must not repeat normalized text, even when a legacy
-		// request without a topic draws from multiple topics (issue #46).
-		picked = selection.Unique(questions)
+		picked = selection.DrawN(questions, h.config.NumQuestions, rng)
 	}
 	if len(picked) == 0 {
 		return nil, errNoQuestions
@@ -231,8 +298,15 @@ func (h *Handler) drawQuestionsFiltered(topic *string, rng *rand.Rand) ([]model.
 	if h.config.Shuffle {
 		rng.Shuffle(len(picked), func(i, j int) { picked[i], picked[j] = picked[j], picked[i] })
 	}
-	if h.config.Selection == nil && h.config.NumQuestions > 0 && h.config.NumQuestions < len(picked) {
-		picked = picked[:h.config.NumQuestions]
-	}
 	return picked, nil
+}
+
+// redirectToSession sends the user to a session: the exam while it is in
+// progress, otherwise the results.
+func (h *Handler) redirectToSession(w http.ResponseWriter, r *http.Request, sess model.ExamSession) {
+	target := fmt.Sprintf("/exam/%d", sess.ID)
+	if sess.Status != model.StatusInProgress {
+		target = fmt.Sprintf("/results/%d", sess.ID)
+	}
+	http.Redirect(w, r, h.path(target), http.StatusSeeOther)
 }

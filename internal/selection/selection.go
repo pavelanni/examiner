@@ -313,6 +313,17 @@ func allocate(pools map[model.Difficulty][]model.Question, d model.Distribution,
 	return out, counts
 }
 
+// DrawN selects a random legacy-mode set, sorted by difficulty when unshuffled.
+func DrawN(questions []model.Question, n int, rng *rand.Rand) []model.Question {
+	unique := Unique(questions)
+	if n <= 0 || n > len(unique) {
+		n = len(unique)
+	}
+	out := sample(unique, n, rng)
+	sortByLevel(out)
+	return out
+}
+
 // sample returns n distinct elements of qs chosen uniformly at random.
 func sample(qs []model.Question, n int, rng *rand.Rand) []model.Question {
 	c := slices.Clone(qs)

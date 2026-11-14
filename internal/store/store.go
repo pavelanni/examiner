@@ -192,6 +192,33 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Pinned exam variants (#46): the session's topic and the order of its
+	// questions. Old sessions keep topic '' and position 0 (ordered by id).
+	if _, err := s.db.Exec(`ALTER TABLE exam_sessions ADD COLUMN topic TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	if _, err := s.db.Exec(`ALTER TABLE question_threads ADD COLUMN position INTEGER NOT NULL DEFAULT 0`); err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	if _, err := s.db.Exec(`ALTER TABLE exam_sessions ADD COLUMN topic_known INTEGER NOT NULL DEFAULT 0`); err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+	// Preserve explicitly saved topics from an earlier #46 schema. New
+	// empty-topic attempts are marked known by StartSession as well.
+	if _, err := s.db.Exec(`UPDATE exam_sessions SET topic_known = 1 WHERE topic != '' AND topic_known = 0`); err != nil {
+		return err
+	}
+	// At most one session in progress per student and exam. Old sessions
+	// have no topic and may already break the rule, so they are left out.
+	_, err = s.db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_exam_sessions_one_known_active
+		ON exam_sessions(student_id, blueprint_id, topic) WHERE status = 'in_progress' AND topic_known = 1`)
+	if err != nil {
+		return err
+	}
+	if _, err := s.db.Exec(`DROP INDEX IF EXISTS idx_exam_sessions_one_active`); err != nil {
+		return err
+	}
+
 	// Populate text_norm for legacy rows that don't have it yet.
 	if err := s.populateQuestionTextNorm(); err != nil {
 		return err
@@ -662,42 +689,19 @@ func (s *Store) CreateSession(blueprintID int64, studentID int64, questionIDs []
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	res, err := tx.Exec(
-		`INSERT INTO exam_sessions (blueprint_id, student_id, status, started_at) VALUES (?, ?, 'in_progress', ?)`,
-		blueprintID, studentID, time.Now(),
-	)
+	sessionID, err := createSession(tx, blueprintID, studentID, "", questionIDs, false)
 	if err != nil {
 		return 0, err
 	}
-	sessionID, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-
-	for _, qID := range questionIDs {
-		_, err := tx.Exec(
-			`INSERT INTO question_threads (session_id, question_id, status) VALUES (?, ?, 'open')`,
-			sessionID, qID,
-		)
-		if err != nil {
-			return 0, err
-		}
-	}
-
 	if err := tx.Commit(); err != nil {
 		return 0, err
 	}
-	slog.Debug("created session", "id", sessionID, "questions", len(questionIDs))
 	return sessionID, nil
 }
 
 // GetSession returns a session by ID.
 func (s *Store) GetSession(id int64) (model.ExamSession, error) {
-	var sess model.ExamSession
-	err := s.db.QueryRow(
-		`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions WHERE id = ?`, id,
-	).Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt)
-	return sess, err
+	return scanSession(s.db.QueryRow(`SELECT `+sessionColumns+` FROM exam_sessions WHERE id = ?`, id))
 }
 
 // UpdateSessionStatus updates the session status.
@@ -721,7 +725,7 @@ func (s *Store) UpdateSessionStatus(id int64, status model.SessionStatus) error 
 // GetThreadsForSession returns all threads for a session.
 func (s *Store) GetThreadsForSession(sessionID int64) ([]model.QuestionThread, error) {
 	rows, err := s.db.Query(
-		`SELECT id, session_id, question_id, status, followup_count FROM question_threads WHERE session_id = ? ORDER BY id`, sessionID,
+		`SELECT id, session_id, question_id, status, followup_count FROM question_threads WHERE session_id = ? ORDER BY position, id`, sessionID,
 	)
 	if err != nil {
 		return nil, err
@@ -981,41 +985,20 @@ func (s *Store) ListSessionsChronological() ([]model.ExamSession, error) {
 }
 
 func (s *Store) listSessionsWithOrder(orderClause string) ([]model.ExamSession, error) {
-	rows, err := s.db.Query(`SELECT id, blueprint_id, student_id, status, started_at, submitted_at FROM exam_sessions ` + orderClause)
+	rows, err := s.db.Query(`SELECT ` + sessionColumns + ` FROM exam_sessions ` + orderClause)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	var sessions []model.ExamSession
-	for rows.Next() {
-		var sess model.ExamSession
-		if err := rows.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt); err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, sess)
-	}
-	return sessions, rows.Err()
+	return scanSessions(rows)
 }
 
 // ListSessionsByUser returns sessions for a specific student.
 func (s *Store) ListSessionsByUser(userID int64) ([]model.ExamSession, error) {
-	rows, err := s.db.Query(
-		`SELECT id, blueprint_id, student_id, status, started_at, submitted_at
-		 FROM exam_sessions WHERE student_id = ? ORDER BY id DESC`, userID,
-	)
+	rows, err := s.db.Query(`SELECT `+sessionColumns+` FROM exam_sessions WHERE student_id = ? ORDER BY id DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = rows.Close() }()
-	var sessions []model.ExamSession
-	for rows.Next() {
-		var sess model.ExamSession
-		if err := rows.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt); err != nil {
-			return nil, err
-		}
-		sessions = append(sessions, sess)
-	}
-	return sessions, rows.Err()
+	return scanSessions(rows)
 }
 
 // QuestionCount returns the number of questions in the database.
@@ -1082,13 +1065,13 @@ func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, mod
 	var sess model.ExamSession
 	var bp model.ExamBlueprint
 	err := s.db.QueryRow(`
-		SELECT s.id, s.blueprint_id, s.student_id, s.status, s.started_at, s.submitted_at,
+		SELECT s.id, s.blueprint_id, s.student_id, s.topic, s.topic_known, s.status, s.started_at, s.submitted_at,
 		       b.id, b.course_id, b.name, b.time_limit, b.max_followups
 		FROM exam_sessions s
 		JOIN exam_blueprints b ON b.id = s.blueprint_id
 		WHERE s.id = ?`, sessionID,
 	).Scan(
-		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
+		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
 		&bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups,
 	)
 	return sess, bp, err

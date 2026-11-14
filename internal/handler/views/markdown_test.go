@@ -60,10 +60,20 @@ func TestMarkdownCannotInjectMarkup(t *testing.T) {
 	}
 }
 
+// TestMarkdownImageRendersAltWithoutURL preserves safe descriptions across inline node types.
 func TestMarkdownImageRendersAltWithoutURL(t *testing.T) {
-	got := renderMarkdown(t, "![A < B](https://example.com/image.png)")
-	if !strings.Contains(got, "A &lt; B") || strings.Contains(got, "<img") || strings.Contains(got, "example.com") {
-		t.Fatalf("expected escaped alt text without an image URL, got %q", got)
+	for _, test := range []struct{ name, source, want string }{
+		{"escaped text", "![A < B](https://example.com/image.png)", "A &lt; B"},
+		{"nested formatting", "![A **bold** `code`](https://example.com/image.png)", "A bold code"},
+		{"line break", "![first\nsecond](https://example.com/image.png)", "first\nsecond"},
+		{"literal markup", "![A <span>B</span>](https://example.com/image.png)", "A &lt;span&gt;B&lt;/span&gt;"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := renderMarkdown(t, test.source)
+			if !strings.Contains(got, test.want) || strings.Contains(got, "<img") || strings.Contains(got, "example.com") {
+				t.Fatalf("expected escaped alt text without an image URL, got %q", got)
+			}
+		})
 	}
 }
 
