@@ -94,8 +94,18 @@ func (s *Store) ListUsers() ([]model.User, error) {
 
 // ToggleUserActive flips the active flag on a user.
 func (s *Store) ToggleUserActive(id int64) error {
-	_, err := s.db.Exec(`UPDATE users SET active = NOT active WHERE id = ?`, id)
-	return err
+	result, err := s.db.Exec(`UPDATE users SET active = NOT active WHERE id = ?`, id)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // ReactivateAdmin включает существующего администратора, сохраняя пароль,

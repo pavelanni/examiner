@@ -70,7 +70,11 @@ templ ReviewPage(view model.SessionView) {
 										{ t(ctx, "Evaluator") }
 									}
 								</div>
-								<div>{ m.Text() }</div>
+								if m.Role == model.RoleStudent {
+									<div>{ m.Text() }</div>
+								} else {
+									<div class="markdown">@evaluatorMessage(m)</div>
+								}
 							</div>
 						}
 					</div>
@@ -78,7 +82,7 @@ templ ReviewPage(view model.SessionView) {
 				if tv.Score != nil {
 					<div class="score-box">
 						<p><strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
-						<p><strong>{ t(ctx, "LLMFeedback") }</strong> { tv.Score.LLMFeedback }</p>
+						<div><strong>{ t(ctx, "LLMFeedback") }</strong> <div class="markdown">@markdown(tv.Score.LLMFeedback)</div></div>
 						if tv.Score.TeacherScore != nil {
 							<p><strong>{ t(ctx, "TeacherScore") }</strong> { fmt.Sprintf("%.1f", *tv.Score.TeacherScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
 							if tv.Score.TeacherComment != "" {

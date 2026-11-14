@@ -55,7 +55,11 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 										{ t(ctx, "Evaluator") }
 									}
 								</div>
-								<div>{ m.Text() }</div>
+								if m.Role == model.RoleStudent {
+									<div>{ m.Text() }</div>
+								} else {
+									<div class="markdown">@evaluatorMessage(m)</div>
+								}
 							</div>
 						}
 					</div>
@@ -69,7 +73,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 									<em>({ t(ctx, "Preliminary") })</em>
 								}
 							</p>
-							<p><strong>{ t(ctx, "LLMFeedback") }</strong> { tv.Score.LLMFeedback }</p>
+							<div><strong>{ t(ctx, "LLMFeedback") }</strong> <div class="markdown">@markdown(tv.Score.LLMFeedback)</div></div>
 						}
 						if tv.Score.TeacherScore != nil {
 							<p><strong>{ t(ctx, "TeacherScore") }</strong> { fmt.Sprintf("%.1f", *tv.Score.TeacherScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>

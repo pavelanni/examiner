@@ -23,6 +23,7 @@ func sessionEnv(t *testing.T, s *Store) (bpID int64, qs []int64) {
 	return bpID, qs
 }
 
+// threadQuestionIDs loads the persisted order of a session variant.
 func threadQuestionIDs(t *testing.T, s *Store, sessionID int64) []int64 {
 	t.Helper()
 	threads, err := s.GetThreadsForSession(sessionID)
@@ -36,6 +37,7 @@ func threadQuestionIDs(t *testing.T, s *Store, sessionID int64) []int64 {
 	return ids
 }
 
+// TestStartSessionPinsVariant keeps the first question set and order across repeated starts.
 func TestStartSessionPinsVariant(t *testing.T) {
 	s := newTestStore(t)
 	bp, q := sessionEnv(t, s)
@@ -59,6 +61,7 @@ func TestStartSessionPinsVariant(t *testing.T) {
 	}
 }
 
+// TestStartSessionScope separates students, topics and blueprints.
 func TestStartSessionScope(t *testing.T) {
 	s := newTestStore(t)
 	bp, q := sessionEnv(t, s)
@@ -84,6 +87,7 @@ func TestStartSessionScope(t *testing.T) {
 	}
 }
 
+// TestStartSessionAfterFinish blocks student rerolls while permitting completed staff retakes.
 func TestStartSessionAfterFinish(t *testing.T) {
 	s := newTestStore(t)
 	bp, q := sessionEnv(t, s)
@@ -108,6 +112,7 @@ func TestStartSessionAfterFinish(t *testing.T) {
 	}
 }
 
+// TestRetakeWaitsForGrading keeps the slot available for retryable LLM queue failures.
 func TestRetakeWaitsForGrading(t *testing.T) {
 	s := newTestStore(t)
 	bp, qs := sessionEnv(t, s)
@@ -134,6 +139,7 @@ func TestRetakeWaitsForGrading(t *testing.T) {
 	}
 }
 
+// TestStartSessionConcurrent returns one variant across independent database handles.
 func TestStartSessionConcurrent(t *testing.T) {
 	// A file database: every pooled connection of :memory: is a separate DB.
 	path := filepath.Join(t.TempDir(), "exam.db")
@@ -176,6 +182,7 @@ func TestStartSessionConcurrent(t *testing.T) {
 	}
 }
 
+// TestStartSessionPinsVariantAcrossRestart retains active and completed variants after reopening the database.
 func TestStartSessionPinsVariantAcrossRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "exam.db")
 	open := func() *Store {
@@ -220,6 +227,7 @@ func TestStartSessionPinsVariantAcrossRestart(t *testing.T) {
 	}
 }
 
+// TestOneActiveSessionIndex protects named and empty topics while excluding unknown legacy scopes.
 func TestOneActiveSessionIndex(t *testing.T) {
 	s := newTestStore(t)
 	bp, _ := sessionEnv(t, s)
@@ -265,6 +273,48 @@ func TestEmptyTopicPinsSeparatelyFromLegacy(t *testing.T) {
 	}
 }
 
+// TestStartSessionRejectsArchivedDraw rolls back every row of an invalid new variant.
+func TestStartSessionRejectsArchivedDraw(t *testing.T) {
+	s := newTestStore(t)
+	bp, qs := sessionEnv(t, s)
+	if _, err := s.db.Exec(`UPDATE questions SET archived = 1 WHERE id = ?`, qs[1]); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := s.StartSession(bp, 7, "t", qs, false); err == nil || created {
+		t.Fatalf("archived question must invalidate the whole draw: %v, %v", created, err)
+	}
+	sessions, err := s.ListSessionsByUser(7)
+	if err != nil || len(sessions) != 0 {
+		t.Fatalf("partial session was committed: %v, %v", sessions, err)
+	}
+	var threads int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM question_threads`).Scan(&threads); err != nil || threads != 0 {
+		t.Fatalf("partial threads were committed: %d, %v", threads, err)
+	}
+}
+
+// TestStartSessionResumesArchivedVariant preserves questions already assigned to a student.
+func TestStartSessionResumesArchivedVariant(t *testing.T) {
+	s := newTestStore(t)
+	bp, qs := sessionEnv(t, s)
+	first, _, err := s.StartSession(bp, 7, "t", qs[:1], false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE questions SET archived = 1 WHERE id = ?`, qs[0]); err != nil {
+		t.Fatal(err)
+	}
+	again, created, err := s.StartSession(bp, 7, "t", qs[1:], false)
+	if err != nil || created || again.ID != first.ID {
+		t.Fatalf("historical variant changed: %+v, %v, %v", again, created, err)
+	}
+	view, err := s.GetSessionView(first.ID)
+	if err != nil || len(view.Threads) != 1 || view.Threads[0].Question.ID != qs[0] {
+		t.Fatalf("historical question became inaccessible: %+v, %v", view, err)
+	}
+}
+
+// TestCreateSessionKeepsOrder preserves the given thread order for legacy callers.
 func TestCreateSessionKeepsOrder(t *testing.T) {
 	s := newTestStore(t)
 	bp, q := sessionEnv(t, s)
@@ -278,6 +328,7 @@ func TestCreateSessionKeepsOrder(t *testing.T) {
 	}
 }
 
+// TestMigrateLegacyExamVariants keeps old sessions and thread order when topic columns are added.
 func TestMigrateLegacyExamVariants(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	db, err := sql.Open("sqlite", path)

@@ -188,6 +188,19 @@ func TestUniqueDropsRepeats(t *testing.T) {
 	}
 }
 
+// TestUniqueNormalizedByTopic deduplicates normalized text within the same topic
+// while keeping identical texts in different topics distinct.
+func TestUniqueNormalizedByTopic(t *testing.T) {
+	qs := []model.Question{
+		{ID: 1, Topic: "go", Text: "What is a channel?", Difficulty: "easy"},
+		{ID: 2, Topic: "go", Text: "  what is a   channel  ", Difficulty: "medium"},
+		{ID: 3, Topic: "concurrency", Text: "What is a channel?", Difficulty: "easy"},
+	}
+	if got := ids(Unique(qs)); !slices.Equal(got, []int64{1, 3}) {
+		t.Errorf("Unique = %v, want [1 3]", got)
+	}
+}
+
 // TestParseTotalBounds checks the same raw values on both 32- and 64-bit builds.
 func TestParseTotalBounds(t *testing.T) {
 	d, err := Parse(map[string]any{"easy": int64(math.MaxInt32), "medium": 1})

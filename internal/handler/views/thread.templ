@@ -28,7 +28,11 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 							{ t(ctx, "Evaluator") }
 						}
 					</div>
-					<div>{ m.Text() }</div>
+					if m.Role == model.RoleStudent {
+						<div>{ m.Text() }</div>
+					} else {
+						<div class="markdown">@evaluatorMessage(m)</div>
+					}
 					if liveScore.Show && m.Score != nil {
 						<div class="message-score">
 							<strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", *m.Score) } / { strconv.Itoa(question.MaxPoints) }

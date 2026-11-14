@@ -122,7 +122,9 @@ func questionIDs(qs []model.Question) []int64 {
 func TestStartExamExactDistribution(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 6, 6, 4)
-	insertExamQuestion(t, s, examQuestion("EASY QUESTION 0!", "t"))
+	duplicate := examQuestion("EASY QUESTION 0!", "t")
+	duplicate.CourseID = 2 // active identities are unique within one course
+	insertExamQuestion(t, s, duplicate)
 	d := model.Distribution{"easy": 2, "medium": 2, "hard": 1}
 	h := &Handler{store: s, config: model.ExamConfig{Selection: d, Shuffle: true}}
 
@@ -361,6 +363,7 @@ func TestTopicAvailabilityUsesDistribution(t *testing.T) {
 	}
 }
 
+// TestStartExamPinsVariant resumes the same question IDs and order on repeated requests.
 func TestStartExamPinsVariant(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 5, 5, 5)
@@ -383,6 +386,21 @@ func TestStartExamPinsVariant(t *testing.T) {
 	}
 }
 
+// TestIndexKeepsPinnedTopicAfterConfigChange keeps the dedicated resume link visible.
+func TestIndexKeepsPinnedTopicAfterConfigChange(t *testing.T) {
+	s := newExamStore(t)
+	examStore(t, s, 2, 0, 0)
+	h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 1}}
+	id := startedSession(t, h, student(7), "t")
+	h.config.Topic = "new topic"
+	body := indexPage(t, h, student(7))
+	section := strings.SplitN(body, "<h2>Start a new exam</h2>", 2)[0]
+	if !strings.Contains(section, "Unfinished exams") || !strings.Contains(section, fmt.Sprintf(`href="/exam/%d">Continue`, id)) {
+		t.Fatal("the pinned topic disappeared from unfinished exams")
+	}
+}
+
+// TestStartExamNoRetakeForStudents redirects completed student attempts while allowing staff retakes.
 func TestStartExamNoRetakeForStudents(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 3, 0, 0)
@@ -411,6 +429,7 @@ func TestStartExamNoRetakeForStudents(t *testing.T) {
 	}
 }
 
+// TestStartExamConcurrent starts one session from simultaneous HTTP submissions.
 func TestStartExamConcurrent(t *testing.T) {
 	if err := i18n.Init("en"); err != nil {
 		t.Fatal(err)
@@ -444,6 +463,7 @@ func TestStartExamConcurrent(t *testing.T) {
 	}
 }
 
+// TestStartExamRandomWithoutShuffle varies the selected set while keeping display order stable.
 func TestStartExamRandomWithoutShuffle(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 6, 0, 0)
@@ -457,6 +477,7 @@ func TestStartExamRandomWithoutShuffle(t *testing.T) {
 	}
 }
 
+// TestStartExamNeedsTopic rejects an unknown topic or one with no available questions.
 func TestStartExamNeedsTopic(t *testing.T) {
 	s := newExamStore(t)
 	examStore(t, s, 2, 0, 0)

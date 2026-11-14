@@ -8,6 +8,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
+// isStudentOnly identifies student links that differ from teacher review.
 func isStudentOnly(ctx context.Context) bool {
 	u := model.UserFromContext(ctx)
 	return u != nil && u.Role == model.UserRoleStudent
@@ -31,6 +32,7 @@ type IndexData struct {
 	Error          string // why the last start failed
 }
 
+// activeTopics lists the current user's resumable topic variants.
 func activeTopics(topics []TopicChoice) []TopicChoice {
 	var out []TopicChoice
 	for _, c := range topics {
@@ -41,6 +43,7 @@ func activeTopics(topics []TopicChoice) []TopicChoice {
 	return out
 }
 
+// openTopics filters topics that can supply a complete new exam.
 func openTopics(topics []TopicChoice) []TopicChoice {
 	var out []TopicChoice
 	for _, c := range topics {
@@ -51,6 +54,7 @@ func openTopics(topics []TopicChoice) []TopicChoice {
 	return out
 }
 
+// distributionParams supplies the localized summary of configured counts.
 func distributionParams(d model.Distribution) map[string]any {
 	return map[string]any{
 		"Easy":   d[model.DifficultyEasy],

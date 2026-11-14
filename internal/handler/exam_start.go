@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/pavelanni/examiner/internal/handler/views"
@@ -68,6 +69,13 @@ func (h *Handler) renderIndex(w http.ResponseWriter, r *http.Request, status int
 	}
 	if h.config.Topic != "" && len(topics) == 0 {
 		topics = append(topics, h.config.Topic)
+	}
+	// A pinned attempt remains resumable when the available bank or the
+	// configured topic changes after it was issued.
+	for _, sess := range mine {
+		if sess.TopicKnown && sess.BlueprintID == blueprintID && sess.Status == model.StatusInProgress && !slices.Contains(topics, sess.Topic) {
+			topics = append(topics, sess.Topic)
+		}
 	}
 
 	// The questions exams draw from, by topic.

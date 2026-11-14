@@ -39,6 +39,11 @@ func TestNormalizeQuestionText(t *testing.T) {
 			expected: "ежик и мед",
 		},
 		{
+			name:     "unicode nfc normalization",
+			input:    "Е\u0308жик и и\u0306огурт?",
+			expected: "ежик и йогурт",
+		},
+		{
 			name:     "internal punctuation preserved",
 			input:    "REST-архитектура: основные принципы?",
 			expected: "rest-архитектура: основные принципы",
@@ -46,11 +51,6 @@ func TestNormalizeQuestionText(t *testing.T) {
 		{
 			name:     "identical after normalization",
 			input:    " Что такое  ПИД-регулятор? ",
-			expected: "что такое пид-регулятор",
-		},
-		{
-			name:     "non-breaking spaces collapsed like spaces",
-			input:    " Что такое  ПИД-регулятор? ",
 			expected: "что такое пид-регулятор",
 		},
 	}

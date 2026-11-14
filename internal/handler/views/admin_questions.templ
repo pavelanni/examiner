@@ -1,6 +1,12 @@
 package views
 
-templ AdminQuestionsPage(flashMsg string, flashErr bool) {
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ AdminQuestionsPage(flashMsg string, flashErr bool, duplicates []model.DuplicateQuestionGroup) {
 	@Layout(t(ctx, "AdminQuestions")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -21,5 +27,21 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool) {
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
 			<button type="submit">{ t(ctx, "UploadBtn") }</button>
 		</form>
+		if len(duplicates) > 0 {
+			<section>
+				<h2>{ td(ctx, "ExistingDuplicatesTitle", map[string]any{"Count": len(duplicates)}) }</h2>
+				<p>{ t(ctx, "ExistingDuplicatesDesc") }</p>
+				for _, g := range duplicates {
+					<article>
+						<header><strong>{ g.Topic }</strong> — <code>{ g.TextNorm }</code></header>
+						<ul>
+							for _, q := range g.Questions {
+								<li>{ fmt.Sprintf("#%d: %s", q.ID, q.Text) }</li>
+							}
+						</ul>
+					</article>
+				}
+			</section>
+		}
 	}
 }

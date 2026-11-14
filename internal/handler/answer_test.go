@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,7 +27,8 @@ type fakeLLM struct {
 	entered chan struct{} // receives once per EvaluateAnswer call, if non-nil
 	release chan struct{} // EvaluateAnswer blocks until it is closed, if non-nil
 
-	emptyFollowupQ bool // ask for a follow-up but leave the question empty
+	emptyFollowupQ bool  // ask for a follow-up but leave the question empty
+	err            error // returned by EvaluateAnswer, if non-nil
 }
 
 func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.Message, _ int, _, _ int64) (*llm.GradeResult, string, error) {
@@ -39,6 +41,9 @@ func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.
 	}
 	if f.release != nil {
 		<-f.release
+	}
+	if f.err != nil {
+		return nil, "", f.err
 	}
 	res := &llm.GradeResult{
 		Score:        1,
@@ -245,5 +250,41 @@ func TestConcurrentAnswersToSameThreadAreRejected(t *testing.T) {
 	}
 	if got := env.messageCount(t); got != 2 {
 		t.Errorf("messages = %d, want 2 (one student, one LLM)", got)
+	}
+}
+
+func TestLLMErrorDetailIsNotSentToClient(t *testing.T) {
+	const secret = "dial tcp 10.0.0.5:11434: connection refused"
+	env := newAnswerEnv(t, 3, &fakeLLM{err: errors.New(secret)})
+
+	rec := env.post("my answer")
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status %d, want %d", rec.Code, http.StatusInternalServerError)
+	}
+	if body := rec.Body.String(); strings.Contains(body, secret) {
+		t.Errorf("response body leaks the error detail: %q", body)
+	}
+}
+
+func TestEvaluatorMarkdownRenderedStudentTextNot(t *testing.T) {
+	env := newAnswerEnv(t, 3, &fakeLLM{})
+	if rec := env.post("I think **this** <script>alert(1)</script>"); rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	page := env.get(t, fmt.Sprintf("/exam/%d", env.sessID))
+
+	// The fake LLM asks a follow-up, which is joined with model.FollowupMarker.
+	if !strings.Contains(page, "<strong>Follow-up question:</strong>") {
+		t.Error("evaluator follow-up marker should render as bold")
+	}
+	if strings.Contains(page, "**Follow-up question:**") {
+		t.Error("raw Markdown asterisks should not be shown")
+	}
+	// The student's answer is plain text: asterisks stay, HTML is escaped.
+	if !strings.Contains(page, "I think **this**") {
+		t.Error("student answer should be shown verbatim")
+	}
+	if strings.Contains(page, "<script>alert(1)") {
+		t.Error("student answer HTML must be escaped")
 	}
 }

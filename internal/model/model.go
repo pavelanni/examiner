@@ -136,11 +136,20 @@ type Question struct {
 	ID          int64      `json:"id"`
 	CourseID    int64      `json:"course_id"`
 	Text        string     `json:"text"`
+	TextNorm    string     `json:"text_norm,omitempty"`
 	Difficulty  Difficulty `json:"difficulty"`
 	Topic       string     `json:"topic"`
 	Rubric      string     `json:"rubric"`
 	ModelAnswer string     `json:"model_answer"`
 	MaxPoints   int        `json:"max_points"`
+}
+
+// DuplicateQuestionGroup represents existing questions in the database that share
+// the same course, topic and normalized text.
+type DuplicateQuestionGroup struct {
+	Topic     string     `json:"topic"`
+	TextNorm  string     `json:"text_norm"`
+	Questions []Question `json:"questions"`
 }
 
 // ExamBlueprint defines the structure of an exam.
