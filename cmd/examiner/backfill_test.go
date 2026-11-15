@@ -171,6 +171,19 @@ func TestBackfillMissingDir(t *testing.T) {
 	}
 }
 
+// With every question owned there is nothing to assign, so the teacher
+// files are not scanned and a missing admin is not an error.
+func TestBackfillNoUnownedQuestions(t *testing.T) {
+	s, err := store.New(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if err := backfillQuestionOwners(s, filepath.Join(t.TempDir(), "absent")); err != nil {
+		t.Errorf("no unowned questions, no admin: %v", err)
+	}
+}
+
 func TestBackfillIgnoresStudents(t *testing.T) {
 	_, s := loadEnv(t)
 	ivan := addTeacher(t, s, "ivan")

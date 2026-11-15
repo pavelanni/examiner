@@ -34,7 +34,11 @@
         "topic": { "$ref": "#/definitions/nonEmptyString" },
         "rubric": { "$ref": "#/definitions/nonEmptyString" },
         "model_answer": { "$ref": "#/definitions/nonEmptyString" },
-        "max_points": { "type": "integer", "minimum": 1 }
+        "max_points": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Write it as an integer literal (10, not 10.0): the server rejects a fractional part even when it is zero, which this schema cannot express."
+        }
       },
       "additionalProperties": false
     }

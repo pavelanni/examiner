@@ -194,6 +194,22 @@ func TestFindUnownedQuestionIDs(t *testing.T) {
 	}
 }
 
+func TestHasUnownedQuestions(t *testing.T) {
+	s := newTestStore(t)
+	t1 := createUser(t, s, "t1", model.UserRoleTeacher)
+	if got, err := s.HasUnownedQuestions(); err != nil || got {
+		t.Errorf("empty table: HasUnownedQuestions = %v, %v; want false", got, err)
+	}
+	txInsert(t, s, owned("Owned", "x", t1, true))
+	if got, err := s.HasUnownedQuestions(); err != nil || got {
+		t.Errorf("only owned rows: HasUnownedQuestions = %v, %v; want false", got, err)
+	}
+	txInsert(t, s, owned("Free", "x", 0, true))
+	if got, err := s.HasUnownedQuestions(); err != nil || !got {
+		t.Errorf("one unowned row: HasUnownedQuestions = %v, %v; want true", got, err)
+	}
+}
+
 func TestClaimQuestionOwners(t *testing.T) {
 	s := newTestStore(t)
 	t1 := createUser(t, s, "t1", model.UserRoleTeacher)

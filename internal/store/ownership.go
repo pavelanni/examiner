@@ -35,6 +35,13 @@ func (s *Store) FirstAdminID() (int64, error) {
 	return firstAdminID(s.db)
 }
 
+// HasUnownedQuestions reports whether any question has no owner.
+func (s *Store) HasUnownedQuestions() (bool, error) {
+	var found bool
+	err := s.db.QueryRow(`SELECT EXISTS (SELECT 1 FROM questions WHERE owner_id IS NULL)`).Scan(&found)
+	return found, err
+}
+
 // FindUnownedQuestionIDs returns the questions without an owner that have
 // this topic and normalized text.
 func (s *Store) FindUnownedQuestionIDs(topic, textNorm string) ([]int64, error) {

@@ -19,7 +19,16 @@ import (
 // (teacher_<username>_<name>.json) goes to that teacher; all others go to
 // the first admin. Questions that already have an owner are not touched,
 // so running it on every start is safe. A missing dir is not an error.
+// When every question already has an owner it returns at once, without
+// reading the teacher files.
 func backfillQuestionOwners(db *store.Store, dir string) error {
+	pending, err := db.HasUnownedQuestions()
+	if err != nil {
+		return err
+	}
+	if !pending {
+		return nil
+	}
 	users, err := db.ListUsers()
 	if err != nil {
 		return err
