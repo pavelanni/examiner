@@ -50,6 +50,14 @@ const (
 	DecisionUpdate
 )
 
+// Choice is the actor's answer about one duplicate. Target is the stored
+// question an update was offered for: if the question now matches another
+// one, the choice no longer applies and the duplicate is asked again.
+type Choice struct {
+	Decision Decision
+	Target   int64
+}
+
 // FileRecord is the imported file to record with the questions.
 type FileRecord struct {
 	Name, Hash string
@@ -63,7 +71,7 @@ type Options struct {
 	// draft keeps are deleted if the actor owns them and no session uses them.
 	OldIDs    []int64
 	File      *FileRecord      // recorded in imported_files inside the transaction
-	Decisions map[int]Decision // ModeAsk: by question number
+	Decisions map[int]Choice // ModeAsk: by question number
 
 	Actor     *model.User // who imports; owns inserted questions
 	Published bool        // publication state of inserted and updated questions
@@ -117,7 +125,7 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 	if opts.Actor == nil {
 		return Result{}, errors.New("import without an acting user")
 	}
-	a := applier{tx: tx, opts: opts, kept: map[int64]bool{}}
+	a := applier{tx: tx, opts: opts, updatedBy: map[int64]int{}}
 	seen := make(map[identity]int, len(drafts)) // -> question number
 
 	for _, d := range drafts {
@@ -155,7 +163,7 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 	}
 	var drop []int64
 	for _, id := range opts.OldIDs {
-		if !a.kept[id] {
+		if _, kept := a.updatedBy[id]; !kept {
 			drop = append(drop, id)
 		}
 	}
@@ -179,7 +187,7 @@ type applier struct {
 	res       Result
 	conflicts []FieldError
 	pending   []Duplicate
-	kept      map[int64]bool // stored questions a draft updated
+	updatedBy map[int64]int // stored question ID -> number of the draft that updated it
 }
 
 // apply saves one question that is not a duplicate within the file.
@@ -246,12 +254,12 @@ func (a *applier) existing(d Draft, q model.Question, e *model.Question) error {
 	}
 
 	// ModeAsk.
-	switch opts.Decisions[d.Number] {
+	switch c := opts.Decisions[d.Number]; c.Decision {
 	case DecisionSkip:
 		a.skip(d.Number, "QImportWarnDupInDB", map[string]any{"ID": e.ID, "Topic": d.Topic})
 		return nil
 	case DecisionUpdate:
-		if canEdit {
+		if canEdit && c.Target == e.ID {
 			return a.update(d, q, e)
 		}
 	}
@@ -269,8 +277,14 @@ func (a *applier) existing(d Draft, q model.Question, e *model.Question) error {
 	return nil
 }
 
-// update overwrites stored question e with q, keeping e's owner.
+// update overwrites stored question e with q, keeping e's owner. Two
+// drafts may not both update e: the file would hold both, the database one.
 func (a *applier) update(d Draft, q model.Question, e *model.Question) error {
+	if prev, ok := a.updatedBy[e.ID]; ok {
+		a.conflicts = append(a.conflicts, FieldError{Question: d.Number, Code: "QImportErrSameTarget",
+			Params: map[string]any{"ID": e.ID, "PrevN": prev}})
+		return nil
+	}
 	q.ID = e.ID
 	q.OwnerID = e.OwnerID
 	// Publishing is the owner's decision: an admin fixing someone
@@ -283,7 +297,7 @@ func (a *applier) update(d Draft, q model.Question, e *model.Question) error {
 	}
 	a.res.Updated++
 	a.res.Saved = append(a.res.Saved, d.Number)
-	a.kept[e.ID] = true
+	a.updatedBy[e.ID] = d.Number
 	return nil
 }
 
@@ -291,7 +305,7 @@ func (a *applier) update(d Draft, q model.Question, e *model.Question) error {
 // it is skipped with warning code, or in ModeAsk, left pending until the
 // actor agrees.
 func (a *applier) duplicate(n int, code string, params map[string]any) {
-	if a.opts.Mode == ModeAsk && a.opts.Decisions[n] != DecisionSkip {
+	if a.opts.Mode == ModeAsk && a.opts.Decisions[n].Decision != DecisionSkip {
 		params["N"] = n
 		a.pending = append(a.pending, Duplicate{Question: n, Code: "QDupInFile", Params: params})
 		return

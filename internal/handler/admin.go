@@ -151,7 +151,15 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
-	if storedHash == hash {
+	// Questions already in their topic are skipped unless the admin asks
+	// to update them.
+	mode := questionimport.ModeSkipExisting
+	if r.FormValue("on_duplicate") == "update" {
+		mode = questionimport.ModeUpdateExisting
+	}
+	// Skipping again would change nothing; an update may, so it runs even
+	// for a file imported before.
+	if storedHash == hash && mode == questionimport.ModeSkipExisting {
 		h.renderAdminQuestions(w, r, http.StatusOK, appI18n.T(r.Context(), "UploadDuplicate"), true, nil, nil)
 		return
 	}
@@ -160,13 +168,6 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	if len(errs) > 0 {
 		h.renderAdminQuestions(w, r, http.StatusBadRequest, "", false, questionimport.Localize(r.Context(), errs), nil)
 		return
-	}
-
-	// Questions already in their topic are skipped unless the admin asks
-	// to update them.
-	mode := questionimport.ModeSkipExisting
-	if r.FormValue("on_duplicate") == "update" {
-		mode = questionimport.ModeUpdateExisting
 	}
 
 	var res questionimport.Result

@@ -235,6 +235,7 @@
   {"id": "BackupColSize", "other": "Size"},
   {"id": "BackupWithConfig", "other": "configuration"},
   {"id": "QImportErrEditDup", "other": "matches question #{{.ID}} in topic \"{{.Topic}}\"; change the text"},
+  {"id": "QImportErrSameTarget", "other": "updates question #{{.ID}}, which question {{.PrevN}} already updates; keep one of them"},
   {"id": "QImportErrAllSkipped", "other": "Every question was skipped as a duplicate, so there is nothing to save. Nothing was changed."},
   {"id": "QDupTitle", "other": "Some questions match existing ones. Nothing has been saved yet: choose what to do with each of them and save again."},
   {"id": "QDupInFile", "other": "Question {{.N}} duplicates question {{.PrevN}} in this test (topic \"{{.Topic}}\")."},

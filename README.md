@@ -330,9 +330,11 @@ removes the registration routes; existing accounts can still sign in.
 
 Admins can upload question JSON files at **Admin → Question upload**
 (`/admin/questions`). The file format is the same as the `--questions`
-flag (see below). Duplicate files (matching SHA-256 hash) are rejected.
-Questions that already exist in their topic are skipped with a warning,
-or updated if the admin picks **Update them** before uploading.
+flag (see below). Questions that already exist in their topic are
+skipped with a warning, or updated if the admin picks **Update them**
+before uploading. A file already imported (same name and SHA-256 hash) is
+rejected when skipping, since nothing would change; with **Update them**
+it is imported again.
 
 The same page lists stored questions that duplicate each other (same
 topic, same text after normalization), for example rows imported before

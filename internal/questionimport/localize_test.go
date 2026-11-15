@@ -58,7 +58,7 @@ func TestLocalesComplete(t *testing.T) {
 		"QImportErrUnknownField", "QImportErrInternal", "QImportErrorsTitle", "QImportWarnDupInFile",
 		"QImportWarnDupInDB", "QImportSummary", "QBuilderIncomplete", "QBuilderEmpty", "QImportErrFileName",
 		"QImportErrNotOwner", "QImportOwnerAdmin", "QPublishLabel", "QImportErrFileNameTaken",
-		"QImportErrEditDup", "QImportErrAllSkipped", "QDupTitle", "QDupInFile", "QDupInDB", "QDupInDBOther",
+		"QImportErrEditDup", "QImportErrSameTarget", "QImportErrAllSkipped", "QDupTitle", "QDupInFile", "QDupInDB", "QDupInDBOther",
 		"QDupSkip", "QDupUpdate", "QImportOnDuplicate", "QImportOnDupSkip", "QImportOnDupUpdate",
 	}
 	for _, lang := range []string{"en", "ru"} {

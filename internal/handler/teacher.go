@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,15 +150,21 @@ func duplicateToken(drafts []questionimport.Draft) string {
 	return hex.EncodeToString(sum[:16])
 }
 
-// duplicateDecisions reads the dup_<N> choices of the duplicate form.
-func duplicateDecisions(r *http.Request, drafts []questionimport.Draft) map[int]questionimport.Decision {
-	out := make(map[int]questionimport.Decision)
+// duplicateDecisions reads the dup_<N> choices of the duplicate form:
+// "skip", or "update:<ID>" naming the stored question the update was
+// offered for.
+func duplicateDecisions(r *http.Request, drafts []questionimport.Draft) map[int]questionimport.Choice {
+	out := make(map[int]questionimport.Choice)
 	for _, d := range drafts {
-		switch r.FormValue(fmt.Sprintf("dup_%d", d.Number)) {
-		case "skip":
-			out[d.Number] = questionimport.DecisionSkip
-		case "update":
-			out[d.Number] = questionimport.DecisionUpdate
+		v := r.FormValue(fmt.Sprintf("dup_%d", d.Number))
+		if v == "skip" {
+			out[d.Number] = questionimport.Choice{Decision: questionimport.DecisionSkip}
+			continue
+		}
+		if id, ok := strings.CutPrefix(v, "update:"); ok {
+			if target, err := strconv.ParseInt(id, 10, 64); err == nil {
+				out[d.Number] = questionimport.Choice{Decision: questionimport.DecisionUpdate, Target: target}
+			}
 		}
 	}
 	return out
@@ -392,7 +399,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	// Decisions about duplicates count only for the questions they were
 	// asked about; an edited test is checked again.
 	dupToken := duplicateToken(drafts)
-	var decisions map[int]questionimport.Decision
+	var decisions map[int]questionimport.Choice
 	if r.FormValue("dup_token") == dupToken {
 		decisions = duplicateDecisions(r, drafts)
 	}

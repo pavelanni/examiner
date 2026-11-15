@@ -158,7 +158,7 @@ func TestTeacherCannotOverwriteOthersQuestion(t *testing.T) {
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("B save: status %d, want 409", rec.Code)
 	}
-	if body := rec.Body.String(); !strings.Contains(body, "matches question #1") || !strings.Contains(body, "by T") || strings.Contains(body, `value="update"`) {
+	if body := rec.Body.String(); !strings.Contains(body, "matches question #1") || !strings.Contains(body, "by T") || strings.Contains(body, `value="update:`) {
 		t.Errorf("duplicate not explained, or B offered to update A's question")
 	}
 	// B cannot update it, even by asking: the decision stays pending.

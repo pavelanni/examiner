@@ -38,7 +38,9 @@ func idsOf(t *testing.T, s *store.Store, texts ...string) string {
 var dupTokenRe = regexp.MustCompile(`name="dup_token" value="([0-9a-f]+)"`)
 
 // confirmDups answers the duplicate form of rec, a 409 response to fields,
-// with choices by question number, and submits the form again.
+// with choices by question number, and submits the form again. "update"
+// sends the update the form offers for that question (update:<ID>), or the
+// bare word when none is offered.
 func confirmDups(t *testing.T, h *Handler, user *model.User, fields map[string]string, rec *httptest.ResponseRecorder, choices map[int]string) *httptest.ResponseRecorder {
 	t.Helper()
 	if rec.Code != http.StatusConflict {
@@ -51,6 +53,12 @@ func confirmDups(t *testing.T, h *Handler, user *model.User, fields map[string]s
 	f := maps.Clone(fields)
 	f["dup_token"] = m[1]
 	for n, c := range choices {
+		if c == "update" {
+			re := regexp.MustCompile(fmt.Sprintf(`name="dup_%d" value="(update:\d+)"`, n))
+			if m := re.FindStringSubmatch(rec.Body.String()); m != nil {
+				c = m[1]
+			}
+		}
 		f[fmt.Sprintf("dup_%d", n)] = c
 	}
 	return teacherSaveAs(t, h, user, f)
@@ -185,7 +193,7 @@ func TestTeacherOwnDuplicateSkipOrUpdate(t *testing.T) {
 			fields := map[string]string{"questions_json": twoQ("shared q.", "new", "Fresh", "r"), "custom_filename": "final"}
 			rec := teacherSave(t, h, fields)
 			body := rec.Body.String()
-			if !strings.Contains(body, "Question 1 matches your question #1") || !strings.Contains(body, `value="update"`) {
+			if !strings.Contains(body, "Question 1 matches your question #1") || !strings.Contains(body, `value="update:1"`) {
 				t.Errorf("own duplicate not offered for update")
 			}
 			rec = confirmDups(t, h, teacher1User, fields, rec, map[int]string{1: choice})
@@ -255,3 +263,52 @@ func TestAdminImportUpdateOption(t *testing.T) {
 	}
 }
 
+
+// An update chosen for one stored question does not apply when the
+// question now matches another one: the teacher is asked again.
+func TestTeacherUpdateBoundToOfferedQuestion(t *testing.T) {
+	h, s := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": oneQ("Shared Q", "old"), "custom_filename": "mid"})
+	fields := map[string]string{"questions_json": oneQ("shared q", "new"), "custom_filename": "final"}
+	rec := teacherSave(t, h, fields)
+	m := dupTokenRe.FindStringSubmatch(rec.Body.String())
+	if rec.Code != http.StatusConflict || m == nil {
+		t.Fatalf("status %d, want 409 with the duplicate form", rec.Code)
+	}
+	f := maps.Clone(fields)
+	f["dup_token"], f["dup_1"] = m[1], "update:999"
+	if rec := teacherSaveAs(t, h, teacher1User, f); rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want 409 for an update offered for another question", rec.Code)
+	}
+	if q, _ := s.GetQuestion(1); q.Rubric != "old" {
+		t.Errorf("#1 updated by a choice made for another question: %+v", q)
+	}
+}
+
+// The same file uploaded again with "update" is applied, although its hash
+// is already recorded from the "skip" upload.
+func TestAdminImportUpdateAfterSkip(t *testing.T) {
+	s := newImportStore(t)
+	q := ownedQ("Question 1", 2)
+	q.Rubric = "old"
+	insertQ(t, s, q)
+	h := &Handler{store: s}
+	content := importQuestions(2, nil)
+	if rec := adminUploadWith(t, h, "q.json", content, map[string]string{"on_duplicate": "skip"}); rec.Code != http.StatusOK {
+		t.Fatalf("skip upload: status %d", rec.Code)
+	}
+	if q := questionByText(t, s, "Question 1"); q.Rubric != "old" {
+		t.Fatalf("skip upload changed the question: %+v", q)
+	}
+	rec := adminUploadWith(t, h, "q.json", content, map[string]string{"on_duplicate": "update"})
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Imported: 0, updated: 2, skipped: 0") {
+		t.Errorf("update upload: status %d; want the update applied", rec.Code)
+	}
+	if q := questionByText(t, s, "Question 1"); q.Rubric != "r" {
+		t.Errorf("question = %+v; want updated by the second upload", q)
+	}
+	// The same file with "skip" again is still reported as already imported.
+	if rec := adminUploadWith(t, h, "q.json", content, map[string]string{"on_duplicate": "skip"}); !strings.Contains(rec.Body.String(), "already been imported") {
+		t.Errorf("repeated skip upload not reported as already imported")
+	}
+}

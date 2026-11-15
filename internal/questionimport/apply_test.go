@@ -488,7 +488,7 @@ func TestApplyAskDecisions(t *testing.T) {
 
 	tx := teacherTx()
 	res, err := Apply(tx, drafts(), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
-		Decisions: map[int]Decision{1: DecisionSkip, 3: DecisionSkip}})
+		Decisions: map[int]Choice{1: {DecisionSkip, 0}, 3: {DecisionSkip, 0}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestApplyAskDecisions(t *testing.T) {
 
 	tx = teacherTx()
 	res, err = Apply(tx, drafts(), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
-		Decisions: map[int]Decision{1: DecisionUpdate, 3: DecisionSkip}})
+		Decisions: map[int]Choice{1: {DecisionUpdate, 7}, 3: {DecisionSkip, 0}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -515,7 +515,7 @@ func TestApplyAskUpdateKeptFromDeletion(t *testing.T) {
 	// The edited file had #7; its block is gone, but a new block matching
 	// it was saved with "update", so #7 stays.
 	_, err := Apply(tx, parsed(t, "a?|x"), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
-		OldIDs: []int64{7, 8}, Decisions: map[int]Decision{1: DecisionUpdate}})
+		OldIDs: []int64{7, 8}, Decisions: map[int]Choice{1: {DecisionUpdate, 7}}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,7 +527,7 @@ func TestApplyAskUpdateKeptFromDeletion(t *testing.T) {
 func TestApplyAskCannotUpdateOthersQuestion(t *testing.T) {
 	tx := ownedTx() // row 17 "A" owned by teacher2
 	_, err := Apply(tx, parsed(t, "A|x"), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
-		Decisions: map[int]Decision{1: DecisionUpdate}})
+		Decisions: map[int]Choice{1: {DecisionUpdate, 17}}})
 	var de *DuplicatesError
 	if !errors.As(err, &de) || len(de.Dups) != 1 {
 		t.Fatalf("err = %v; an update of another owner's question must stay pending", err)
@@ -540,8 +540,36 @@ func TestApplyAskCannotUpdateOthersQuestion(t *testing.T) {
 func TestApplyAskAdminMayUpdate(t *testing.T) {
 	tx := ownedTx()
 	res, err := Apply(tx, parsed(t, "A|x"), Options{Actor: testAdmin, Mode: ModeAsk, CourseID: 1,
-		Decisions: map[int]Decision{1: DecisionUpdate}})
+		Decisions: map[int]Choice{1: {DecisionUpdate, 17}}})
 	if err != nil || res.Updated != 1 || tx.rows[0].OwnerID != 12 {
 		t.Errorf("result %+v, %v, row %+v", res, err, tx.rows[0])
+	}
+}
+
+func TestApplyAskUpdateBoundToTarget(t *testing.T) {
+	tx := teacherTx()
+	// The update was offered for #8, but the question now matches #7.
+	_, err := Apply(tx, parsed(t, "a?|x"), Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Choice{1: {DecisionUpdate, 8}}})
+	var de *DuplicatesError
+	if !errors.As(err, &de) || len(de.Dups) != 1 || de.Dups[0].Params["ID"] != int64(7) {
+		t.Fatalf("err = %v; a stale update must ask again about #7", err)
+	}
+	if tx.rows[0].Text != "A" || tx.rows[1].Text != "B" {
+		t.Errorf("rows changed: %+v", tx.rows)
+	}
+}
+
+func TestApplyTwoDraftsCannotUpdateSameQuestion(t *testing.T) {
+	tx := teacherTx()
+	drafts := withIDs(parsed(t, "a?|x", "C|x"), 0, 7)
+	_, err := Apply(tx, drafts, Options{Actor: teacher1, Mode: ModeAsk, CourseID: 1,
+		Decisions: map[int]Choice{1: {DecisionUpdate, 7}}})
+	var ce *ConflictError
+	if !errors.As(err, &ce) {
+		t.Fatalf("err = %v, want *ConflictError", err)
+	}
+	if got := keys(ce.Errs); !sameKeys(got, []errKey{{2, "", "QImportErrSameTarget"}}) || ce.Errs[0].Params["ID"] != int64(7) || ce.Errs[0].Params["PrevN"] != 1 {
+		t.Errorf("errs = %+v", ce.Errs)
 	}
 }

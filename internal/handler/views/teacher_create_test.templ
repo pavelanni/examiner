@@ -280,7 +280,7 @@ templ duplicateChoices(dups []DupChoice, token string) {
                 <legend>{ d.Msg }</legend>
                 <label><input type="radio" name={ fmt.Sprintf("dup_%d", d.N) } value="skip" checked?={ !d.CanUpdate } required/> { t(ctx, "QDupSkip") }</label>
                 if d.CanUpdate {
-                    <label><input type="radio" name={ fmt.Sprintf("dup_%d", d.N) } value="update" required/> { td(ctx, "QDupUpdate", map[string]any{"ID": d.UpdateID}) }</label>
+                    <label><input type="radio" name={ fmt.Sprintf("dup_%d", d.N) } value={ fmt.Sprintf("update:%d", d.UpdateID) } required/> { td(ctx, "QDupUpdate", map[string]any{"ID": d.UpdateID}) }</label>
                 }
             </fieldset>
         }

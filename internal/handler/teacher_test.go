@@ -144,7 +144,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	if rec3.Code != http.StatusConflict {
 		t.Fatalf("expected 409 asking about another owner's question, got %d", rec3.Code)
 	}
-	if body := rec3.Body.String(); !strings.Contains(body, "совпадает с вопросом #") || strings.Contains(body, `value="update"`) {
+	if body := rec3.Body.String(); !strings.Contains(body, "совпадает с вопросом #") || strings.Contains(body, `value="update:`) {
 		t.Errorf("expected a Russian question offering skip only, got: %s", body)
 	}
 	adminQ, err := s.GetQuestion(adminQID)
