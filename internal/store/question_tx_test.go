@@ -69,10 +69,10 @@ func TestInQuestionTxRollsBackOnError(t *testing.T) {
 func TestInQuestionTxRollsBackOnConstraint(t *testing.T) {
 	s := newTestStore(t)
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		if _, err := tx.Insert(txQuestion("A", "x")); err != nil {
+		if _, err := tx.Insert(txQuestion("A?", "x")); err != nil {
 			return err
 		}
-		_, err := tx.Insert(txQuestion("A", "y")) // same (course_id, text)
+		_, err := tx.Insert(txQuestion("a", "x")) // same active identity
 		return err
 	})
 	if err == nil {
@@ -83,23 +83,30 @@ func TestInQuestionTxRollsBackOnConstraint(t *testing.T) {
 	}
 }
 
+// archive marks a question as a historical row, as the identity migration
+// does for legacy duplicates.
+func archive(t *testing.T, s *Store, id int64) {
+	t.Helper()
+	if _, err := s.db.Exec(`UPDATE questions SET archived = 1 WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestQuestionTxFinders(t *testing.T) {
 	s := newTestStore(t)
-	id := insertTestQuestion(t, s, "A", "easy", "x")
+	archived := insertTestQuestion(t, s, "A", "easy", "x")
+	archive(t, s, archived)
+	id := insertTestQuestion(t, s, "A.", "easy", "x")
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		q, err := tx.FindByTopicAndTextNorm("x", model.NormalizeQuestionText("  a? "))
+		q, err := tx.FindByTopicAndTextNorm(1, "x", model.NormalizeQuestionText("  a? "))
 		if err != nil || q == nil || q.ID != id {
-			t.Errorf("FindByTopicAndTextNorm = %+v, %v; want id %d", q, err, id)
+			t.Errorf("FindByTopicAndTextNorm = %+v, %v; want active id %d", q, err, id)
 		}
-		if q, err := tx.FindByTopicAndTextNorm("other", "a"); q != nil || err != nil {
-			t.Errorf("miss: got %+v, %v; want nil, nil", q, err)
+		if q, err := tx.FindByTopicAndTextNorm(1, "other", "a"); q != nil || err != nil {
+			t.Errorf("other topic: got %+v, %v; want nil, nil", q, err)
 		}
-		q, err = tx.FindByCourseAndText(1, "A")
-		if err != nil || q == nil || q.ID != id || q.Topic != "x" {
-			t.Errorf("FindByCourseAndText = %+v, %v; want id %d", q, err, id)
-		}
-		if q, err := tx.FindByCourseAndText(1, "a"); q != nil || err != nil {
-			t.Errorf("exact-text miss: got %+v, %v; want nil, nil", q, err)
+		if q, err := tx.FindByTopicAndTextNorm(2, "x", "a"); q != nil || err != nil {
+			t.Errorf("other course: got %+v, %v; want nil, nil", q, err)
 		}
 		return nil
 	})
@@ -110,6 +117,8 @@ func TestQuestionTxFinders(t *testing.T) {
 
 func TestQuestionTxUpdate(t *testing.T) {
 	s := newTestStore(t)
+	old := insertTestQuestion(t, s, "Old", "easy", "x")
+	archive(t, s, old)
 	id := insertTestQuestion(t, s, "A", "easy", "x")
 	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
 		q := txQuestion("A", "x")
@@ -122,6 +131,10 @@ func TestQuestionTxUpdate(t *testing.T) {
 		if err := tx.Update(q); err == nil {
 			t.Error("Update of a missing ID: want error, got nil")
 		}
+		q.ID = old
+		if err := tx.Update(q); err == nil {
+			t.Error("Update of an archived question: want error, got nil")
+		}
 		return nil
 	})
 	if err != nil {
@@ -133,10 +146,10 @@ func TestQuestionTxUpdate(t *testing.T) {
 	}
 }
 
-func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
+func TestQuestionTxDeleteUnused(t *testing.T) {
 	s := newTestStore(t)
-	idKept := insertTestQuestion(t, s, "kept", "easy", "go")
 	idRemoved := insertTestQuestion(t, s, "removed", "easy", "go")
+	idOtherTopic := insertTestQuestion(t, s, "removed", "easy", "rust")
 	idReferenced := insertTestQuestion(t, s, "referenced", "easy", "go")
 	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10})
 	if err != nil {
@@ -147,19 +160,40 @@ func TestQuestionTxDeleteUnusedByTexts(t *testing.T) {
 	}
 
 	err = s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
-		return tx.DeleteUnusedByTexts(1, []string{"kept", "removed", "referenced"}, []string{"kept"})
+		for _, text := range []string{"removed", "referenced", "missing"} {
+			if err := tx.DeleteUnused(1, "go", text); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetQuestion(idKept); err != nil {
-		t.Errorf("kept question deleted: %v", err)
+	if _, err := s.GetQuestion(idRemoved); err == nil {
+		t.Error("unused question not deleted")
+	}
+	if _, err := s.GetQuestion(idOtherTopic); err != nil {
+		t.Errorf("same text in another topic deleted: %v", err)
 	}
 	if _, err := s.GetQuestion(idReferenced); err != nil {
 		t.Errorf("referenced question deleted: %v", err)
 	}
-	if _, err := s.GetQuestion(idRemoved); err == nil {
-		t.Error("unused question not deleted")
+}
+
+func TestQuestionTxDeleteImportedFileHash(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SetImportedFileHash("old.json", "h"); err != nil {
+		t.Fatal(err)
+	}
+	err := s.InQuestionTx(context.Background(), func(tx *QuestionTx) error {
+		return tx.DeleteImportedFileHash("old.json")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, err := s.GetImportedFileHash("old.json"); err != nil || h != "" {
+		t.Errorf("hash = %q, %v; want none", h, err)
 	}
 }
 

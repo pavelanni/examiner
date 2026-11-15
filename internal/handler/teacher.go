@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -179,7 +180,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var safeName string
-	var oldTexts []string
+	var oldDrafts []questionimport.Draft
 
 	if editingFile != "" {
 		if !teacherOwnsQuestionFile(user.Username, editingFile) {
@@ -188,10 +189,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		}
 		oldPath = filepath.Join("questions", editingFile)
 		if oldBytes, err := os.ReadFile(oldPath); err == nil {
-			oldDrafts, _ := questionimport.Decode(oldBytes)
-			for _, d := range oldDrafts {
-				oldTexts = append(oldTexts, d.Text)
-			}
+			oldDrafts, _ = questionimport.Decode(oldBytes)
 		}
 		if customFilename != "" {
 			base := filepath.Base(customFilename)
@@ -210,7 +208,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Reject a name the file system would refuse before anything is
-	// written: the rename happens only after the DB commit.
+	// written.
 	if !validQuestionFileName(safeName) {
 		h.renderTeacherCreateTest(w, r, http.StatusBadRequest, draftsToImports(drafts), editingFile, customFilename,
 			[]string{appI18n.T(r.Context(), "QImportErrFileName")})
@@ -218,17 +216,13 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	outPath := filepath.Join("questions", safeName)
 
-	fail := func(msgID, msg string, err error) {
-		slog.Error(msg, "user", user.Username, "file", outPath, "error", err)
-		h.renderTeacherCreateTest(w, r, http.StatusInternalServerError, draftsToImports(drafts), editingFile, customFilename,
-			[]string{appI18n.T(r.Context(), msgID)})
-	}
-	internalError := func(msg string, err error) { fail("QImportErrInternal", msg, err) }
+	// A teacher may change only questions listed in their own files;
+	// anyone else's matching question is skipped with a warning.
+	owned := teacherOwnedQuestionKeys(user.Username, oldDrafts)
 
 	// The file is published (and a renamed file retired) as the last step
 	// of the transaction. A failed publish rolls the transaction back; a
 	// failed commit makes saveTeacherQuestionFile restore the files.
-	sum := sha256.Sum256(data)
 	var res questionimport.Result
 	err = saveTeacherQuestionFile(oldPath, outPath, func(publish func([]byte) error) error {
 		return h.store.InQuestionTx(r.Context(), func(tx *store.QuestionTx) error {
@@ -237,27 +231,103 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 				Mode: questionimport.ModeUpdateExisting,
 				// TODO: derive course ID from context/config when multi-course support lands.
 				CourseID: 1,
-				OldTexts: oldTexts,
-				File:     &questionimport.FileRecord{Name: safeName, Hash: hex.EncodeToString(sum[:])},
+				Old:      oldDrafts,
+				Editable: func(q model.Question) bool {
+					_, ok := owned[questionKey{q.Topic, q.TextNorm}]
+					return ok
+				},
 			})
 			if err != nil {
 				return err
 			}
-			return publish(data)
+			// Nothing accepted: keep the previous file and questions.
+			if len(res.Saved) == 0 {
+				return errNothingSaved
+			}
+			// The file holds only the accepted questions, so a skipped
+			// question never counts as the teacher's own later.
+			written, err := savedQuestionsFile(data, drafts, res.Saved)
+			if err != nil {
+				return err
+			}
+			if editingFile != "" && editingFile != safeName {
+				if err := tx.DeleteImportedFileHash(editingFile); err != nil {
+					return err
+				}
+			}
+			sum := sha256.Sum256(written)
+			if err := tx.SetImportedFileHash(safeName, hex.EncodeToString(sum[:])); err != nil {
+				return err
+			}
+			return publish(written)
 		})
 	})
-	if err != nil {
-		internalError("failed to save questions", err)
+	if err != nil && !errors.Is(err, errNothingSaved) {
+		slog.Error("failed to save questions", "user", user.Username, "file", outPath, "error", err)
+		h.renderTeacherCreateTest(w, r, http.StatusInternalServerError, draftsToImports(drafts), editingFile, customFilename,
+			[]string{appI18n.T(r.Context(), "QImportErrInternal")})
 		return
 	}
 
-	for _, msg := range questionimport.LocalizeWarnings(r.Context(), res.Warnings) {
-		slog.Warn("teacher question skipped", "user", user.Username, "file", outPath, "reason", msg)
-	}
+	warnings := questionimport.LocalizeWarnings(r.Context(), res.Warnings)
 	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath,
 		"inserted", res.Inserted, "updated", res.Updated, "skipped", res.Skipped)
+	if len(warnings) == 0 {
+		http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)
+		return
+	}
+	msg := appI18n.Td(r.Context(), "QImportSummary", map[string]any{
+		"Inserted": res.Inserted, "Updated": res.Updated, "Skipped": res.Skipped,
+	}) + " " + strings.Join(warnings, " ")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := views.TeacherProfilePage(user.DisplayName, listTeacherFiles(user.Username), msg).Render(r.Context(), w); err != nil {
+		slog.Error("render error", "error", err)
+	}
+}
 
-	http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)
+// errNothingSaved rolls back a teacher save in which every question was
+// skipped.
+var errNothingSaved = errors.New("no question accepted")
+
+// questionKey is a question's identity within a course.
+type questionKey struct{ topic, norm string }
+
+// teacherOwnedQuestionKeys returns the identities of the questions in the
+// file being edited and in every question file of the teacher.
+func teacherOwnedQuestionKeys(username string, oldDrafts []questionimport.Draft) map[questionKey]struct{} {
+	owned := make(map[questionKey]struct{}, len(oldDrafts))
+	add := func(drafts []questionimport.Draft) {
+		for _, d := range drafts {
+			owned[questionKey{d.Topic, model.NormalizeQuestionText(d.Text)}] = struct{}{}
+		}
+	}
+	add(oldDrafts)
+	for _, name := range listTeacherFiles(username) {
+		b, err := os.ReadFile(filepath.Join("questions", name))
+		if err != nil {
+			continue
+		}
+		drafts, _ := questionimport.Decode(b)
+		add(drafts)
+	}
+	return owned
+}
+
+// savedQuestionsFile returns the file content to publish: data itself when
+// every question was saved, otherwise only the saved ones.
+func savedQuestionsFile(data []byte, drafts []questionimport.Draft, saved []int) ([]byte, error) {
+	if len(saved) == len(drafts) {
+		return data, nil
+	}
+	byNumber := make(map[int]model.QuestionImport, len(drafts))
+	for _, d := range drafts {
+		byNumber[d.Number] = d.QuestionImport
+	}
+	out := make([]model.QuestionImport, 0, len(saved))
+	for _, n := range saved {
+		out = append(out, byNumber[n])
+	}
+	return json.MarshalIndent(out, "", "  ")
 }
 
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {

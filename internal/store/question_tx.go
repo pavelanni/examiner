@@ -47,7 +47,7 @@ const questionColumns = `id, course_id, text, text_norm, difficulty, topic, rubr
 
 func (t *QuestionTx) findOne(where string, args ...any) (*model.Question, error) {
 	var q model.Question
-	err := t.tx.QueryRow(`SELECT `+questionColumns+` FROM questions WHERE `+where+` LIMIT 1`, args...).
+	err := t.tx.QueryRow(`SELECT `+questionColumns+` FROM questions WHERE `+where+` ORDER BY id LIMIT 1`, args...).
 		Scan(&q.ID, &q.CourseID, &q.Text, &q.TextNorm, &q.Difficulty, &q.Topic, &q.Rubric, &q.ModelAnswer, &q.MaxPoints)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -58,16 +58,10 @@ func (t *QuestionTx) findOne(where string, args ...any) (*model.Question, error)
 	return &q, nil
 }
 
-// FindByTopicAndTextNorm returns a question with this topic and normalized
-// text, or nil if there is none.
-func (t *QuestionTx) FindByTopicAndTextNorm(topic, textNorm string) (*model.Question, error) {
-	return t.findOne(`topic = ? AND text_norm = ?`, topic, textNorm)
-}
-
-// FindByCourseAndText returns the question with exactly this text in the
-// course, or nil. It mirrors the idx_questions_course_text unique index.
-func (t *QuestionTx) FindByCourseAndText(courseID int64, text string) (*model.Question, error) {
-	return t.findOne(`course_id = ? AND text = ?`, courseID, text)
+// FindByTopicAndTextNorm returns the active question with this identity,
+// or nil if there is none. idx_questions_active_identity allows at most one.
+func (t *QuestionTx) FindByTopicAndTextNorm(courseID int64, topic, textNorm string) (*model.Question, error) {
+	return t.findOne(`course_id = ? AND topic = ? AND text_norm = ? AND archived = 0`, courseID, topic, textNorm)
 }
 
 // Insert stores a new question. Unlike Store.InsertQuestion it does not
@@ -87,7 +81,8 @@ func (t *QuestionTx) Insert(q model.Question) (int64, error) {
 	return res.LastInsertId()
 }
 
-// Update changes a question by ID. It returns sql.ErrNoRows if no row matched.
+// Update changes an active question by ID. It returns sql.ErrNoRows if no
+// active row matched: archived questions stay as sessions saw them.
 func (t *QuestionTx) Update(q model.Question) error {
 	if q.TextNorm == "" {
 		q.TextNorm = model.NormalizeQuestionText(q.Text)
@@ -95,7 +90,7 @@ func (t *QuestionTx) Update(q model.Question) error {
 	res, err := t.tx.Exec(
 		`UPDATE questions
 		 SET text = ?, text_norm = ?, difficulty = ?, topic = ?, rubric = ?, model_answer = ?, max_points = ?
-		 WHERE id = ?`,
+		 WHERE id = ? AND archived = 0`,
 		q.Text, q.TextNorm, q.Difficulty, q.Topic, q.Rubric, q.ModelAnswer, q.MaxPoints, q.ID,
 	)
 	if err != nil {
@@ -111,25 +106,15 @@ func (t *QuestionTx) Update(q model.Question) error {
 	return nil
 }
 
-// DeleteUnusedByTexts deletes questions whose text is in oldTexts but not in
-// keepTexts and that no question_thread references.
-func (t *QuestionTx) DeleteUnusedByTexts(courseID int64, oldTexts, keepTexts []string) error {
-	if len(oldTexts) == 0 {
-		return nil
-	}
-	args := append([]any{courseID}, stringsToAny(oldTexts)...)
-	var notIn string
-	if len(keepTexts) > 0 {
-		notIn = "AND text NOT IN (" + placeholders(len(keepTexts)) + ")"
-		args = append(args, stringsToAny(keepTexts)...)
-	}
+// DeleteUnused deletes the active question with this topic and exact text
+// unless a question_thread references it. Another topic's question with
+// the same text is kept.
+func (t *QuestionTx) DeleteUnused(courseID int64, topic, text string) error {
 	_, err := t.tx.Exec(`DELETE FROM questions
-		WHERE course_id = ?
-		  AND text IN (`+placeholders(len(oldTexts))+`)
-		  `+notIn+`
+		WHERE course_id = ? AND topic = ? AND text = ? AND archived = 0
 		  AND NOT EXISTS (
 		      SELECT 1 FROM question_threads WHERE question_threads.question_id = questions.id
-		  )`, args...)
+		  )`, courseID, topic, text)
 	return err
 }
 
@@ -141,5 +126,11 @@ func (t *QuestionTx) SetImportedFileHash(name, hash string) error {
 		 ON CONFLICT(path) DO UPDATE SET hash = ?, imported_at = ?`,
 		name, hash, now, hash, now,
 	)
+	return err
+}
+
+// DeleteImportedFileHash removes the record of an imported file.
+func (t *QuestionTx) DeleteImportedFileHash(name string) error {
+	_, err := t.tx.Exec(`DELETE FROM imported_files WHERE path = ?`, name)
 	return err
 }

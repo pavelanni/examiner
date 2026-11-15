@@ -135,7 +135,7 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 
 	recRuNew := uploadQuestionsWithLang("questions_ru_test.json", `[{"text": "что такое пид-регулятор", "difficulty": "easy", "topic": "control", "rubric": "r", "model_answer": "a", "max_points": 10}]`, "ru")
 	bodyRuNew := recRuNew.Body.String()
-	if !strings.Contains(bodyRuNew, "совпадает с существующим вопросом #") || !strings.Contains(bodyRuNew, "Предупреждения:") {
+	if !strings.Contains(bodyRuNew, "совпадает с существующим вопросом #") || !strings.Contains(bodyRuNew, "пропущено: 1") {
 		t.Errorf("expected Russian warning about existing question in DB, got: %s", bodyRuNew)
 	}
 
@@ -168,7 +168,7 @@ func TestAdminUploadDuplicateProtection(t *testing.T) {
 	if recCrossTopic.Code != http.StatusOK {
 		t.Fatalf("cross-topic upload status = %d, body: %s", recCrossTopic.Code, recCrossTopic.Body.String())
 	}
-	if !strings.Contains(recCrossTopic.Body.String(), "Successfully imported 1 questions.") {
+	if !strings.Contains(recCrossTopic.Body.String(), "Imported: 1, updated: 0, skipped: 0.") {
 		t.Errorf("expected 1 imported question for new topic, got: %s", recCrossTopic.Body.String())
 	}
 	countAfterCrossTopic, err := s.QuestionCount()

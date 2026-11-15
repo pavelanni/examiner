@@ -1,14 +1,12 @@
 package handler
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
-	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -97,22 +95,6 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 	}
 
 	http.Redirect(w, r, h.path("/admin/users"), http.StatusSeeOther)
-}
-
-func questionDupKey(topic, textNorm string) string {
-	return topic + "\x00" + textNorm
-}
-
-func formatUploadSummary(ctx context.Context, count int, warnings []string) string {
-	if len(warnings) > 0 {
-		return appI18n.Td(ctx, "UploadSuccessWithWarnings", map[string]any{
-			"Count":    count,
-			"Warnings": strings.Join(warnings, " "),
-		})
-	}
-	return appI18n.Td(ctx, "UploadSuccess", map[string]any{
-		"Count": count,
-	})
 }
 
 func (h *Handler) loadExistingDuplicates() []model.DuplicateQuestionGroup {

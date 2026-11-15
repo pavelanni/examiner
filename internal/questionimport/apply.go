@@ -9,11 +9,14 @@ import (
 // Tx is the transaction-scoped store surface Apply needs.
 // *store.QuestionTx implements it.
 type Tx interface {
-	FindByTopicAndTextNorm(topic, textNorm string) (*model.Question, error)
-	FindByCourseAndText(courseID int64, text string) (*model.Question, error)
+	// FindByTopicAndTextNorm returns the active question with this
+	// identity (course, topic, normalized text), or nil.
+	FindByTopicAndTextNorm(courseID int64, topic, textNorm string) (*model.Question, error)
 	Insert(q model.Question) (int64, error)
 	Update(q model.Question) error
-	DeleteUnusedByTexts(courseID int64, oldTexts, keepTexts []string) error
+	// DeleteUnused deletes the active question with this topic and exact
+	// text unless an exam session references it.
+	DeleteUnused(courseID int64, topic, text string) error
 	SetImportedFileHash(name, hash string) error
 }
 
@@ -36,27 +39,38 @@ type FileRecord struct {
 type Options struct {
 	Mode     Mode
 	CourseID int64
-	OldTexts []string    // teacher edit: questions of the file being replaced
-	File     *FileRecord // recorded in imported_files inside the transaction
+	// Old holds the questions of the file being replaced (teacher edit).
+	// Those whose identity is not in the new file are deleted unless an
+	// exam session uses them.
+	Old  []Draft
+	File *FileRecord // recorded in imported_files inside the transaction
+	// Editable reports whether ModeUpdateExisting may change an existing
+	// question; a question it rejects is skipped with a warning. Nil
+	// allows every question.
+	Editable func(existing model.Question) bool
 }
 
 // Result counts what Apply did.
 type Result struct {
 	Inserted, Updated, Skipped int
 	Warnings                   []Warning
+	// Saved lists the numbers of the questions inserted or updated, in
+	// file order.
+	Saved []int
 }
+
+// identity is a question's key among active questions of a course.
+type identity struct{ topic, norm string }
 
 // Apply writes validated questions through tx. Run it inside one
 // transaction: on error the caller rolls back and the Result is discarded.
 func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 	var res Result
-	seen := make(map[string]int, len(drafts)) // topic + "\x00" + text_norm -> question number
-	keepTexts := make([]string, 0, len(drafts))
+	seen := make(map[identity]int, len(drafts)) // -> question number
 
 	for _, d := range drafts {
-		keepTexts = append(keepTexts, d.Text)
 		norm := model.NormalizeQuestionText(d.Text)
-		key := d.Topic + "\x00" + norm
+		key := identity{d.Topic, norm}
 
 		if prev, ok := seen[key]; ok {
 			res.skip(d.Number, "QImportWarnDupInFile", map[string]any{"PrevN": prev, "Topic": d.Topic})
@@ -75,54 +89,36 @@ func Apply(tx Tx, drafts []Draft, opts Options) (Result, error) {
 			MaxPoints:   d.MaxPoints,
 		}
 
-		existing, err := tx.FindByTopicAndTextNorm(d.Topic, norm)
+		existing, err := tx.FindByTopicAndTextNorm(opts.CourseID, d.Topic, norm)
 		if err != nil {
 			return Result{}, fmt.Errorf("question %d: find duplicate: %w", d.Number, err)
 		}
-		if existing != nil {
-			if opts.Mode == ModeUpdateExisting {
-				// The new text may equal another row's exact text (a legacy
-				// near-duplicate in another topic); updating would violate
-				// the (course_id, text) unique index.
-				other, err := tx.FindByCourseAndText(opts.CourseID, d.Text)
-				if err != nil {
-					return Result{}, fmt.Errorf("question %d: find same text: %w", d.Number, err)
-				}
-				if other != nil && other.ID != existing.ID {
-					res.skip(d.Number, "QImportWarnDupOtherTopic", map[string]any{"ID": other.ID, "Topic": other.Topic})
-					continue
-				}
-				q.ID = existing.ID
-				if err := tx.Update(q); err != nil {
-					return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)
-				}
-				res.Updated++
-			} else {
-				res.skip(d.Number, "QImportWarnDupInDB", map[string]any{"ID": existing.ID, "Topic": d.Topic})
+		if existing == nil {
+			if _, err := tx.Insert(q); err != nil {
+				return Result{}, fmt.Errorf("question %d: insert: %w", d.Number, err)
 			}
+			res.Inserted++
+			res.Saved = append(res.Saved, d.Number)
 			continue
 		}
-
-		// Same exact text in another topic: the (course_id, text) unique
-		// index would reject the insert, so skip it with a warning.
-		other, err := tx.FindByCourseAndText(opts.CourseID, d.Text)
-		if err != nil {
-			return Result{}, fmt.Errorf("question %d: find same text: %w", d.Number, err)
-		}
-		if other != nil {
-			res.skip(d.Number, "QImportWarnDupOtherTopic", map[string]any{"ID": other.ID, "Topic": other.Topic})
+		if opts.Mode != ModeUpdateExisting || (opts.Editable != nil && !opts.Editable(*existing)) {
+			res.skip(d.Number, "QImportWarnDupInDB", map[string]any{"ID": existing.ID, "Topic": d.Topic})
 			continue
 		}
-
-		if _, err := tx.Insert(q); err != nil {
-			return Result{}, fmt.Errorf("question %d: insert: %w", d.Number, err)
+		q.ID = existing.ID
+		if err := tx.Update(q); err != nil {
+			return Result{}, fmt.Errorf("question %d: update #%d: %w", d.Number, existing.ID, err)
 		}
-		res.Inserted++
+		res.Updated++
+		res.Saved = append(res.Saved, d.Number)
 	}
 
-	if len(opts.OldTexts) > 0 {
-		if err := tx.DeleteUnusedByTexts(opts.CourseID, opts.OldTexts, keepTexts); err != nil {
-			return Result{}, fmt.Errorf("delete replaced questions: %w", err)
+	for _, d := range opts.Old {
+		if _, kept := seen[identity{d.Topic, model.NormalizeQuestionText(d.Text)}]; kept {
+			continue
+		}
+		if err := tx.DeleteUnused(opts.CourseID, d.Topic, d.Text); err != nil {
+			return Result{}, fmt.Errorf("delete replaced question %d: %w", d.Number, err)
 		}
 	}
 	if opts.File != nil {

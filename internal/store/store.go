@@ -273,14 +273,6 @@ type sqlExecutor interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
-func stringsToAny(ss []string) []any {
-	out := make([]any, len(ss))
-	for i, s := range ss {
-		out[i] = s
-	}
-	return out
-}
-
 // InsertQuestion stores a question and returns its ID, or zero for an active duplicate.
 func (s *Store) InsertQuestion(q model.Question) (int64, error) {
 	return insertQuestion(s.db, q)

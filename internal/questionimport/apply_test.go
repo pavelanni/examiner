@@ -10,29 +10,19 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-// fakeTx is an in-memory Tx. It enforces the (course_id, text) uniqueness
-// the real store has.
+// fakeTx is an in-memory Tx. Like the real store, it allows one active
+// question per (course, topic, normalized text).
 type fakeTx struct {
 	rows      []model.Question
 	nextID    int64
 	insertErr error
-	deletes   [][2][]string // oldTexts, keepTexts per call
+	deletes   []string // "topic|text" per DeleteUnused call
 	files     []FileRecord
 }
 
-func (f *fakeTx) FindByTopicAndTextNorm(topic, norm string) (*model.Question, error) {
+func (f *fakeTx) FindByTopicAndTextNorm(courseID int64, topic, norm string) (*model.Question, error) {
 	for i := range f.rows {
-		if f.rows[i].Topic == topic && f.rows[i].TextNorm == norm {
-			q := f.rows[i]
-			return &q, nil
-		}
-	}
-	return nil, nil
-}
-
-func (f *fakeTx) FindByCourseAndText(courseID int64, text string) (*model.Question, error) {
-	for i := range f.rows {
-		if f.rows[i].CourseID == courseID && f.rows[i].Text == text {
+		if f.rows[i].CourseID == courseID && f.rows[i].Topic == topic && f.rows[i].TextNorm == norm {
 			q := f.rows[i]
 			return &q, nil
 		}
@@ -44,7 +34,7 @@ func (f *fakeTx) Insert(q model.Question) (int64, error) {
 	if f.insertErr != nil {
 		return 0, f.insertErr
 	}
-	if existing, _ := f.FindByCourseAndText(q.CourseID, q.Text); existing != nil {
+	if existing, _ := f.FindByTopicAndTextNorm(q.CourseID, q.Topic, q.TextNorm); existing != nil {
 		return 0, fmt.Errorf("UNIQUE constraint failed")
 	}
 	f.nextID++
@@ -54,9 +44,6 @@ func (f *fakeTx) Insert(q model.Question) (int64, error) {
 }
 
 func (f *fakeTx) Update(q model.Question) error {
-	if other, _ := f.FindByCourseAndText(q.CourseID, q.Text); other != nil && other.ID != q.ID {
-		return fmt.Errorf("UNIQUE constraint failed")
-	}
 	for i := range f.rows {
 		if f.rows[i].ID == q.ID {
 			f.rows[i] = q
@@ -66,8 +53,8 @@ func (f *fakeTx) Update(q model.Question) error {
 	return errors.New("no rows")
 }
 
-func (f *fakeTx) DeleteUnusedByTexts(_ int64, oldTexts, keepTexts []string) error {
-	f.deletes = append(f.deletes, [2][]string{oldTexts, keepTexts})
+func (f *fakeTx) DeleteUnused(_ int64, topic, text string) error {
+	f.deletes = append(f.deletes, topic+"|"+text)
 	return nil
 }
 
@@ -132,20 +119,14 @@ func TestApplyDupInFile(t *testing.T) {
 	}
 }
 
-func TestApplyDupInFileDifferentTopic(t *testing.T) {
-	tx := &fakeTx{}
-	res, err := Apply(tx, parsed(t, "A|x", "A|y"), Options{CourseID: 1})
+func TestApplySameTextDifferentTopic(t *testing.T) {
+	tx := existingTx() // "A" in topic x
+	res, err := Apply(tx, parsed(t, "A|y", "A|z"), Options{CourseID: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Inserted != 1 || res.Skipped != 1 {
-		t.Errorf("result = %+v", res)
-	}
-	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"2:QImportWarnDupOtherTopic"}) {
-		t.Errorf("warnings = %v", got)
-	}
-	if res.Warnings[0].Params["Topic"] != "x" {
-		t.Errorf("topic = %v, want the existing row's topic x", res.Warnings[0].Params["Topic"])
+	if res.Inserted != 2 || res.Skipped != 0 || len(tx.rows) != 3 {
+		t.Errorf("result = %+v, rows = %+v; want both inserted", res, tx.rows)
 	}
 }
 
@@ -183,23 +164,34 @@ func TestApplyDupInDBUpdate(t *testing.T) {
 	}
 }
 
-func TestApplyOtherTopicSkippedInUpdateMode(t *testing.T) {
+func TestApplyNotEditableSkipped(t *testing.T) {
 	tx := existingTx()
-	res, err := Apply(tx, parsed(t, "A|y"), Options{Mode: ModeUpdateExisting, CourseID: 1})
+	var asked []int64
+	res, err := Apply(tx, parsed(t, "a?|x", "B|x"), Options{Mode: ModeUpdateExisting, CourseID: 1,
+		Editable: func(q model.Question) bool { asked = append(asked, q.ID); return false }})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"1:QImportWarnDupOtherTopic"}) || res.Skipped != 1 {
+	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"1:QImportWarnDupInDB"}) || res.Skipped != 1 || res.Inserted != 1 {
 		t.Errorf("result = %+v", res)
+	}
+	if tx.rows[0].Rubric != "old" || !slices.Equal(asked, []int64{7}) {
+		t.Errorf("row = %+v, asked = %v", tx.rows[0], asked)
+	}
+	if !slices.Equal(res.Saved, []int{2}) {
+		t.Errorf("saved = %v, want [2]", res.Saved)
 	}
 }
 
-func TestApplyOldTexts(t *testing.T) {
+func TestApplyOld(t *testing.T) {
 	tx := &fakeTx{}
-	if _, err := Apply(tx, parsed(t, "A|x"), Options{CourseID: 1, OldTexts: []string{"A", "B"}}); err != nil {
+	old := parsed(t, "A|x", "B|x", "c?|y", "A|z")
+	if _, err := Apply(tx, parsed(t, "a|x", "C|y"), Options{CourseID: 1, Old: old}); err != nil {
 		t.Fatal(err)
 	}
-	if len(tx.deletes) != 1 || !slices.Equal(tx.deletes[0][0], []string{"A", "B"}) || !slices.Equal(tx.deletes[0][1], []string{"A"}) {
+	// "A|x" and "c?|y" keep their identity; "B|x" is gone and "A" in z
+	// is a different question from "a" in x.
+	if !slices.Equal(tx.deletes, []string{"x|B", "z|A"}) {
 		t.Errorf("deletes = %v", tx.deletes)
 	}
 
@@ -208,7 +200,22 @@ func TestApplyOldTexts(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(tx.deletes) != 0 {
-		t.Errorf("deletes without OldTexts = %v", tx.deletes)
+		t.Errorf("deletes without Old = %v", tx.deletes)
+	}
+}
+
+func TestApplySaved(t *testing.T) {
+	tx := existingTx()
+	res, err := Apply(tx, parsed(t, "N|x", "N|x", "a|x", "M|y"), Options{Mode: ModeSkipExisting, CourseID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(res.Saved, []int{1, 4}) {
+		t.Errorf("saved = %v, want [1 4] (2 duplicates 1, 3 exists)", res.Saved)
+	}
+	res, err = Apply(tx, parsed(t, "A|x"), Options{Mode: ModeUpdateExisting, CourseID: 1})
+	if err != nil || !slices.Equal(res.Saved, []int{1}) {
+		t.Errorf("update: saved = %v, %v; want [1]", res.Saved, err)
 	}
 }
 
@@ -239,22 +246,5 @@ func TestApplyPropagatesError(t *testing.T) {
 	}
 	if res.Inserted != 0 || len(tx.files) != 0 {
 		t.Errorf("result = %+v, files = %v; want zero result, no file record", res, tx.files)
-	}
-}
-
-func TestApplyUpdateWouldCollideWithOtherTopic(t *testing.T) {
-	tx := &fakeTx{nextID: 8, rows: []model.Question{
-		{ID: 7, CourseID: 1, Text: "What is OOP?", TextNorm: "what is oop", Topic: "x", Difficulty: "easy", Rubric: "r", ModelAnswer: "a", MaxPoints: 1},
-		{ID: 8, CourseID: 1, Text: "What is OOP", TextNorm: "what is oop", Topic: "y", Difficulty: "easy", Rubric: "r", ModelAnswer: "a", MaxPoints: 1},
-	}}
-	res, err := Apply(tx, parsed(t, "What is OOP|x"), Options{Mode: ModeUpdateExisting, CourseID: 1})
-	if err != nil {
-		t.Fatalf("Apply: %v", err)
-	}
-	if got := warnCodes(res.Warnings); !slices.Equal(got, []string{"1:QImportWarnDupOtherTopic"}) || res.Skipped != 1 || res.Warnings[0].Params["ID"] != int64(8) {
-		t.Errorf("result = %+v", res)
-	}
-	if tx.rows[0].Text != "What is OOP?" {
-		t.Errorf("row 7 changed: %+v", tx.rows[0])
 	}
 }

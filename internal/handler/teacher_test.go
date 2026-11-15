@@ -66,7 +66,7 @@ func TestTeacherUploadDuplicateProtection(t *testing.T) {
 	if rec1.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK with warning banner, got %d (%s)", rec1.Code, rec1.Body.String())
 	}
-	if !strings.Contains(rec1.Body.String(), "matches question #1 in the file under topic") {
+	if !strings.Contains(rec1.Body.String(), "Question 2 duplicates question 1 in this file") {
 		t.Errorf("expected English intra-file duplicate warning, got: %s", rec1.Body.String())
 	}
 	count, err := s.QuestionCount()
