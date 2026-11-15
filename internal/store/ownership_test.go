@@ -260,6 +260,8 @@ func TestAllPublished(t *testing.T) {
 	txInsert(t, s, owned("X", "a", t1, true))
 	txInsert(t, s, owned("Y", "b", t1, false))
 	txInsert(t, s, owned("Z", "a", t2, false))
+	archive(t, s, txInsert(t, s, owned("W", "a", t1, false)))
+	txInsert(t, s, owned("W.", "a", t1, true))
 	tests := []struct {
 		keys []QuestionKey
 		want bool
@@ -268,6 +270,7 @@ func TestAllPublished(t *testing.T) {
 		{[]QuestionKey{{"a", "x"}, {"b", "y"}}, false},
 		{[]QuestionKey{{"zz", "zz"}}, true},
 		{[]QuestionKey{{"a", "x"}, {"a", "z"}}, true}, // t2's unpublished row does not count
+		{[]QuestionKey{{"a", "w"}}, true},             // an archived unpublished row does not count
 		{nil, true},
 	}
 	for _, tt := range tests {

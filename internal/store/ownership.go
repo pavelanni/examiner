@@ -106,7 +106,7 @@ func (s *Store) ClaimQuestionOwners(claims map[int64][]int64) error {
 	return tx.Commit()
 }
 
-// AllPublished reports whether every question owned by ownerID that
+// AllPublished reports whether every active question owned by ownerID that
 // matches one of keys is published. No matching question means true.
 func (s *Store) AllPublished(ownerID int64, keys []QuestionKey) (bool, error) {
 	// Each OR adds a level to the parsed expression; chunks keep it well
@@ -119,7 +119,7 @@ func (s *Store) AllPublished(ownerID int64, keys []QuestionKey) (bool, error) {
 			args = append(args, k.Topic, k.TextNorm)
 		}
 		var unpublished int
-		err := s.db.QueryRow(`SELECT COUNT(*) FROM questions WHERE owner_id = ? AND published = 0 AND (`+
+		err := s.db.QueryRow(`SELECT COUNT(*) FROM questions WHERE owner_id = ? AND published = 0 AND archived = 0 AND (`+
 			strings.Join(conds, " OR ")+`)`, args...).Scan(&unpublished)
 		if err != nil {
 			return false, err

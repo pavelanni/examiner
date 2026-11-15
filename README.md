@@ -384,9 +384,8 @@ example "Question 3, field max_points: must be an integer greater than
 0". At startup, an invalid `--questions` file stops the server with the
 same list. A question that matches an existing one in the same topic
 (ignoring case, spacing and trailing punctuation) is skipped with a
-warning; when a teacher saves their own file, it is updated instead. A
-teacher's save updates only questions listed in that teacher's files:
-another matching question is skipped with a warning and left out of the
+warning; when a teacher saves their own file, it is updated instead (see
+ownership below). A duplicate within a teacher's file is left out of the
 saved file. The same text in a different topic is a separate question.
 
 | Route | Purpose |
