@@ -35,6 +35,7 @@ func TestExamStatementApprovalAndFilters(t *testing.T) {
 		known     bool
 	}{
 		{model.StatusInProgress, false, nil, true},
+		{model.StatusAnnulled, true, 100, true},
 		{model.StatusGraded, true, nil, true},
 		{model.StatusReviewed, true, 0, true},
 		{model.StatusGraded, true, 99, true}, // stale final grade must not escape

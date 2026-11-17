@@ -10,15 +10,22 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-const sessionColumns = `id, blueprint_id, student_id, topic, topic_known, status, started_at, submitted_at`
+const sessionColumns = `exam_sessions.id, exam_sessions.blueprint_id, exam_sessions.student_id,
+	exam_sessions.topic, exam_sessions.topic_known, exam_sessions.status, exam_sessions.started_at,
+	exam_sessions.submitted_at, exam_sessions.reset_at, exam_sessions.reset_by, exam_sessions.reset_reason`
 
 type rowScanner interface{ Scan(...any) error }
 
 // scanSession reads one row selected with sessionColumns.
 func scanSession(row rowScanner) (model.ExamSession, error) {
 	var sess model.ExamSession
-	err := row.Scan(&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown, &sess.Status, &sess.StartedAt, &sess.SubmittedAt)
+	err := row.Scan(sessionScanArgs(&sess)...)
 	return sess, err
+}
+
+func sessionScanArgs(sess *model.ExamSession) []any {
+	return []any{&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown,
+		&sess.Status, &sess.StartedAt, &sess.SubmittedAt, &sess.ResetAt, &sess.ResetBy, &sess.ResetReason}
 }
 
 // scanSessions reads session rows and closes the query on every return path.
@@ -49,7 +56,7 @@ func (s *Store) FindExamSession(blueprintID, studentID int64, topic string, reta
 
 // findExamSession looks up a known topic scope using the supplied query connection.
 func findExamSession(q queryRower, blueprintID, studentID int64, topic string, retake bool) (*model.ExamSession, error) {
-	query := `SELECT ` + sessionColumns + ` FROM exam_sessions WHERE student_id = ? AND blueprint_id = ? AND topic = ? AND topic_known = 1`
+	query := `SELECT ` + sessionColumns + ` FROM exam_sessions WHERE student_id = ? AND blueprint_id = ? AND topic = ? AND topic_known = 1 AND status != 'annulled'`
 	if retake {
 		// Grading can return an attempt to in_progress when the LLM queue
 		// is busy (#47). A new attempt must not occupy its unique slot.

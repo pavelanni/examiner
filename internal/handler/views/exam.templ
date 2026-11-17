@@ -29,7 +29,8 @@ templ ExamPage(view model.ExamPageView) {
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ t(ctx, "Exam") }</h1>
-		if view.Blueprint.TimeLimit > 0 {
+		@attemptResetNotice(view.SessionView)
+		if view.Blueprint.TimeLimit > 0 && view.Session.Status == model.StatusInProgress {
 			<div class="timer-section">
 				if view.TimeExceeded {
 					<span id="exam-timer" class="time-exceeded">00:00</span>
@@ -43,7 +44,7 @@ templ ExamPage(view model.ExamPageView) {
 		}
 		if view.Session.Status == model.StatusInProgress {
 			<p>{ t(ctx, "ExamInstructions") }</p>
-		} else {
+		} else if view.Session.Status != model.StatusAnnulled {
 			<p>{ t(ctx, "ExamSubmitted") }</p>
 		}
 		for i, tv := range view.Threads {
@@ -54,7 +55,7 @@ templ ExamPage(view model.ExamPageView) {
 		if view.Session.Status == model.StatusInProgress {
 			@submitForm(p(ctx, fmt.Sprintf("/exam/%d/submit", view.Session.ID)), t(ctx, "SubmitConfirm"), t(ctx, "SubmitExam"), t(ctx, "GradingInProgress"), csrf(ctx))
 		}
-		if view.Blueprint.TimeLimit > 0 && !view.TimeExceeded {
+		if view.Blueprint.TimeLimit > 0 && !view.TimeExceeded && view.Session.Status == model.StatusInProgress {
 			<script>
 (function() {
     const timerEl = document.getElementById('exam-timer');

@@ -39,7 +39,9 @@ templ ReviewPage(view model.SessionView) {
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ td(ctx, "ReviewSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
-		<p>{ t(ctx, "StatusLabel") } <strong>{ string(view.Session.Status) }</strong></p>
+		@attemptResetNotice(view)
+		<p>{ t(ctx, "StatusLabel") } <strong>{ sessionStatusLabel(ctx, view.Session.Status) }</strong></p>
+		@resetAttemptLink(view.Session)
 		if view.Grade != nil {
 			<div class="score-box">
 				<p>{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }</p>
@@ -73,7 +75,8 @@ templ ReviewPage(view model.SessionView) {
 								if m.Role == model.RoleStudent {
 									<div>{ m.Text() }</div>
 								} else {
-									<div class="markdown">@evaluatorMessage(m)</div>
+									<div class="markdown">@evaluatorMessage(m)
+</div>
 								}
 							</div>
 						}
@@ -82,14 +85,15 @@ templ ReviewPage(view model.SessionView) {
 				if tv.Score != nil {
 					<div class="score-box">
 						<p><strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
-						<div><strong>{ t(ctx, "LLMFeedback") }</strong> <div class="markdown">@markdown(tv.Score.LLMFeedback)</div></div>
+						<div><strong>{ t(ctx, "LLMFeedback") }</strong> <div class="markdown">@markdown(tv.Score.LLMFeedback)
+</div></div>
 						if tv.Score.TeacherScore != nil {
 							<p><strong>{ t(ctx, "TeacherScore") }</strong> { fmt.Sprintf("%.1f", *tv.Score.TeacherScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
 							if tv.Score.TeacherComment != "" {
 								<p><strong>{ t(ctx, "TeacherComment") }</strong> { tv.Score.TeacherComment }</p>
 							}
 						}
-						if view.Session.Status != model.StatusReviewed {
+						if view.Session.Status == model.StatusGraded {
 							<details>
 								<summary>{ t(ctx, "AdjustScore") }</summary>
 								<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/score/%d", view.Session.ID, tv.Thread.ID))) }>
@@ -121,7 +125,7 @@ templ ReviewPage(view model.SessionView) {
 				}
 			</div>
 		}
-		if view.Grade != nil && view.Session.Status != model.StatusReviewed {
+		if view.Grade != nil && view.Session.Status == model.StatusGraded {
 			<hr/>
 			<h2>{ t(ctx, "FinalizeGrade") }</h2>
 			<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/finalize", view.Session.ID))) }>
@@ -134,7 +138,7 @@ templ ReviewPage(view model.SessionView) {
 						step="0.5"
 						min="0"
 						max="100"
-							if adjusted, ok := adjustedGrade(view); ok {
+						if adjusted, ok := adjustedGrade(view); ok {
 							value={ fmt.Sprintf("%.1f", adjusted) }
 						} else {
 							value={ fmt.Sprintf("%.1f", view.Grade.LLMGrade) }

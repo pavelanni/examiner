@@ -136,6 +136,8 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Get("/review", h.handleReviewList)
 			r.Get("/review/export", h.handleStatement)
 			r.Get("/review/{sessionID}", h.handleReviewPage)
+			r.Get("/review/{sessionID}/reset", h.handleResetAttemptPage)
+			r.Post("/review/{sessionID}/reset", h.handleResetAttempt)
 			r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
 			r.Post("/review/{sessionID}/finalize", h.handleFinalize)
 			r.Get("/teacher/me", h.handleTeacherMe)
@@ -237,6 +239,10 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if sess.Status == model.StatusAnnulled {
+		sessionResetConflict(w, r, store.ErrSessionAnnulled)
+		return
+	}
 	if sess.Status != model.StatusInProgress {
 		http.Error(w, "exam already submitted", http.StatusBadRequest)
 		return
@@ -291,6 +297,9 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 			messages, err = h.store.GetMessages(threadID)
 		}
 		if err != nil {
+			if sessionResetConflict(w, r, err) {
+				return
+			}
 			slog.Error("failed to save student message", "thread_id", threadID, "error", err)
 			http.Error(w, "failed to save answer", http.StatusInternalServerError)
 			return
@@ -305,6 +314,9 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, _, err := h.llm.EvaluateAnswer(r.Context(), question, messages, bp.MaxFollowups, sessionID, threadID)
+	if !h.checkAttemptNotReset(w, r, sessionID) {
+		return
+	}
 	if err != nil {
 		slog.Error("LLM evaluation failed", "error", err)
 		http.Error(w, "LLM evaluation failed", http.StatusInternalServerError)
@@ -338,6 +350,9 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 
 	_, err = h.store.AddMessage(llmMsg)
 	if err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to add LLM message", "thread_id", threadID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -348,6 +363,9 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		newStatus = model.ThreadCompleted
 	}
 	if err := h.store.UpdateThreadStatus(threadID, newStatus); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Warn("failed to update thread status", "thread_id", threadID, "status", newStatus, "error", err)
 	}
 
@@ -399,17 +417,27 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if sess.Status == model.StatusAnnulled {
+		sessionResetConflict(w, r, store.ErrSessionAnnulled)
+		return
+	}
 	if sess.Status != model.StatusInProgress {
 		http.Error(w, "exam already submitted", http.StatusConflict)
 		return
 	}
 
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusSubmitted); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to update session to submitted", "session_id", sessionID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGrading); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to update session to grading", "session_id", sessionID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -429,6 +457,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	var totalMaxPoints int
 
 	for _, t := range threads {
+		if !h.checkAttemptNotReset(w, r, sessionID) {
+			return
+		}
 		question, err := h.store.GetQuestion(t.QuestionID)
 		if err != nil {
 			continue
@@ -440,6 +471,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 				LLMScore:    0,
 				LLMFeedback: "No answer provided.",
 			}); err != nil {
+				if sessionResetConflict(w, r, err) {
+					return
+				}
 				slog.Warn("failed to upsert zero score", "thread_id", t.ID, "error", err)
 			}
 			totalMaxPoints += question.MaxPoints
@@ -451,6 +485,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			slog.Error("grading failed", "thread_id", t.ID, "error", err)
 			if errors.Is(err, llm.ErrQueueTimeout) {
 				if restoreErr := h.store.UpdateSessionStatus(sessionID, model.StatusInProgress); restoreErr != nil {
+					if sessionResetConflict(w, r, restoreErr) {
+						return
+					}
 					slog.Error("failed to restore exam after capacity timeout", "session_id", sessionID, "error", restoreErr)
 					http.Error(w, "failed to restore exam", http.StatusInternalServerError)
 					return
@@ -463,6 +500,9 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 				LLMScore:    0,
 				LLMFeedback: "Automatic grading failed.",
 			}); err != nil {
+				if sessionResetConflict(w, r, err) {
+					return
+				}
 				slog.Warn("failed to upsert error score", "thread_id", t.ID, "error", err)
 			}
 			totalMaxPoints += question.MaxPoints
@@ -474,9 +514,15 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			LLMScore:    result.Score,
 			LLMFeedback: result.Feedback,
 		}); err != nil {
+			if sessionResetConflict(w, r, err) {
+				return
+			}
 			slog.Warn("failed to upsert score", "thread_id", t.ID, "error", err)
 		}
 		if err := h.store.UpdateThreadStatus(t.ID, model.ThreadCompleted); err != nil {
+			if sessionResetConflict(w, r, err) {
+				return
+			}
 			slog.Warn("failed to update thread to completed", "thread_id", t.ID, "error", err)
 		}
 
@@ -493,9 +539,15 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		SessionID: sessionID,
 		LLMGrade:  overallGrade,
 	}); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Warn("failed to upsert grade", "session_id", sessionID, "error", err)
 	}
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGraded); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Warn("failed to update session to graded", "session_id", sessionID, "error", err)
 	}
 
@@ -558,15 +610,17 @@ func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Strings(topics)
 
-	var reviewable []model.ExamSession
+	var reviewable, other []model.ExamSession
 	for _, s := range sessions {
 		if s.Status == model.StatusGraded || s.Status == model.StatusReviewed {
 			reviewable = append(reviewable, s)
+		} else {
+			other = append(other, s)
 		}
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ReviewListPage(reviewable, topics, r.URL.Query()).Render(r.Context(), w); err != nil {
+	if err := views.ReviewListPage(reviewable, other, topics, r.URL.Query()).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -641,6 +695,9 @@ func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.store.UpdateTeacherScore(threadID, score, comment); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to update teacher score", "thread_id", threadID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
@@ -680,11 +737,17 @@ func (h *Handler) handleFinalize(w http.ResponseWriter, r *http.Request) {
 
 	user := model.UserFromContext(r.Context())
 	if err := h.store.FinalizeGrade(sessionID, finalGrade, user.ID); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
 	}
 	if err := h.store.UpdateSessionStatus(sessionID, model.StatusReviewed); err != nil {
+		if sessionResetConflict(w, r, err) {
+			return
+		}
 		slog.Error("failed to update session to reviewed", "session_id", sessionID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 		return
