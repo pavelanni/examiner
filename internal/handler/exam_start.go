@@ -210,7 +210,7 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	if !selected {
 		topic = h.config.Topic
 	}
-	if (!selected && topic == "") || (h.config.Topic != "" && topic != h.config.Topic) {
+	if !selected && topic == "" {
 		h.renderIndex(w, r, http.StatusBadRequest, appI18n.T(ctx, "ExamChooseTopic"))
 		return
 	}
@@ -226,6 +226,12 @@ func (h *Handler) handleStartExam(w http.ResponseWriter, r *http.Request) {
 	}
 	if existing != nil {
 		h.redirectToSession(w, r, *existing)
+		return
+	}
+	// Current topic restrictions govern new variants, not a saved attempt
+	// from a form opened before the configuration changed.
+	if h.config.Topic != "" && topic != h.config.Topic {
+		h.renderIndex(w, r, http.StatusBadRequest, appI18n.T(ctx, "ExamChooseTopic"))
 		return
 	}
 

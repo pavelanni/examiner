@@ -495,3 +495,39 @@ func TestStartExamNeedsTopic(t *testing.T) {
 		t.Errorf("sessions = %v, want none", sessions)
 	}
 }
+
+// TestStartExamResumesAfterConfigChange applies new topic restrictions only to new variants.
+func TestStartExamResumesAfterConfigChange(t *testing.T) {
+	for _, status := range []model.SessionStatus{model.StatusInProgress, model.StatusSubmitted, model.StatusGrading, model.StatusGraded, model.StatusReviewed} {
+		t.Run(string(status), func(t *testing.T) {
+			s := newExamStore(t)
+			examStore(t, s, 2, 0, 0)
+			h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 2, Shuffle: true}}
+			id := startedSession(t, h, student(7), "t")
+			wantQuestions := questionIDs(sessionQuestions(t, s, id))
+			if err := s.UpdateSessionStatus(id, status); err != nil {
+				t.Fatal(err)
+			}
+			h.config.Topic = "new topic"
+
+			rec := startExam(t, h, student(7), "t")
+			wantLocation := fmt.Sprintf("/results/%d", id)
+			if status == model.StatusInProgress {
+				wantLocation = fmt.Sprintf("/exam/%d", id)
+			}
+			if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != wantLocation {
+				t.Fatalf("saved attempt after config change: status %d, location %q; want 303, %q", rec.Code, rec.Header().Get("Location"), wantLocation)
+			}
+			if got := questionIDs(sessionQuestions(t, s, id)); !slices.Equal(got, wantQuestions) {
+				t.Fatalf("saved variant changed: %v, want %v", got, wantQuestions)
+			}
+			// The old topic remains forbidden for a student without an attempt.
+			if rec := startExam(t, h, student(8), "t"); rec.Code != http.StatusBadRequest {
+				t.Fatalf("new attempt outside configured topic: status %d, want 400", rec.Code)
+			}
+			if sessions, err := s.ListSessionsByUser(8); err != nil || len(sessions) != 0 {
+				t.Fatalf("out-of-scope attempt was created: %+v, %v", sessions, err)
+			}
+		})
+	}
+}
