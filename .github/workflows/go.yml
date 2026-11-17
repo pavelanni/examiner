@@ -1,0 +1,50 @@
+name: Go
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Tests, race, vet, lint and builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      - name: Install build tools
+        run: |
+          templ_version=$(go list -m -f '{{.Version}}' github.com/a-h/templ)
+          go install "github.com/a-h/templ/cmd/templ@${templ_version}"
+          go install github.com/go-task/task/v3/cmd/task@v3.49.1
+      - name: Test, vet and build
+        run: task test vet build grader-build
+      - name: Race detector
+        run: go test -race ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+        with:
+          version: v2.14.0
+          args: --timeout=5m
+      - name: Build for Windows
+        env:
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          go build -o bin/examiner-windows-amd64.exe ./cmd/examiner/
+          go build -o bin/grader-windows-amd64.exe ./cmd/grader/
