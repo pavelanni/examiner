@@ -137,7 +137,7 @@ func (h *Handler) topicChoices(ctx context.Context, user *model.User, topics []s
 	// Per topic, the session a start would return: in progress, else newest.
 	latest := make(map[string]model.ExamSession)
 	for _, s := range mine {
-		if !s.TopicKnown || s.BlueprintID != blueprintID {
+		if !s.TopicKnown || s.BlueprintID != blueprintID || s.Status == model.StatusAnnulled {
 			continue
 		}
 		if cur, ok := latest[s.Topic]; !ok || (s.Status == model.StatusInProgress && cur.Status != model.StatusInProgress) {

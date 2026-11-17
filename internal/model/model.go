@@ -89,12 +89,16 @@ const (
 // SessionStatus represents the status of an exam session.
 type SessionStatus string
 
+// MaxResetReasonRunes bounds the optional attempt reset audit reason.
+const MaxResetReasonRunes = 1000
+
 const (
 	StatusInProgress SessionStatus = "in_progress"
 	StatusSubmitted  SessionStatus = "submitted"
 	StatusGrading    SessionStatus = "grading"
 	StatusGraded     SessionStatus = "graded"
 	StatusReviewed   SessionStatus = "reviewed"
+	StatusAnnulled   SessionStatus = "annulled"
 )
 
 // ThreadStatus represents the status of a question thread.
@@ -173,6 +177,9 @@ type ExamSession struct {
 	Status      SessionStatus `json:"status"`
 	StartedAt   time.Time     `json:"started_at"`
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
+	ResetAt     *time.Time    `json:"reset_at,omitempty"`
+	ResetBy     *int64        `json:"reset_by,omitempty"`
+	ResetReason string        `json:"reset_reason,omitempty"`
 }
 
 // QuestionThread represents a thread for a single question in an exam session.
@@ -270,10 +277,11 @@ type ThreadView struct {
 
 // SessionView combines session data with threads for display.
 type SessionView struct {
-	Session   ExamSession
-	Blueprint ExamBlueprint
-	Threads   []ThreadView
-	Grade     *Grade
+	Session     ExamSession
+	Blueprint   ExamBlueprint
+	Threads     []ThreadView
+	Grade       *Grade
+	ResetByName string
 }
 
 // ExamPageView extends SessionView with time limit display fields.

@@ -6,7 +6,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ ReviewListPage(sessions []model.ExamSession) {
+templ ReviewListPage(sessions, other []model.ExamSession) {
 	@Layout(t(ctx, "ReviewDashboard")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -14,34 +14,58 @@ templ ReviewListPage(sessions []model.ExamSession) {
 		})
 		<h1>{ t(ctx, "ReviewDashboard") }</h1>
 		if len(sessions) > 0 {
-			<table>
-				<thead>
-					<tr>
-						<th>{ t(ctx, "ColID") }</th>
-						<th>{ t(ctx, "ColStatus") }</th>
-						<th>{ t(ctx, "ColSubmitted") }</th>
-						<th>{ t(ctx, "ColAction") }</th>
-					</tr>
-				</thead>
-				<tbody>
-					for _, s := range sessions {
-						<tr>
-							<td>{ fmt.Sprint(s.ID) }</td>
-							<td>{ string(s.Status) }</td>
-							<td>
-								if s.SubmittedAt != nil {
-									{ s.SubmittedAt.Format("2006-01-02 15:04") }
-								} else {
-									-
-								}
-							</td>
-							<td><a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a></td>
-						</tr>
-					}
-				</tbody>
-			</table>
+			@reviewSessionsTable(sessions)
 		} else {
 			<p>{ t(ctx, "NoExamsToReview") }</p>
 		}
+		if len(other) > 0 {
+			<h2>{ t(ctx, "OtherAttempts") }</h2>
+			@reviewSessionsTable(other)
+		}
 	}
+}
+
+templ reviewSessionsTable(sessions []model.ExamSession) {
+	<table>
+		<thead>
+			<tr>
+				<th>{ t(ctx, "ColID") }</th>
+				<th>{ t(ctx, "Student") }</th>
+				<th>{ t(ctx, "FilterTopic") }</th>
+				<th>{ t(ctx, "ColStatus") }</th>
+				<th>{ t(ctx, "ColSubmitted") }</th>
+				<th>{ t(ctx, "ColAction") }</th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, s := range sessions {
+				<tr>
+					<td>{ fmt.Sprint(s.ID) }</td>
+					<td>{ fmt.Sprint(s.StudentID) }</td>
+					<td>
+						if s.TopicKnown {
+							{ topicLabel(ctx, s.Topic) }
+						} else {
+							—
+						}
+					</td>
+					<td>{ sessionStatusLabel(ctx, s.Status) }</td>
+					<td>
+						if s.SubmittedAt != nil {
+							{ s.SubmittedAt.Format("2006-01-02 15:04") }
+						} else {
+							-
+						}
+					</td>
+					<td>
+						<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
+						if s.Status != model.StatusAnnulled {
+							<br/>
+							@resetAttemptLink(s)
+						}
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
 }

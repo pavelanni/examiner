@@ -1,0 +1,87 @@
+package views
+
+import (
+	"context"
+	"fmt"
+	"strconv"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+func sessionStatusLabel(ctx context.Context, status model.SessionStatus) string {
+	if status == model.StatusAnnulled {
+		return t(ctx, "AttemptAnnulled")
+	}
+	return string(status)
+}
+
+// ResetAttemptData retains the optional reason when validation fails.
+type ResetAttemptData struct {
+	View   model.SessionView
+	Reason string
+	Error  string
+}
+
+templ attemptResetNotice(view model.SessionView) {
+	if view.Session.Status == model.StatusAnnulled {
+		<article role="status">
+			<strong>{ t(ctx, "AttemptAnnulled") }</strong>
+			<p>{ t(ctx, "AttemptResetHistory") }</p>
+			if view.Session.ResetAt != nil && view.Session.ResetBy != nil {
+				<p>
+					{ td(ctx, "AttemptResetAudit", map[string]any{
+					"Actor": view.ResetByName,
+					"ID": fmt.Sprint(*view.Session.ResetBy),
+					"Time": view.Session.ResetAt.UTC().Format("2006-01-02 15:04 UTC"),
+				}) }
+				</p>
+			}
+			if view.Session.ResetReason != "" {
+				<p><strong>{ t(ctx, "AttemptResetReason") }</strong> { view.Session.ResetReason }</p>
+			}
+		</article>
+	}
+}
+
+templ resetAttemptLink(session model.ExamSession) {
+	if session.Status != model.StatusAnnulled {
+		<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/reset", session.ID))) }>{ t(ctx, "ResetAttempt") }</a>
+	}
+}
+
+templ ResetAttemptPage(d ResetAttemptData) {
+	@Layout(t(ctx, "ResetAttempt")) {
+		@Nav([]NavItem{
+			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
+			{Label: t(ctx, "ReviewList"), URL: p(ctx, "/review")},
+			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(d.View.Session.ID)}), URL: p(ctx, fmt.Sprintf("/review/%d", d.View.Session.ID))},
+			{Label: t(ctx, "ResetAttempt")},
+		})
+		<h1>{ t(ctx, "ResetAttempt") }</h1>
+		<p>
+			{ td(ctx, "AttemptResetTarget", map[string]any{
+			"ID": fmt.Sprint(d.View.Session.ID),
+			"Student": fmt.Sprint(d.View.Session.StudentID),
+			"Topic": topicLabel(ctx, d.View.Session.Topic),
+		}) }
+		</p>
+		@attemptResetNotice(d.View)
+		if d.View.Session.Status != model.StatusAnnulled {
+			<article role="note">{ t(ctx, "AttemptResetWarning") }</article>
+			if d.Error != "" {
+				<p role="alert">{ d.Error }</p>
+			}
+			<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/reset", d.View.Session.ID))) }>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<label for="reset-reason">{ t(ctx, "AttemptResetReasonOptional") }</label>
+				<textarea id="reset-reason" name="reason" rows="3" maxlength={ strconv.Itoa(model.MaxResetReasonRunes) }>{ d.Reason }</textarea>
+				<label>
+					<input type="checkbox" name="confirm" value="yes" required/>
+					{ t(ctx, "AttemptResetConfirm") }
+				</label>
+				<button type="submit" class="contrast">{ t(ctx, "ResetAttempt") }</button>
+				<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", d.View.Session.ID))) }>{ t(ctx, "AttemptResetCancel") }</a>
+			</form>
+		}
+	}
+}

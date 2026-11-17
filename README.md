@@ -188,6 +188,20 @@ start another exam in the same topic. Teachers and admins can retake
 after grading finishes, to try exams out. Sessions created before topics
 were stored are not affected.
 
+Teachers and admins can use **Reset attempt** on `/review` or an attempt's
+review page to allow a retake, including while an answer or final grade is
+being processed. Confirm the reset and optionally provide a reason. The old
+attempt is marked **Attempt reset**, with the actor, time and reason recorded.
+Its questions, answers and grades remain in read-only history and no longer
+count as the student's attempt. The student can start a new attempt from the
+home page, drawing questions from the current published bank. Late AI results
+cannot change a reset attempt. Resetting does not change the available question
+bank or guarantee a different set of questions if the bank is small.
+
+JSON exports retain reset attempts with status `annulled` for history. The
+offline grader skips them when importing results, so they cannot be graded
+again as valid attempts.
+
 Run one exam server process per database. On startup, attempts whose final
 grading was interrupted return to an unfinished state. Students can continue
 the same saved variant and submit it again; questions, order, answers and

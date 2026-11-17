@@ -163,7 +163,7 @@ templ IndexPage(d IndexData) {
 										—
 									}
 								</td>
-								<td>{ string(s.Status) }</td>
+								<td>{ sessionStatusLabel(ctx, s.Status) }</td>
 								<td>{ s.StartedAt.Format("2006-01-02 15:04") }</td>
 								<td>
 									if s.Status == model.StatusInProgress {

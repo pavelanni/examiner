@@ -218,6 +218,16 @@ func (s *Store) migrate() error {
 	if _, err := s.db.Exec(`DROP INDEX IF EXISTS idx_exam_sessions_one_active`); err != nil {
 		return err
 	}
+	// Reset attempts retain all their child records and the actor's identity.
+	for _, col := range []string{
+		`reset_at DATETIME`,
+		`reset_by INTEGER REFERENCES users(id)`,
+		`reset_reason TEXT NOT NULL DEFAULT ''`,
+	} {
+		if _, err := s.db.Exec(`ALTER TABLE exam_sessions ADD COLUMN ` + col); err != nil && !isAlterDuplicate(err) {
+			return err
+		}
+	}
 
 	// Populate text_norm for legacy rows that don't have it yet.
 	if err := s.populateQuestionTextNorm(); err != nil {
@@ -579,7 +589,13 @@ func (s *Store) UpdateSessionStatus(id int64, status model.SessionStatus) error 
 		now := time.Now()
 		args = []any{status, now, id}
 	}
-	_, err := s.db.Exec(query, args...)
+	if status == model.StatusAnnulled {
+		return fmt.Errorf("use ResetSession to annul an attempt with an audit record")
+	}
+	err := s.withMutableSession(id, func(tx *sql.Tx) error {
+		_, err := tx.Exec(query, args...)
+		return err
+	})
 	if err != nil {
 		slog.Error("failed to update session status", "id", id, "status", status, "error", err)
 		return err
@@ -619,38 +635,35 @@ func (s *Store) GetThread(id int64) (model.QuestionThread, error) {
 
 // UpdateThreadStatus updates the thread status.
 func (s *Store) UpdateThreadStatus(id int64, status model.ThreadStatus) error {
-	_, err := s.db.Exec(`UPDATE question_threads SET status = ? WHERE id = ?`, status, id)
-	return err
+	return s.withMutableThread(id, func(tx *sql.Tx) error {
+		_, err := tx.Exec(`UPDATE question_threads SET status = ? WHERE id = ?`, status, id)
+		return err
+	})
 }
 
 // AddMessage inserts a message into a thread. A message that carries a
 // follow-up question also increments the thread's followup_count, in the
 // same transaction.
 func (s *Store) AddMessage(msg model.Message) (int64, error) {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	res, err := tx.Exec(
-		`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count, score) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount, msg.Score,
-	)
-	if err != nil {
-		slog.Error("failed to add message", "thread_id", msg.ThreadID, "role", msg.Role, "error", err)
-		return 0, err
-	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	if msg.Followup != "" {
-		if _, err := tx.Exec(`UPDATE question_threads SET followup_count = followup_count + 1 WHERE id = ?`, msg.ThreadID); err != nil {
-			return 0, err
+	var id int64
+	err := s.withMutableThread(msg.ThreadID, func(tx *sql.Tx) error {
+		res, err := tx.Exec(
+			`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count, score) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+			msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount, msg.Score,
+		)
+		if err != nil {
+			return err
 		}
-	}
-	if err := tx.Commit(); err != nil {
+		id, err = res.LastInsertId()
+		if err != nil {
+			return err
+		}
+		if msg.Followup != "" {
+			_, err = tx.Exec(`UPDATE question_threads SET followup_count = followup_count + 1 WHERE id = ?`, msg.ThreadID)
+		}
+		return err
+	})
+	if err != nil {
 		return 0, err
 	}
 	slog.Debug("added message", "id", id, "thread_id", msg.ThreadID, "role", msg.Role)
@@ -708,12 +721,15 @@ func (s *Store) CountStudentMessages(threadID int64) (int, error) {
 
 // UpsertScore inserts or updates a score for a thread.
 func (s *Store) UpsertScore(score model.QuestionScore) error {
-	_, err := s.db.Exec(
-		`INSERT INTO question_scores (thread_id, llm_score, llm_feedback)
+	err := s.withMutableThread(score.ThreadID, func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`INSERT INTO question_scores (thread_id, llm_score, llm_feedback)
 		 VALUES (?, ?, ?)
 		 ON CONFLICT(thread_id) DO UPDATE SET llm_score = ?, llm_feedback = ?`,
-		score.ThreadID, score.LLMScore, score.LLMFeedback, score.LLMScore, score.LLMFeedback,
-	)
+			score.ThreadID, score.LLMScore, score.LLMFeedback, score.LLMScore, score.LLMFeedback,
+		)
+		return err
+	})
 	if err != nil {
 		slog.Error("failed to upsert score", "thread_id", score.ThreadID, "error", err)
 		return err
@@ -737,21 +753,27 @@ func (s *Store) GetScore(threadID int64) (*model.QuestionScore, error) {
 
 // UpdateTeacherScore updates the teacher's score and comment.
 func (s *Store) UpdateTeacherScore(threadID int64, score float64, comment string) error {
-	_, err := s.db.Exec(
-		`UPDATE question_scores SET teacher_score = ?, teacher_comment = ? WHERE thread_id = ?`,
-		score, comment, threadID,
-	)
+	err := s.withMutableThread(threadID, func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`UPDATE question_scores SET teacher_score = ?, teacher_comment = ? WHERE thread_id = ?`,
+			score, comment, threadID,
+		)
+		return err
+	})
 	return err
 }
 
 // UpsertGrade inserts or updates the grade for a session.
 func (s *Store) UpsertGrade(g model.Grade) error {
-	_, err := s.db.Exec(
-		`INSERT INTO grades (session_id, llm_grade)
+	err := s.withMutableSession(g.SessionID, func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`INSERT INTO grades (session_id, llm_grade)
 		 VALUES (?, ?)
 		 ON CONFLICT(session_id) DO UPDATE SET llm_grade = ?`,
-		g.SessionID, g.LLMGrade, g.LLMGrade,
-	)
+			g.SessionID, g.LLMGrade, g.LLMGrade,
+		)
+		return err
+	})
 	if err != nil {
 		slog.Error("failed to upsert grade", "session_id", g.SessionID, "error", err)
 		return err
@@ -776,10 +798,13 @@ func (s *Store) GetGrade(sessionID int64) (*model.Grade, error) {
 // FinalizeGrade sets the final grade after teacher review.
 func (s *Store) FinalizeGrade(sessionID int64, finalGrade float64, reviewerID int64) error {
 	now := time.Now()
-	_, err := s.db.Exec(
-		`UPDATE grades SET final_grade = ?, reviewed_by = ?, reviewed_at = ? WHERE session_id = ?`,
-		finalGrade, reviewerID, now, sessionID,
-	)
+	err := s.withMutableSession(sessionID, func(tx *sql.Tx) error {
+		_, err := tx.Exec(
+			`UPDATE grades SET final_grade = ?, reviewed_by = ?, reviewed_at = ? WHERE session_id = ?`,
+			finalGrade, reviewerID, now, sessionID,
+		)
+		return err
+	})
 	if err != nil {
 		slog.Error("failed to finalize grade", "session_id", sessionID, "error", err)
 		return err
@@ -832,11 +857,25 @@ func (s *Store) GetSessionView(sessionID int64) (*model.SessionView, error) {
 		return nil, fmt.Errorf("load session grade: %v", err)
 	}
 
+	var resetByName string
+	if sess.ResetBy != nil {
+		actor, err := s.GetUserByID(*sess.ResetBy)
+		if err != nil {
+			return nil, fmt.Errorf("load reset actor: %v", err)
+		}
+		if actor != nil {
+			resetByName = actor.DisplayName
+			if resetByName == "" {
+				resetByName = actor.Username
+			}
+		}
+	}
 	return &model.SessionView{
-		Session:   sess,
-		Blueprint: bp,
-		Threads:   threadViews,
-		Grade:     grade,
+		Session:     sess,
+		Blueprint:   bp,
+		Threads:     threadViews,
+		Grade:       grade,
+		ResetByName: resetByName,
 	}, nil
 }
 
@@ -934,15 +973,13 @@ func placeholders(n int) string {
 func (s *Store) GetSessionWithBlueprint(sessionID int64) (model.ExamSession, model.ExamBlueprint, error) {
 	var sess model.ExamSession
 	var bp model.ExamBlueprint
+	args := append(sessionScanArgs(&sess), &bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups)
 	err := s.db.QueryRow(`
-		SELECT s.id, s.blueprint_id, s.student_id, s.topic, s.topic_known, s.status, s.started_at, s.submitted_at,
+		SELECT `+sessionColumns+`,
 		       b.id, b.course_id, b.name, b.time_limit, b.max_followups
-		FROM exam_sessions s
-		JOIN exam_blueprints b ON b.id = s.blueprint_id
-		WHERE s.id = ?`, sessionID,
-	).Scan(
-		&sess.ID, &sess.BlueprintID, &sess.StudentID, &sess.Topic, &sess.TopicKnown, &sess.Status, &sess.StartedAt, &sess.SubmittedAt,
-		&bp.ID, &bp.CourseID, &bp.Name, &bp.TimeLimit, &bp.MaxFollowups,
-	)
+		FROM exam_sessions
+		JOIN exam_blueprints b ON b.id = exam_sessions.blueprint_id
+		WHERE exam_sessions.id = ?`, sessionID,
+	).Scan(args...)
 	return sess, bp, err
 }

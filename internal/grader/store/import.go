@@ -50,6 +50,12 @@ func (s *Store) ImportExam(exp model.ExamExport) error {
 	}
 
 	for _, sr := range exp.Results {
+		// The exam export keeps reset attempts as history. They must not be
+		// turned back into reviewable results by the offline grader.
+		if sr.Status == model.StatusAnnulled {
+			slog.Info("skipping reset exam attempt", "external_id", sr.ExternalID, "session_number", sr.SessionNumber)
+			continue
+		}
 		if sr.Status != model.StatusGraded {
 			slog.Warn("importing student with non-graded status",
 				"external_id", sr.ExternalID,

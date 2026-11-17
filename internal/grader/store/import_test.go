@@ -81,3 +81,27 @@ func TestImportExamDuplicate(t *testing.T) {
 		t.Fatal("expected error on duplicate import, got nil")
 	}
 }
+
+// Reset history remains in an exam export but must not become reviewable again.
+func TestImportExamSkipsAnnulledAttempts(t *testing.T) {
+	s := newTestStore(t)
+	defer func() { _ = s.Close() }()
+	exp := sampleExport()
+	cancelled := exp.Results[0]
+	cancelled.Status = model.StatusAnnulled
+	cancelled.LLMGrade = 0
+	valid := exp.Results[0]
+	valid.SessionNumber = 2
+	exp.Results = []model.StudentResult{cancelled, valid}
+	if err := s.ImportExam(exp); err != nil {
+		t.Fatal(err)
+	}
+	exams, err := s.ListExams()
+	if err != nil || len(exams) != 1 || exams[0].StudentCount != 1 {
+		t.Fatalf("cancelled attempt counted as a student: %+v, %v", exams, err)
+	}
+	items, err := s.ListStudentsForExam(exp.ExamID)
+	if err != nil || len(items) != 1 || items[0].LLMGrade != valid.LLMGrade {
+		t.Fatalf("cancelled attempt imported: %+v, %v", items, err)
+	}
+}
