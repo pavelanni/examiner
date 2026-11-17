@@ -188,6 +188,12 @@ start another exam in the same topic. Teachers and admins can retake
 after grading finishes, to try exams out. Sessions created before topics
 were stored are not affected.
 
+Run one exam server process per database. On startup, attempts whose final
+grading was interrupted return to an unfinished state. Students can continue
+the same saved variant and submit it again; questions, order, answers and
+saved scores are retained. Opening the database for export does not perform
+this recovery. Completed or reviewed attempts are unchanged.
+
 #### Examples
 
 ```bash

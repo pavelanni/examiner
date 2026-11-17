@@ -383,6 +383,17 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		h.Routes(r)
 	}
 
+	// A previous process may have stopped during synchronous final grading.
+	// Recover only when starting the exam server, not when opening a Store
+	// from export, prep or another connection while grading is still running.
+	recovered, err := db.RecoverInterruptedSessions()
+	if err != nil {
+		return err
+	}
+	if recovered > 0 {
+		slog.Info("restored interrupted exams for resubmission", "sessions", recovered)
+	}
+
 	addr := v.GetString("addr")
 	slog.Info("starting server",
 		"addr", addr,
