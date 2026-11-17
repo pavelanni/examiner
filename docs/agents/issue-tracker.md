@@ -14,6 +14,34 @@ Issues and specs for this repo live as GitHub issues. Use the `gh` CLI for all o
 
 Infer the repo from `git remote -v` — `gh` does this automatically when run inside a clone.
 
+## Before merging a pull request
+
+Check the current head SHA and base branch immediately before merging. Run
+the relevant tests and required repository checks on that version. The Go
+workflow runs templ generation, tests, race detection, vet, lint, and Linux
+and Windows builds. Keep local validation evidence in the PR when a check
+cannot run on GitHub; describe its actual result and limitation.
+
+Read the review summary and every actionable comment, including review
+threads and findings embedded in summary comments. Verify each finding and
+fix it or explain with concrete evidence why it does not apply. Check
+outdated threads too: a newer commit does not by itself prove a fix.
+
+A successful CodeRabbit check means its run completed. It does not mean
+that tests ran, all files were available, no findings remain, or a formal
+approval was granted. An `Inconclusive` result, skipped diff, review limit,
+or unreadable file is not a pass for that part of the review. Obtain the
+missing review or resolve the uncertainty with evidence before merging.
+
+Distinguish a formal GitHub `APPROVED` review from a successful check or a
+chat reply. When the user or repository rules require approval, verify the
+actual review state. Otherwise report the review state accurately; do not
+describe `COMMENTED` or a chat reply as an approval.
+
+After further code or base changes, check which tests and review conclusions
+became outdated and update them. Merge the verified head using
+`gh pr merge --match-head-commit <sha>` and normal repository rules.
+
 ## Pull requests as a triage surface
 
 **PRs as a request surface: no.** _(Set to `yes` if this repo treats external PRs as feature requests; `/triage` reads
