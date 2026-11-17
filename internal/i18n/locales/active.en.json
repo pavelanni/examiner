@@ -172,5 +172,16 @@
   {"id": "QImportErrNotOwner", "other": "matches question #{{.ID}} owned by {{.Owner}} in topic \"{{.Topic}}\"; remove it from the file"},
   {"id": "QImportOwnerAdmin", "other": "the administrator"},
   {"id": "QPublishLabel", "other": "Publish (questions go into exams and are visible to other teachers)"},
-  {"id": "QImportErrFileNameTaken", "other": "This file name falls under another user's files (teacher_<username>_…). Choose another name. Nothing was changed."}
+  {"id": "QImportErrFileNameTaken", "other": "This file name falls under another user's files (teacher_<username>_…). Choose another name. Nothing was changed."},
+  {"id": "GroupName", "other": "Group"},
+  {"id": "ExportStatement", "other": "Export statement"},
+  {"id": "StatementAllTopics", "other": "All topics"},
+  {"id": "StatementAllStatuses", "other": "All submitted attempts"},
+  {"id": "StatementSubmitted", "other": "Submitted"},
+  {"id": "StatementGrading", "other": "Grading"},
+  {"id": "StatementGraded", "other": "Awaiting review"},
+  {"id": "StatementReviewed", "other": "Reviewed"},
+  {"id": "StatementFrom", "other": "Exam start date from"},
+  {"id": "StatementTo", "other": "Exam start date through"},
+  {"id": "StatementTimezone", "other": "Time zone"}
 ]

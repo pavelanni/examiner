@@ -23,6 +23,7 @@ type User struct {
 	Username     string
 	ExternalID   string
 	DisplayName  string
+	GroupName    string
 	PasswordHash string
 	Role         UserRole
 	Active       bool

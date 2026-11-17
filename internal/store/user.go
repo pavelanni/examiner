@@ -16,9 +16,9 @@ var ErrUsernameTaken = errors.New("username already exists")
 // CreateUser inserts a new user.
 func (s *Store) CreateUser(u model.User) (int64, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO users (username, external_id, display_name, password_hash, role, active, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username) DO NOTHING`,
-		u.Username, u.ExternalID, u.DisplayName, u.PasswordHash, u.Role, u.Active, time.Now(),
+		`INSERT INTO users (username, external_id, display_name, group_name, password_hash, role, active, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(username) DO NOTHING`,
+		u.Username, u.ExternalID, u.DisplayName, u.GroupName, u.PasswordHash, u.Role, u.Active, time.Now(),
 	)
 	if err != nil {
 		slog.Error("failed to create user", "username", u.Username, "error", err)
@@ -43,9 +43,9 @@ func (s *Store) CreateUser(u model.User) (int64, error) {
 func (s *Store) GetUserByUsername(username string) (*model.User, error) {
 	var u model.User
 	err := s.db.QueryRow(
-		`SELECT id, username, external_id, display_name, password_hash, role, active, created_at
+		`SELECT id, username, external_id, display_name, group_name, password_hash, role, active, created_at
 		 FROM users WHERE username = ?`, username,
-	).Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.GroupName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -59,9 +59,9 @@ func (s *Store) GetUserByUsername(username string) (*model.User, error) {
 func (s *Store) GetUserByID(id int64) (*model.User, error) {
 	var u model.User
 	err := s.db.QueryRow(
-		`SELECT id, username, external_id, display_name, password_hash, role, active, created_at
+		`SELECT id, username, external_id, display_name, group_name, password_hash, role, active, created_at
 		 FROM users WHERE id = ?`, id,
-	).Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt)
+	).Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.GroupName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -74,7 +74,7 @@ func (s *Store) GetUserByID(id int64) (*model.User, error) {
 // ListUsers returns all users.
 func (s *Store) ListUsers() ([]model.User, error) {
 	rows, err := s.db.Query(
-		`SELECT id, username, external_id, display_name, password_hash, role, active, created_at
+		`SELECT id, username, external_id, display_name, group_name, password_hash, role, active, created_at
 		 FROM users ORDER BY id`,
 	)
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Store) ListUsers() ([]model.User, error) {
 	var users []model.User
 	for rows.Next() {
 		var u model.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.ExternalID, &u.DisplayName, &u.GroupName, &u.PasswordHash, &u.Role, &u.Active, &u.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, u)

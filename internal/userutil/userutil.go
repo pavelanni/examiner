@@ -33,8 +33,8 @@ type ImportConfig struct {
 }
 
 // ImportCSV reads a CSV with columns user_id and display_name,
-// generates usernames and passwords, creates users via the store, and returns
-// the generated credentials.
+// accepts an optional group column, generates usernames and passwords, and returns
+// the generated credentials after creating users through the store.
 func ImportCSV(r io.Reader, store UserCreator, cfg ImportConfig) ([]Credential, error) {
 	reader := csv.NewReader(r)
 	records, err := reader.ReadAll()
@@ -46,11 +46,13 @@ func ImportCSV(r io.Reader, store UserCreator, cfg ImportConfig) ([]Credential, 
 	}
 
 	header := records[0]
-	idCol, nameCol := -1, -1
+	idCol, nameCol, groupCol := -1, -1, -1
 	for i, h := range header {
 		switch strings.TrimSpace(strings.ToLower(h)) {
 		case "user_id", "student_id", "teacher_id":
 			idCol = i
+		case "group":
+			groupCol = i
 		case "display_name":
 			nameCol = i
 		}
@@ -75,6 +77,11 @@ func ImportCSV(r io.Reader, store UserCreator, cfg ImportConfig) ([]Credential, 
 			continue
 		}
 
+		var groupName string
+		if groupCol >= 0 && groupCol < len(row) {
+			groupName = strings.TrimSpace(row[groupCol])
+		}
+
 		username := DeduplicateUsername(
 			UsernameFromDisplayName(displayName), usedUsernames)
 		usedUsernames[username] = true
@@ -93,6 +100,7 @@ func ImportCSV(r io.Reader, store UserCreator, cfg ImportConfig) ([]Credential, 
 			Username:     username,
 			ExternalID:   userID,
 			DisplayName:  displayName,
+			GroupName:    groupName,
 			PasswordHash: string(hash),
 			Role:         cfg.Role,
 			Active:       true,

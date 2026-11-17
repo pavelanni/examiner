@@ -37,6 +37,8 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 				</div>
 				<div class="grid">
 					<div>
+						<label for="group_name">{ t(ctx, "GroupName") }</label>
+						<input type="text" id="group_name" name="group_name"/>
 						<label for="password">{ t(ctx, "Password") }</label>
 						<input type="password" id="password" name="password" required/>
 					</div>
@@ -61,6 +63,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 							<th>{ t(ctx, "ColUsername") }</th>
 							<th>{ t(ctx, "ColExternalID") }</th>
 							<th>{ t(ctx, "ColDisplayName") }</th>
+							<th>{ t(ctx, "GroupName") }</th>
 							<th>{ t(ctx, "ColRole") }</th>
 							<th>{ t(ctx, "ColActive") }</th>
 							<th>{ t(ctx, "ColCreated") }</th>
@@ -74,6 +77,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 								<td>{ u.Username }</td>
 								<td>{ u.ExternalID }</td>
 								<td>{ u.DisplayName }</td>
+								<td>{ u.GroupName }</td>
 								<td>{ string(u.Role) }</td>
 								<td>
 									if u.Active {

@@ -149,6 +149,11 @@ func (s *Store) migrate() error {
 		return err
 	}
 
+	// Existing users keep an empty group until their roster supplies one.
+	if _, err := s.db.Exec(`ALTER TABLE users ADD COLUMN group_name TEXT NOT NULL DEFAULT ''`); err != nil && !isAlterDuplicate(err) {
+		return err
+	}
+
 	// Add external_id column to existing users tables (no-op if column already exists).
 	_, err = s.db.Exec(`ALTER TABLE users ADD COLUMN external_id TEXT NOT NULL DEFAULT ''`)
 	if err != nil && !isAlterDuplicate(err) {

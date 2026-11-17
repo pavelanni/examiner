@@ -2,17 +2,53 @@ package views
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ ReviewListPage(sessions []model.ExamSession) {
+templ ReviewListPage(sessions []model.ExamSession, topics []string, filters url.Values) {
 	@Layout(t(ctx, "ReviewDashboard")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: t(ctx, "TeacherReview")},
 		})
 		<h1>{ t(ctx, "ReviewDashboard") }</h1>
+		<section>
+			<h2>{ t(ctx, "ExportStatement") }</h2>
+			<form method="GET" action={ templ.SafeURL(p(ctx, "/review/export")) }>
+				<div class="grid">
+					<label>{ t(ctx, "FilterTopic") }
+						<select name="topic">
+							<option value="" selected?={ filters.Get("topic") == "" }>{ t(ctx, "StatementAllTopics") }</option>
+							for _, topic := range topics {
+								<option value={ topic } selected?={ filters.Get("topic") == topic }>{ topic }</option>
+							}
+						</select>
+					</label>
+					<label>{ t(ctx, "ColStatus") }
+						<select name="status">
+							for _, option := range []struct{ value, label string }{
+								{"", t(ctx, "StatementAllStatuses")},
+								{"submitted", t(ctx, "StatementSubmitted")},
+								{"grading", t(ctx, "StatementGrading")},
+								{"graded", t(ctx, "StatementGraded")},
+								{"reviewed", t(ctx, "StatementReviewed")},
+							} {
+								<option value={ option.value } selected?={ filters.Get("status") == option.value }>{ option.label }</option>
+							}
+						</select>
+					</label>
+				</div>
+				<div class="grid">
+					<label>{ t(ctx, "StatementFrom") }<input type="date" name="from" value={ statementDateFilter(filters, "from") }/></label>
+					<label>{ t(ctx, "StatementTo") }<input type="date" name="to" value={ statementDateFilter(filters, "to") }/></label>
+					<label>{ t(ctx, "StatementTimezone") }<input name="timezone" value={ statementTimezone(filters) }/></label>
+				</div>
+				<button name="format" value="csv">{ t(ctx, "ExportStatement") } CSV</button>
+				<button name="format" value="xlsx">{ t(ctx, "ExportStatement") } XLSX</button>
+			</form>
+		</section>
 		if len(sessions) > 0 {
 			<table>
 				<thead>
@@ -44,4 +80,21 @@ templ ReviewListPage(sessions []model.ExamSession) {
 			<p>{ t(ctx, "NoExamsToReview") }</p>
 		}
 	}
+}
+
+
+// statementDateFilter carries a single review date into both export bounds.
+func statementDateFilter(filters url.Values, field string) string {
+	if date := filters.Get("date"); date != "" {
+		return date
+	}
+	return filters.Get(field)
+}
+
+// statementTimezone provides a consistent default for report dates.
+func statementTimezone(filters url.Values) string {
+	if zone := filters.Get("timezone"); zone != "" {
+		return zone
+	}
+	return "Europe/Moscow"
 }

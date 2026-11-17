@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -59,6 +60,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Username:     username,
 		ExternalID:   externalID,
 		DisplayName:  displayName,
+		GroupName:    strings.TrimSpace(r.FormValue("group_name")),
 		PasswordHash: string(hash),
 		Role:         model.UserRole(role),
 		Active:       true,

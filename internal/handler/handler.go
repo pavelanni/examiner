@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -133,6 +134,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Group(func(r chi.Router) {
 			r.Use(requireRole(model.UserRoleTeacher, model.UserRoleAdmin))
 			r.Get("/review", h.handleReviewList)
+			r.Get("/review/export", h.handleStatement)
 			r.Get("/review/{sessionID}", h.handleReviewPage)
 			r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
 			r.Post("/review/{sessionID}/finalize", h.handleFinalize)
@@ -532,6 +534,30 @@ func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	topics, err := h.store.ListPublishedTopics()
+	if err != nil {
+		slog.Error("failed to list statement topics", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	// Keep historical exam topics selectable after their questions are unpublished.
+	topicSet := make(map[string]struct{}, len(topics))
+	for _, topic := range topics {
+		topicSet[topic] = struct{}{}
+	}
+	for _, session := range sessions {
+		if session.SubmittedAt != nil && session.TopicKnown {
+			topicSet[session.Topic] = struct{}{}
+		}
+	}
+	topics = topics[:0]
+	for topic := range topicSet {
+		if topic != "" {
+			topics = append(topics, topic)
+		}
+	}
+	sort.Strings(topics)
+
 	var reviewable []model.ExamSession
 	for _, s := range sessions {
 		if s.Status == model.StatusGraded || s.Status == model.StatusReviewed {
@@ -540,7 +566,7 @@ func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ReviewListPage(reviewable).Render(r.Context(), w); err != nil {
+	if err := views.ReviewListPage(reviewable, topics, r.URL.Query()).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

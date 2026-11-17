@@ -172,5 +172,16 @@
   {"id": "QImportErrNotOwner", "other": "совпадает с вопросом #{{.ID}} владельца «{{.Owner}}» в теме «{{.Topic}}»; уберите его из файла"},
   {"id": "QImportOwnerAdmin", "other": "администратор"},
   {"id": "QPublishLabel", "other": "Опубликовать (вопросы попадают в экзамены и видны другим преподавателям)"},
-  {"id": "QImportErrFileNameTaken", "other": "Это имя файла относится к файлам другого пользователя (teacher_<имя>_…). Выберите другое имя. Данные не изменены."}
+  {"id": "QImportErrFileNameTaken", "other": "Это имя файла относится к файлам другого пользователя (teacher_<имя>_…). Выберите другое имя. Данные не изменены."},
+  {"id": "GroupName", "other": "Группа"},
+  {"id": "ExportStatement", "other": "Выгрузить ведомость"},
+  {"id": "StatementAllTopics", "other": "Все темы"},
+  {"id": "StatementAllStatuses", "other": "Все сданные попытки"},
+  {"id": "StatementSubmitted", "other": "Сдано"},
+  {"id": "StatementGrading", "other": "Оценивается"},
+  {"id": "StatementGraded", "other": "Ожидает проверки"},
+  {"id": "StatementReviewed", "other": "Проверено"},
+  {"id": "StatementFrom", "other": "Начало экзамена с"},
+  {"id": "StatementTo", "other": "Начало экзамена по"},
+  {"id": "StatementTimezone", "other": "Часовой пояс"}
 ]
