@@ -33,6 +33,11 @@ approval was granted. An `Inconclusive` result, skipped diff, review limit,
 or unreadable file is not a pass for that part of the review. Obtain the
 missing review or resolve the uncertainty with evidence before merging.
 
+When CodeRabbit reports that manual review is required, post
+`@coderabbitai full review` in a PR comment and wait for the actual report.
+The repository configuration enables approval after a completed review,
+excludes skipped reviews, and prevents authors from forcing their own approval.
+
 Distinguish a formal GitHub `APPROVED` review from a successful check or a
 chat reply. When the user or repository rules require approval, verify the
 actual review state. Otherwise report the review state accurately; do not

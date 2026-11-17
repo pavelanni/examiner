@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+inheritance: true
+language: ru-RU
+reviews:
+  auto_approvals:
+    enabled: true
+    approve_on_skipped_review: false
+    allow_author_approval: false
