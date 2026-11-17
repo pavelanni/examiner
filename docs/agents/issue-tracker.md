@@ -39,8 +39,12 @@ actual review state. Otherwise report the review state accurately; do not
 describe `COMMENTED` or a chat reply as an approval.
 
 After further code or base changes, check which tests and review conclusions
-became outdated and update them. Merge the verified head using
-`gh pr merge --match-head-commit <sha>` and normal repository rules.
+became outdated and update them. Squash merges are enabled in this repository.
+Specify the verified PR number, repository and head explicitly with a
+non-interactive strategy:
+`gh pr merge <number> --repo pavelanni/examiner --squash --match-head-commit <sha>`.
+Recheck permitted strategies if the repository rules change, and follow the
+normal repository requirements.
 
 ## Pull requests as a triage surface
 
