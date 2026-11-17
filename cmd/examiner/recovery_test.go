@@ -1,25 +1,26 @@
 package main
 
 import (
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
 )
 
-// TestServeRecoversInterruptedGrading exercises recovery through the real startup path.
-func TestServeRecoversInterruptedGrading(t *testing.T) {
+// TestServeDoesNotRecoverWhenAddressIsBusy preserves grading in an already running server.
+func TestServeDoesNotRecoverWhenAddressIsBusy(t *testing.T) {
 	root := t.TempDir()
 	schema, err := filepath.Abs("../../schema")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Symlink(schema, filepath.Join(root, "schema")); err != nil {
+	if err := os.CopyFS(filepath.Join(root, "schema"), os.DirFS(schema)); err != nil {
 		t.Fatal(err)
 	}
 	t.Chdir(root)
@@ -59,20 +60,24 @@ func TestServeRecoversInterruptedGrading(t *testing.T) {
 		_, _ = w.Write([]byte(`{"data":[{"id":"mock"}]}`))
 	}))
 	defer llm.Close()
+	busy, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = busy.Close() }()
 	cmd := serveCmd()
 	cmd.SetContext(t.Context())
 	for flag, value := range map[string]string{
 		"db": path, "questions": "", "llm-url": llm.URL + "/v1", "llm-model": "mock",
-		// A deterministic listen error ends runServe after initialization,
-		// without starting a long-lived HTTP server in the test.
-		"addr": "invalid-address-without-port",
+		"addr": busy.Addr().String(),
 	} {
 		if err := cmd.Flags().Set(flag, value); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if err := runServe(cmd, nil); err == nil || !strings.Contains(err.Error(), "missing port") {
-		t.Fatalf("expected the final listen error, got %v", err)
+	var listenErr *net.OpError
+	if err := runServe(cmd, nil); !errors.As(err, &listenErr) || listenErr.Op != "listen" {
+		t.Fatalf("expected a listen error, got %v", err)
 	}
 	reopened, err := store.New(path)
 	if err != nil {
@@ -80,7 +85,7 @@ func TestServeRecoversInterruptedGrading(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = reopened.Close() })
 	got, err := reopened.GetSession(sess.ID)
-	if err != nil || got.Status != model.StatusInProgress {
-		t.Fatalf("startup left the attempt stuck: %+v, %v", got, err)
+	if err != nil || got.Status != model.StatusGrading {
+		t.Fatalf("failed startup reset the live attempt: %+v, %v", got, err)
 	}
 }

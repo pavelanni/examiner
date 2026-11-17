@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -28,8 +29,8 @@ import (
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/llm/prompts"
 	"github.com/pavelanni/examiner/internal/model"
-	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/questionimport"
+	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/store"
 	"github.com/pavelanni/examiner/internal/userutil"
 )
@@ -383,6 +384,15 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		h.Routes(r)
 	}
 
+	// Reserve the listen address first: an accidental second start on the
+	// same address must not reset grading in the server already running.
+	addr := v.GetString("addr")
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = listener.Close() }()
+
 	// A previous process may have stopped during synchronous final grading.
 	// Recover only when starting the exam server, not when opening a Store
 	// from export, prep or another connection while grading is still running.
@@ -394,7 +404,6 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		slog.Info("restored interrupted exams for resubmission", "sessions", recovered)
 	}
 
-	addr := v.GetString("addr")
 	slog.Info("starting server",
 		"addr", addr,
 		"model", v.GetString("llm-model"),
@@ -410,7 +419,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"base_path", basePath,
 	)
-	return http.ListenAndServe(addr, r)
+	return http.Serve(listener, r)
 }
 
 // runExport writes an exam export whose metadata matches its saved attempts.
