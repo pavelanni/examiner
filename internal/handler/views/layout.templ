@@ -42,6 +42,8 @@ templ Layout(title string) {
 				.message-student { background: var(--pico-primary-background); }
 				.message-assistant { background: var(--pico-secondary-background); }
 				.message-role { font-weight: bold; font-size: 0.85rem; margin-bottom: 0.25rem; }
+				.markdown > :last-child { margin-bottom: 0; }
+				.markdown p, .markdown ul, .markdown ol, .markdown pre { margin-bottom: 0.5rem; }
 				.status-badge { font-size: 0.8rem; padding: 0.2rem 0.5rem; border-radius: 4px; }
 				.status-open { background: #ffeeba; color: #856404; }
 				.status-answered { background: #b8daff; color: #004085; }

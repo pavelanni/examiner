@@ -1,6 +1,12 @@
 package views
 
-templ AdminQuestionsPage(flashMsg string, flashErr bool) {
+import (
+	"fmt"
+
+	"github.com/pavelanni/examiner/internal/model"
+)
+
+templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string, duplicates []model.DuplicateQuestionGroup) {
 	@Layout(t(ctx, "AdminQuestions")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -15,11 +21,50 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool) {
 				<p style="color: var(--pico-ins-color);">{ flashMsg }</p>
 			}
 		}
+		@importMessages(errs, warnings)
 		<form method="POST" action={ templ.SafeURL(p(ctx, "/admin/questions")) } enctype="multipart/form-data">
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
 			<button type="submit">{ t(ctx, "UploadBtn") }</button>
 		</form>
+		if len(duplicates) > 0 {
+			<section>
+				<h2>{ td(ctx, "ExistingDuplicatesTitle", map[string]any{"Count": len(duplicates)}) }</h2>
+				<p>{ t(ctx, "ExistingDuplicatesDesc") }</p>
+				for _, g := range duplicates {
+					<article>
+						<header><strong>{ g.Topic }</strong> — <code>{ g.TextNorm }</code></header>
+						<ul>
+							for _, q := range g.Questions {
+								<li>{ fmt.Sprintf("#%d: %s", q.ID, q.Text) }</li>
+							}
+						</ul>
+					</article>
+				}
+			</section>
+		}
+	}
+}
+
+// importMessages lists question import errors and warnings. It is shared
+// by the admin import page and the teacher constructor.
+templ importMessages(errs []string, warnings []string) {
+	if len(errs) > 0 {
+		<article role="alert" style="border-left: 4px solid var(--pico-del-color);">
+			<p><strong>{ t(ctx, "QImportErrorsTitle") }</strong></p>
+			<ul>
+				for _, e := range errs {
+					<li>{ e }</li>
+				}
+			</ul>
+		</article>
+	}
+	if len(warnings) > 0 {
+		<ul>
+			for _, w := range warnings {
+				<li>{ w }</li>
+			}
+		</ul>
 	}
 }

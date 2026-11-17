@@ -30,6 +30,7 @@ func insertTestQuestion(t *testing.T, s *Store, text, difficulty, topic string) 
 		Rubric:      "rubric for " + text,
 		ModelAnswer: "answer for " + text,
 		MaxPoints:   10,
+		Published:   true,
 	})
 	if err != nil {
 		t.Fatalf("insertTestQuestion: %v", err)
@@ -95,6 +96,51 @@ func TestQuestionCRUD(t *testing.T) {
 	}
 	if count != 2 {
 		t.Fatalf("expected count 2, got %d", count)
+	}
+}
+
+func TestInsertQuestionUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	id, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "Draft", Difficulty: model.DifficultyEasy, Topic: "hidden",
+		Rubric: "r", ModelAnswer: "a", MaxPoints: 10, Published: false,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+	q, err := s.GetQuestion(id)
+	if err != nil || q.Published {
+		t.Errorf("GetQuestion = published %v, %v; want unpublished", q.Published, err)
+	}
+	topics, err := s.ListPublishedTopics()
+	if err != nil || len(topics) != 0 {
+		t.Errorf("ListPublishedTopics = %v, %v; want none", topics, err)
+	}
+}
+
+func TestCreateSessionRejectsUnpublished(t *testing.T) {
+	s := newTestStore(t)
+	bpID, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "T"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := insertTestQuestion(t, s, "Published", "easy", "t")
+	unpub, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "Unpublished", Difficulty: model.DifficultyEasy, Topic: "t",
+		Rubric: "r", ModelAnswer: "a", MaxPoints: 10, Published: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateSession(bpID, 1, []int64{pub, unpub}); err == nil {
+		t.Fatal("CreateSession with an unpublished question: want error")
+	}
+	if _, err := s.CreateSession(bpID, 1, []int64{pub, 9999}); err == nil {
+		t.Fatal("CreateSession with a missing question: want error")
+	}
+	sessions, err := s.ListSessions()
+	if err != nil || len(sessions) != 0 {
+		t.Errorf("sessions = %v, %v; want none (rolled back)", sessions, err)
 	}
 }
 
@@ -489,100 +535,13 @@ func TestImportedFileHash(t *testing.T) {
 	}
 }
 
-func TestUpdateQuestionByCourseAndText(t *testing.T) {
-	s := newTestStore(t)
-
-	q := model.Question{
-		CourseID:    1,
-		Text:        "update me",
-		Difficulty:  model.DifficultyEasy,
-		Topic:       "go",
-		Rubric:      "original",
-		ModelAnswer: "original answer",
-		MaxPoints:   5,
-	}
-	id, err := s.InsertQuestion(q)
-	if err != nil {
-		t.Fatalf("insert: %v", err)
-	}
-	if id == 0 {
-		t.Fatal("expected inserted id")
-	}
-
-	q.Rubric = "updated"
-	q.MaxPoints = 10
-	if err := s.UpdateQuestionByCourseAndText(q); err != nil {
-		t.Fatalf("update: %v", err)
-	}
-
-	updated, err := s.GetQuestion(id)
-	if err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	if updated.Rubric != "updated" || updated.MaxPoints != 10 {
-		t.Fatalf("unexpected updated values: %+v", updated)
-	}
-
-	missing := model.Question{CourseID: 1, Text: "missing", Difficulty: model.DifficultyEasy, Topic: "x"}
-	if err := s.UpdateQuestionByCourseAndText(missing); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expected sql.ErrNoRows, got %v", err)
-	}
-}
-
-func TestDeleteUnusedQuestionsByTexts(t *testing.T) {
-	s := newTestStore(t)
-
-	insert := func(text string) int64 {
-		id, err := s.InsertQuestion(model.Question{
-			CourseID:    1,
-			Text:        text,
-			Difficulty:  model.DifficultyEasy,
-			Topic:       "go",
-			Rubric:      "r",
-			ModelAnswer: "a",
-			MaxPoints:   1,
-		})
-		if err != nil {
-			t.Fatalf("insert %q: %v", text, err)
-		}
-		return id
-	}
-
-	idKept := insert("kept")
-	idRemoved := insert("removed")
-	idReferenced := insert("referenced")
-
-	bpID, err := s.CreateBlueprint(model.ExamBlueprint{Name: "test", TimeLimit: 10, MaxFollowups: 0})
-	if err != nil {
-		t.Fatalf("create blueprint: %v", err)
-	}
-	_, err = s.CreateSession(bpID, 1, []int64{idReferenced})
-	if err != nil {
-		t.Fatalf("create session: %v", err)
-	}
-
-	if err := s.DeleteUnusedQuestionsByTexts(1, []string{"kept", "removed", "referenced"}, []string{"kept"}); err != nil {
-		t.Fatalf("delete: %v", err)
-	}
-
-	if _, err := s.GetQuestion(idRemoved); !errors.Is(err, sql.ErrNoRows) {
-		t.Fatalf("expected removed question to be deleted, got err=%v", err)
-	}
-	if _, err := s.GetQuestion(idKept); err != nil {
-		t.Fatalf("expected kept question to remain: %v", err)
-	}
-	if _, err := s.GetQuestion(idReferenced); err != nil {
-		t.Fatalf("expected referenced question to remain: %v", err)
-	}
-}
-
-func TestListDistinctTopics(t *testing.T) {
+func TestListPublishedTopics(t *testing.T) {
 	s := newTestStore(t)
 
 	// Empty DB.
-	topics, err := s.ListDistinctTopics()
+	topics, err := s.ListPublishedTopics()
 	if err != nil {
-		t.Fatalf("ListDistinctTopics: %v", err)
+		t.Fatalf("ListPublishedTopics: %v", err)
 	}
 	if len(topics) != 0 {
 		t.Errorf("expected 0 topics, got %d", len(topics))
@@ -590,7 +549,7 @@ func TestListDistinctTopics(t *testing.T) {
 
 	// Single topic.
 	insertTestQuestion(t, s, "Q1", "easy", "basics")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 1 || topics[0] != "basics" {
 		t.Errorf("expected [basics], got %v", topics)
 	}
@@ -599,7 +558,7 @@ func TestListDistinctTopics(t *testing.T) {
 	insertTestQuestion(t, s, "Q2", "easy", "basics")
 	insertTestQuestion(t, s, "Q3", "easy", "concurrency")
 	insertTestQuestion(t, s, "Q4", "easy", "advanced")
-	topics, _ = s.ListDistinctTopics()
+	topics, _ = s.ListPublishedTopics()
 	if len(topics) != 3 {
 		t.Errorf("expected 3 distinct topics, got %d: %v", len(topics), topics)
 	}
@@ -755,5 +714,197 @@ func TestMessageScoreRoundTrip(t *testing.T) {
 	}
 	if msgs[1].Score == nil || *msgs[1].Score != 7.5 {
 		t.Errorf("LLM message score = %v, want 7.5", msgs[1].Score)
+	}
+}
+
+func TestFindQuestionByTopicAndTextNorm(t *testing.T) {
+	s := newTestStore(t)
+
+	id1, err := s.InsertQuestion(model.Question{
+		CourseID:    1,
+		Text:        "Что такое ПИД-регулятор?",
+		Difficulty:  model.DifficultyEasy,
+		Topic:       "control",
+		Rubric:      "r",
+		ModelAnswer: "a",
+		MaxPoints:   5,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+
+	norm := model.NormalizeQuestionText("  что такое пид-регулятор  ")
+	found, err := s.FindQuestionByTopicAndTextNorm(1, "control", norm)
+	if err != nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm: %v", err)
+	}
+	if found == nil || found.ID != id1 {
+		t.Fatalf("expected question #%d, got %+v", id1, found)
+	}
+
+	// Different topic should not match.
+	otherTopic, err := s.FindQuestionByTopicAndTextNorm(1, "other", norm)
+	if err != nil {
+		t.Fatalf("FindQuestionByTopicAndTextNorm(other): %v", err)
+	}
+	if otherTopic != nil {
+		t.Fatalf("expected nil for different topic, got %+v", otherTopic)
+	}
+}
+
+func TestUpdateQuestion(t *testing.T) {
+	s := newTestStore(t)
+
+	id, err := s.InsertQuestion(model.Question{
+		CourseID:    1,
+		Text:        "Original question?",
+		Difficulty:  model.DifficultyEasy,
+		Topic:       "go",
+		Rubric:      "old rubric",
+		ModelAnswer: "old answer",
+		MaxPoints:   3,
+	})
+	if err != nil {
+		t.Fatalf("InsertQuestion: %v", err)
+	}
+
+	err = s.UpdateQuestion(model.Question{
+		ID:          id,
+		Text:        "Updated Question!",
+		Difficulty:  model.DifficultyHard,
+		Topic:       "concurrency",
+		Rubric:      "new rubric",
+		ModelAnswer: "new answer",
+		MaxPoints:   10,
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuestion: %v", err)
+	}
+
+	got, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("GetQuestion: %v", err)
+	}
+	if got.Text != "Updated Question!" || got.TextNorm != "updated question" ||
+		got.Difficulty != model.DifficultyHard || got.Topic != "concurrency" ||
+		got.Rubric != "new rubric" || got.ModelAnswer != "new answer" || got.MaxPoints != 10 {
+		t.Fatalf("unexpected updated question: %+v", got)
+	}
+
+	if err := s.UpdateQuestion(model.Question{ID: 99999, Text: "missing"}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected sql.ErrNoRows for missing ID, got %v", err)
+	}
+}
+
+func TestPopulateQuestionTextNorm(t *testing.T) {
+	s := newTestStore(t)
+
+	// Simulate a legacy row created before text_norm was populated.
+	res, err := s.db.Exec(
+		`INSERT INTO questions (course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points)
+		 VALUES (1, '  Ёжик и мёд? ', '', 'easy', 'nature', 'r', 'a', 1)`,
+	)
+	if err != nil {
+		t.Fatalf("raw insert: %v", err)
+	}
+	id, _ := res.LastInsertId()
+
+	if err := s.populateQuestionTextNorm(); err != nil {
+		t.Fatalf("populateQuestionTextNorm: %v", err)
+	}
+
+	got, err := s.GetQuestion(id)
+	if err != nil {
+		t.Fatalf("GetQuestion: %v", err)
+	}
+	if got.TextNorm != "ежик и мед" {
+		t.Errorf("TextNorm = %q, want %q", got.TextNorm, "ежик и мед")
+	}
+}
+
+func TestFindExistingDuplicates(t *testing.T) {
+	s := newTestStore(t)
+
+	// Two near-duplicate questions in the same topic (different raw text, same text_norm).
+	id1, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is Docker?", Difficulty: model.DifficultyEasy, Topic: "devops", MaxPoints: 5,
+	})
+	if err != nil {
+		t.Fatalf("insert 1: %v", err)
+	}
+	result, err := s.db.Exec(`INSERT INTO questions
+		(course_id, text, text_norm, difficulty, topic, rubric, model_answer, max_points, archived)
+		VALUES (1, 'what is docker', 'what is docker', 'medium', 'devops', '', '', 5, 1)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Same normalized text in a different topic should NOT form a duplicate group.
+	if _, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "what is docker?!", Difficulty: model.DifficultyEasy, Topic: "containers", MaxPoints: 5,
+	}); err != nil {
+		t.Fatalf("insert 3: %v", err)
+	}
+	// Unique question in same topic should NOT appear.
+	if _, err := s.InsertQuestion(model.Question{
+		CourseID: 1, Text: "What is Kubernetes?", Difficulty: model.DifficultyEasy, Topic: "devops", MaxPoints: 5,
+	}); err != nil {
+		t.Fatalf("insert 4: %v", err)
+	}
+
+	groups, err := s.FindExistingDuplicates()
+	if err != nil {
+		t.Fatalf("FindExistingDuplicates: %v", err)
+	}
+	if len(groups) != 1 {
+		t.Fatalf("expected 1 duplicate group, got %d: %+v", len(groups), groups)
+	}
+	g := groups[0]
+	if g.Topic != "devops" || g.TextNorm != "what is docker" {
+		t.Errorf("unexpected group metadata: %+v", g)
+	}
+	if len(g.Questions) != 2 || g.Questions[0].ID != id1 || g.Questions[1].ID != id2 {
+		t.Errorf("expected questions [%d, %d], got %+v", id1, id2, g.Questions)
+	}
+
+	// Ensure FindExistingDuplicates is non-destructive.
+	count, err := s.QuestionCount()
+	if err != nil {
+		t.Fatalf("QuestionCount: %v", err)
+	}
+	if count != 3 {
+		t.Errorf("expected 3 active questions, got %d", count)
+	}
+	if _, err := s.GetQuestion(id2); err != nil {
+		t.Fatalf("archived question must remain readable: %v", err)
+	}
+}
+
+func TestGetSessionViewDistinguishesMissingQuestionFromMissingSession(t *testing.T) {
+	s := newTestStore(t)
+	s.db.SetMaxOpenConns(1)
+	bpID, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "Final"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	qID := insertTestQuestion(t, s, "Q1", "easy", "t1")
+	sessID, err := s.CreateSession(bpID, 1, []int64{qID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec("DELETE FROM questions WHERE id = ?", qID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetSessionView(sessID); err == nil || errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing question should produce an internal error, got %v", err)
+	}
+	if _, err := s.GetSessionView(sessID + 1); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("missing session should produce sql.ErrNoRows, got %v", err)
 	}
 }

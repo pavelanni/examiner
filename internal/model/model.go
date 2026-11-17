@@ -115,16 +115,43 @@ const (
 	DifficultyHard   Difficulty = "hard"
 )
 
+// Difficulties lists the difficulty levels from easiest to hardest.
+var Difficulties = []Difficulty{DifficultyEasy, DifficultyMedium, DifficultyHard}
+
+// Distribution is the exact number of questions of each difficulty in an
+// exam (FR3-01). A nil Distribution means none is configured.
+type Distribution map[Difficulty]int
+
+// Total returns the number of questions in an exam.
+func (d Distribution) Total() int {
+	n := 0
+	for _, c := range d {
+		n += c
+	}
+	return n
+}
+
 // Question represents an exam question.
 type Question struct {
 	ID          int64      `json:"id"`
 	CourseID    int64      `json:"course_id"`
 	Text        string     `json:"text"`
+	TextNorm    string     `json:"text_norm,omitempty"`
 	Difficulty  Difficulty `json:"difficulty"`
 	Topic       string     `json:"topic"`
 	Rubric      string     `json:"rubric"`
 	ModelAnswer string     `json:"model_answer"`
 	MaxPoints   int        `json:"max_points"`
+	OwnerID     int64      `json:"owner_id,omitempty"` // 0 = no owner
+	Published   bool       `json:"published"`
+}
+
+// DuplicateQuestionGroup represents existing questions in the database that share
+// the same course, topic and normalized text.
+type DuplicateQuestionGroup struct {
+	Topic     string     `json:"topic"`
+	TextNorm  string     `json:"text_norm"`
+	Questions []Question `json:"questions"`
 }
 
 // ExamBlueprint defines the structure of an exam.
@@ -141,6 +168,8 @@ type ExamSession struct {
 	ID          int64         `json:"id"`
 	BlueprintID int64         `json:"blueprint_id"`
 	StudentID   int64         `json:"student_id"`
+	Topic       string        `json:"topic"`
+	TopicKnown  bool          `json:"-"` // distinguishes an empty topic from an unknown legacy topic
 	Status      SessionStatus `json:"status"`
 	StartedAt   time.Time     `json:"started_at"`
 	SubmittedAt *time.Time    `json:"submitted_at,omitempty"`
@@ -211,11 +240,12 @@ type ExamConfig struct {
 	Difficulty        string // empty means all difficulties
 	Topic             string // empty means all topics
 	MaxFollowups      int
-	Shuffle           bool
-	BasePath          string // URL prefix for sub-path deployments (e.g. "/ru")
-	SecureCookies     bool   // Set Secure flag on cookies (disable for local dev)
-	AllowRegistration bool   // Enable public student self-registration (default false)
-	PromptVariant     string // Grading prompt variant (strict, standard, lenient)
+	Shuffle           bool         // randomize order; the set is always selected randomly
+	Selection         Distribution // exact questions per difficulty when configured
+	BasePath          string       // URL prefix for sub-path deployments (e.g. "/ru")
+	SecureCookies     bool         // Set Secure flag on cookies (disable for local dev)
+	AllowRegistration bool         // Enable public student self-registration (default false)
+	PromptVariant     string       // Grading prompt variant (strict, standard, lenient)
 
 	ScoreVisibility ScoreVisibility // When students see AI scores (live, final, none)
 }

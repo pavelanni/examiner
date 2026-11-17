@@ -74,12 +74,12 @@ or a config file. Precedence: **flags > env vars > config file > defaults**.
 | `--llm-max-retries` | | `3` | Retries after the initial attempt (`0` disables retries; maximum `100`) |
 | `--llm-max-concurrency` | | `4` | Maximum simultaneous LLM requests per process |
 | `--lang` | `-l` | `en` | UI language (`en`, `ru`) |
-| `--num-questions` | `-n` | `0` (all) | Number of questions per exam |
+| `--num-questions` | `-n` | `0` (all) | Number of questions per exam, drawn at random |
 | `--difficulty` | `-d` | (all) | Filter by difficulty; comma-separated for multiple levels (e.g. `easy,medium`) |
 | `--topic` | `-t` | (all) | Filter by topic |
 | `--max-followups` | | `3` | Max follow-up questions per question (enforced by the server; `0` disables follow-ups) |
 | `--score-visibility` | | `final` | When students see AI scores: `live` (per answer during the exam), `final` (on the results page once graded), `none` (only after teacher review). Scores shown before review are labeled preliminary |
-| `--shuffle` | | `false` | Randomize question order |
+| `--shuffle` | | `true` | Randomize question order; the set is always selected randomly |
 | `--admin-password` | | (required) | Admin password (required on first run) |
 | `--base-path` | | (none) | URL prefix for sub-path deployments (e.g. `/ru`) |
 | `--prompt-variant` | | `standard` | Grading strictness (`strict`, `standard`, `lenient`) |
@@ -132,6 +132,67 @@ base-path: /ru
 prompt-variant: standard
 secure-cookies: true
 ```
+
+#### Questions per difficulty
+
+To give every student the same number of questions of each difficulty,
+set `question_selection` in the config file (it has no flag or
+environment variable):
+
+```yaml
+question_selection:
+  easy: 2
+  medium: 2
+  hard: 1
+```
+
+Each exam then has exactly 2 easy, 2 medium and 1 hard question from the
+chosen topic, drawn at random without repeats. The rules:
+
+- Counts are whole numbers of at least 0 (`-1`, `1.5` and `"two"` are
+  rejected), the levels are `easy`, `medium` and `hard`, and the total
+  must be above 0.
+- `question_selection` replaces `num-questions` and `difficulty`;
+  explicitly setting it together with either of them in YAML, environment
+  variables or flags is an error, even with `num-questions: 0` or an empty
+  `difficulty`. Unchanged flag defaults do not conflict.
+- An invalid value stops the server at startup with the list of
+  problems. An explicitly empty or `null` distribution is invalid; omit
+  the key entirely to keep legacy selection. Empty legacy environment
+  variables still count as explicitly supplied options.
+
+At startup the server logs how many questions of each difficulty every
+topic has and warns about topics that are too small. The home page
+offers only topics where an exam can be put together and shows why the
+others are unavailable. The home page also shows the exam size.
+
+Questions with an empty topic can be selected as **No topic**. The chosen
+topic is an exact filter, so its questions are never mixed with other topics.
+Duplicate texts in different difficulty pools remain alternatives until the
+requested distribution is allocated; each resulting exam uses a text only once.
+
+With `question_selection`, startup reconciles `num_questions` in prepared
+metadata with the distribution total. Existing attempts must have the same
+number of questions; otherwise startup fails without rewriting those attempts.
+Use a separate exam database when changing the exam size. Export derives the
+count from saved attempts and rejects mixed-size exports rather than giving
+the grader an incorrect exam-wide count.
+
+#### Exam variants
+
+A student's questions are drawn once, when the exam starts, and stored
+in the session with their order. Reloading the page, logging in again
+or pressing **Start** again opens the same session; the home page shows
+**Continue** for an exam in progress. After finishing, a student cannot
+start another exam in the same topic. Teachers and admins can retake
+after grading finishes, to try exams out. Sessions created before topics
+were stored are not affected.
+
+Run one exam server process per database. On startup, attempts whose final
+grading was interrupted return to an unfinished state. Students can continue
+the same saved variant and submit it again; questions, order, answers and
+saved scores are retained. Opening the database for export does not perform
+this recovery. Completed or reviewed attempts are unchanged.
 
 #### Examples
 
@@ -269,8 +330,29 @@ is written to `questions/teacher_<username>_<name>.json` and the questions
 are imported into the database.
 
 Editing a file updates existing questions by their text instead of
-duplicating them. Questions that are already part of an exam session are
-left untouched, so old exams remain consistent.
+duplicating them. A question removed from the file is deleted only if no
+exam session uses it; one that a session uses stays in the database.
+Editing a question that a session uses changes it in place, so the new
+rubric and model answer apply to answers graded after the save.
+
+Every question has an owner: the teacher who saved it, or the admin for
+questions imported by an admin or loaded with `--questions`. A teacher
+can change and remove only their own questions; an admin can change any
+question. If a teacher's file contains a question that already belongs to
+someone else (same topic, same text), the whole save is rejected and the
+page lists those questions. Removing a question from your file never
+deletes another teacher's question.
+
+The **Publish** checkbox in the builder decides whether the file's
+questions go into students' exams and are visible to other teachers.
+Students' topic list and exams use published questions only. A new file
+is published by default; an existing file keeps its current state.
+
+Questions created before ownership existed get an owner at startup: a
+question found in exactly one `questions/teacher_<username>_*.json` file
+goes to that teacher, every other one to the admin. The log line
+"question claimed by several teachers" names questions that were in more
+than one teacher's file.
 
 The uploaded JSON must match `schema/question_schema.json`. It can be a
 plain array of questions or a wrapper object:
@@ -292,6 +374,25 @@ plain array of questions or a wrapper object:
   ]
 }
 ```
+
+Every question must follow these rules, whether it comes from the
+builder, a teacher upload, the admin import or the `--questions` flag:
+
+| Field | Rule |
+| ----- | ---- |
+| `text`, `topic`, `rubric`, `model_answer` | Required, not empty or whitespace only |
+| `difficulty` | `easy`, `medium` or `hard` |
+| `max_points` | Whole number greater than 0 (`"5"`, `2.5` and `10.0` are rejected) |
+
+Other fields are rejected. A file with any error is not imported at all:
+the page lists every error with the question number and field, for
+example "Question 3, field max_points: must be an integer greater than
+0". At startup, an invalid `--questions` file stops the server with the
+same list. A question that matches an existing one in the same topic
+(ignoring case, spacing and trailing punctuation) is skipped with a
+warning; when a teacher saves their own file, it is updated instead (see
+ownership below). A duplicate within a teacher's file is left out of the
+saved file. The same text in a different topic is a separate question.
 
 | Route | Purpose |
 | ----- | ------- |

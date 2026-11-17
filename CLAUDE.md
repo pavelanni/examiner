@@ -67,7 +67,8 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
   file: `~/examiner/questions-en.json` and `~/examiner/questions-ru.json`.
 - **YAML config on host.** Each instance mounts a YAML config at
   `/data/examiner.yaml` inside the container. Non-secret settings
-  (lang, LLM URL/model, num-questions, shuffle, base-path) go in YAML.
+  (lang, LLM URL/model, num-questions or question_selection, shuffle,
+  base-path) go in YAML.
   Secrets (LLM key, admin password) stay in the `.env` file.
 
 ### Key deployment files
@@ -91,6 +92,7 @@ task deploy-logs     # show logs from both (or LANG=en / LANG=ru)
 - `internal/i18n/` — internationalization (English, Russian)
 - `internal/llm/` — OpenAI-compatible LLM client
 - `internal/model/` — domain types
+- `internal/selection/` — exact per-difficulty exam question selection
 - `internal/sqlitedb/` — shared SQLite DSN (pragmas) and foreign-key check
 - `internal/store/` — SQLite storage layer
 - `web/` — static assets (htmx, Pico CSS)

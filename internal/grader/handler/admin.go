@@ -117,7 +117,7 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := h.store.CreateUser(u); err != nil {
 		slog.Error("create user", "error", err)
-		http.Error(w, "failed to create user: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to create user", http.StatusInternalServerError)
 		return
 	}
 
@@ -205,7 +205,7 @@ func (h *Handler) handleDeleteExam(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.store.DeleteExam(examID); err != nil {
 		slog.Error("delete exam", "error", err)
-		http.Error(w, "failed to delete exam: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "failed to delete exam", http.StatusInternalServerError)
 		return
 	}
 
