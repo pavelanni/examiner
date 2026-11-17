@@ -33,7 +33,8 @@ func (s *Store) ExamStatement(filter model.StatementFilter) (model.Statement, er
 		LEFT JOIN users u ON u.id = s.student_id
 		LEFT JOIN grades g ON g.session_id = s.id
 		LEFT JOIN users r ON r.id = g.reviewed_by
-		WHERE s.submitted_at IS NOT NULL`
+		WHERE s.submitted_at IS NOT NULL
+		  AND s.status IN ('submitted', 'grading', 'graded', 'reviewed')`
 	var args []any
 	if filter.Topic != nil {
 		query += " AND s.topic_known = 1 AND s.topic = ?"

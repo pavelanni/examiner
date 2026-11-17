@@ -146,3 +146,41 @@ func TestGroupMigrationPreservesExistingUsers(t *testing.T) {
 		t.Fatalf("legacy user = %+v, %v", user, err)
 	}
 }
+
+// TestStatementExcludesReopenedAttempt covers the queue-timeout recovery path,
+// which returns an attempt to in_progress while retaining submitted_at.
+func TestStatementExcludesReopenedAttempt(t *testing.T) {
+	s := newTestStore(t)
+	bp, err := s.CreateBlueprint(model.ExamBlueprint{CourseID: 1, Name: "Exam"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.CreateSession(bp, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, status := range []model.SessionStatus{
+		model.StatusSubmitted, model.StatusGrading, model.StatusGraded, model.StatusReviewed,
+	} {
+		if err := s.UpdateSessionStatus(id, status); err != nil {
+			t.Fatal(err)
+		}
+		report, err := s.ExamStatement(model.StatementFilter{})
+		if err != nil || len(report.Rows) != 1 {
+			t.Fatalf("status %s: rows=%d, error=%v", status, len(report.Rows), err)
+		}
+	}
+	if err := s.UpdateSessionStatus(id, model.StatusInProgress); err != nil {
+		t.Fatal(err)
+	}
+	session, err := s.GetSession(id)
+	if err != nil || session.SubmittedAt == nil {
+		t.Fatalf("expected retained submission date: session=%+v, error=%v", session, err)
+	}
+	for _, filter := range []model.StatementFilter{{}, {Status: model.StatusInProgress}} {
+		report, err := s.ExamStatement(filter)
+		if err != nil || len(report.Rows) != 0 {
+			t.Fatalf("reopened attempt exported: rows=%d, error=%v", len(report.Rows), err)
+		}
+	}
+}
