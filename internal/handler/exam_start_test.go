@@ -502,7 +502,7 @@ func TestStartExamResumesAfterConfigChange(t *testing.T) {
 		t.Run(string(status), func(t *testing.T) {
 			s := newExamStore(t)
 			examStore(t, s, 2, 0, 0)
-			h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 1}}
+			h := &Handler{store: s, config: model.ExamConfig{NumQuestions: 2, Shuffle: true}}
 			id := startedSession(t, h, student(7), "t")
 			wantQuestions := questionIDs(sessionQuestions(t, s, id))
 			if err := s.UpdateSessionStatus(id, status); err != nil {
