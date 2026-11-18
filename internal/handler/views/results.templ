@@ -25,7 +25,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 		} else if policy.Preliminary {
 			@resultsNotice(t(ctx, "ResultsDisclaimer"))
 		}
-		if policy.Hidden {
+		if policy.Hidden && view.Session.Status != model.StatusAnnulled {
 			@resultsNotice(t(ctx, "ResultsAwaitingReview"))
 		}
 		@attemptResetNotice(view)

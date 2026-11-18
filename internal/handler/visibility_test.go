@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -131,6 +132,20 @@ func TestResultsVisibility(t *testing.T) {
 			if strings.Contains(body, leak) {
 				t.Errorf("leaked %q before review", leak)
 			}
+		}
+	})
+
+	t.Run("annulled/none shows reset notice without promising a review", func(t *testing.T) {
+		env := newRBACEnv(t)
+		env.h.config.ScoreVisibility = model.ScoreNone
+		reset := env.do("teacher", http.MethodPost, fmt.Sprintf("/review/%d/reset", env.sessGraded), url.Values{"confirm": {"yes"}})
+		if reset.Code != http.StatusSeeOther {
+			t.Fatalf("reset: %d, %s", reset.Code, reset.Body.String())
+		}
+		rec := env.do("studentA", http.MethodGet, fmt.Sprintf("/results/%d", env.sessGraded), nil)
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK || !strings.Contains(body, "Attempt reset") || strings.Contains(body, awaitingMark) {
+			t.Fatal("results for an annulled attempt must show its reset status without an awaiting-review notice")
 		}
 	})
 
