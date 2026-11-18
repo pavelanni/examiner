@@ -154,11 +154,18 @@ func TestSubmitGradesSavedAnswerWhileFeedbackIsRunning(t *testing.T) {
 		grade:          func(ctx context.Context) error { return ctx.Err() },
 		gradedMessages: graded,
 	})
-	stop := env.h.StartWorkers(t.Context(), 2)
-	t.Cleanup(stop)
 	if rec := env.post(t, "saved answer"); rec.Code != http.StatusAccepted {
 		t.Fatalf("answer: %d", rec.Code)
 	}
+	feedback, err := env.store.ClaimEvaluation(true)
+	if err != nil || feedback == nil {
+		t.Fatalf("claim feedback: %+v, %v", feedback, err)
+	}
+	done := make(chan struct{})
+	go func() {
+		env.h.processEvaluation(t.Context(), *feedback)
+		close(done)
+	}()
 	select {
 	case <-entered:
 	case <-time.After(time.Second):
@@ -168,6 +175,7 @@ func TestSubmitGradesSavedAnswerWhileFeedbackIsRunning(t *testing.T) {
 	if rec := env.submit(); rec.Code != http.StatusSeeOther || time.Since(began) >= time.Second {
 		t.Fatalf("submit while feedback pending: %d after %s", rec.Code, time.Since(began))
 	}
+	runNextEvaluation(t, env.h)
 	select {
 	case messages := <-graded:
 		if len(messages) != 1 || messages[0].Content != "saved answer" || messages[0].Role != model.RoleStudent {
@@ -176,13 +184,20 @@ func TestSubmitGradesSavedAnswerWhileFeedbackIsRunning(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("final grading waited for in-flight feedback")
 	}
-	waitForState(t, func() bool {
-		sess, err := env.store.GetSession(env.sessID)
-		return err == nil && sess.Status == model.StatusGraded
-	})
+	sess, err := env.store.GetSession(env.sessID)
+	if err != nil || sess.Status != model.StatusGraded {
+		t.Fatalf("final grading while feedback is pending: %+v, %v", sess, err)
+	}
+
+	// Allow the late result to reach FinishFeedback with a live context.
+	// Cancelling its worker here would hide a stale write to the submitted exam.
 	close(release)
-	stop()
-	if env.messageCount(t) != 1 {
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("late feedback did not finish")
+	}
+	if env.messageCount(t) != 1 || env.thread(t).Status != model.ThreadCompleted {
 		t.Fatal("late feedback changed the submitted conversation")
 	}
 }
