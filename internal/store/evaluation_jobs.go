@@ -1,7 +1,6 @@
 package store
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -114,8 +113,10 @@ type EvaluationJob struct {
 
 // ClaimEvaluation gives waiting feedback priority over final grading. One
 // worker can be reserved for feedback when the configured pool has spare capacity.
-func (s *Store) ClaimEvaluation(ctx context.Context, feedbackOnly bool) (*EvaluationJob, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
+func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
+	// Let the short claim transaction finish at shutdown. Cancelling BeginTx
+	// can discard the only connection to a private SQLite in-memory database.
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
@@ -127,18 +128,18 @@ func (s *Store) ClaimEvaluation(ctx context.Context, feedbackOnly bool) (*Evalua
 		query += ` AND j.kind='feedback'`
 	}
 	// The ready index orders 'feedback' before 'grade', FIFO within each kind.
-	err = tx.QueryRowContext(ctx, query+` ORDER BY j.kind,j.id LIMIT 1`).Scan(&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback)
+	err = tx.QueryRow(query+` ORDER BY j.kind,j.id LIMIT 1`).Scan(&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE id=?`, job.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE id=?`, job.ID); err != nil {
 		return nil, err
 	}
 	if !job.Feedback {
-		if _, err := tx.ExecContext(ctx, `UPDATE exam_sessions SET status='grading' WHERE id=? AND status='submitted'`, job.SessionID); err != nil {
+		if _, err := tx.Exec(`UPDATE exam_sessions SET status='grading' WHERE id=? AND status='submitted'`, job.SessionID); err != nil {
 			return nil, err
 		}
 	}

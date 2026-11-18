@@ -150,7 +150,7 @@ func (e *answerEnv) postForm(form url.Values) *httptest.ResponseRecorder {
 
 func runNextEvaluation(t *testing.T, h *Handler) {
 	t.Helper()
-	job, err := h.store.ClaimEvaluation(t.Context(), false)
+	job, err := h.store.ClaimEvaluation(false)
 	if err != nil || job == nil {
 		t.Fatalf("expected a queued job, got %+v, %v", job, err)
 	}
@@ -318,6 +318,33 @@ func TestUnavailableFeedbackRetriesOnlyTheSavedAnswer(t *testing.T) {
 	messages, err := env.store.GetMessages(env.threadID)
 	if err != nil || len(messages) != 2 || messages[0].Content != "my answer" || messages[1].Role != model.RoleLLM || fake.callCount() != 2 {
 		t.Fatalf("retried conversation: %+v, %v", messages, err)
+	}
+}
+
+// A pre-queue database can have a saved answer with neither a job nor feedback.
+func TestNativeFormResumesLegacySavedAnswer(t *testing.T) {
+	env := newAnswerEnv(t, 0, &fakeLLM{})
+	id, err := env.store.AddMessage(model.Message{ThreadID: env.threadID, Role: model.RoleStudent, Content: "legacy answer"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := env.get(t, fmt.Sprintf("/exam/%d", env.sessID))
+	key := strconv.FormatInt(id, 10)
+	if !strings.Contains(page, "Retry evaluation") || !strings.Contains(page, `name="answer_key" value="`+key+`"`) {
+		t.Fatal("the legacy answer does not expose a retry form for its saved turn")
+	}
+	form := url.Values{"answer_key": {key}, "retry": {"1"}}
+	req := httptest.NewRequest(http.MethodPost, env.answerPath(), strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "text/html")
+	rec := httptest.NewRecorder()
+	env.router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != fmt.Sprintf("/exam/%d#thread-%d", env.sessID, env.threadID) {
+		t.Fatalf("native retry: %d, %s", rec.Code, rec.Header().Get("Location"))
+	}
+	runNextEvaluation(t, env.h)
+	if env.thread(t).Status != model.ThreadCompleted || env.messageCount(t) != 2 {
+		t.Fatal("legacy retry lost or duplicated the answer")
 	}
 }
 

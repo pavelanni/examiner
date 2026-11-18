@@ -252,7 +252,7 @@ func TestResetDuringLLMWork(t *testing.T) {
 			if rec.Code != http.StatusAccepted && rec.Code != http.StatusSeeOther {
 				t.Fatalf("queue work: %d, %s", rec.Code, rec.Body.String())
 			}
-			job, err := env.store.ClaimEvaluation(t.Context(), false)
+			job, err := env.store.ClaimEvaluation(false)
 			if err != nil || job == nil {
 				t.Fatalf("claim work: %+v, %v", job, err)
 			}
@@ -281,7 +281,7 @@ func TestResetDuringLLMWork(t *testing.T) {
 			case <-time.After(5 * time.Second):
 				t.Fatal("late request did not finish")
 			}
-			if next, err := env.store.ClaimEvaluation(t.Context(), false); err != nil || next != nil {
+			if next, err := env.store.ClaimEvaluation(false); err != nil || next != nil {
 				t.Fatalf("reset left pending work: %+v, %v", next, err)
 			}
 			after, err := env.store.GetSessionView(active.ID)

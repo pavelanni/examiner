@@ -72,7 +72,7 @@ func openEvaluationStore(t *testing.T, path string) *Store {
 
 func claimJob(t *testing.T, s *Store) EvaluationJob {
 	t.Helper()
-	job, err := s.ClaimEvaluation(t.Context(), false)
+	job, err := s.ClaimEvaluation(false)
 	if err != nil || job == nil {
 		t.Fatalf("missing job: %+v, %v", job, err)
 	}
@@ -101,7 +101,7 @@ func TestQueueRecoversFeedbackAndPartiallyGradedExam(t *testing.T) {
 	if err := s.QueueSubmission(grading); !errors.Is(err, ErrTurnChanged) {
 		t.Fatalf("duplicate submission: %v", err)
 	}
-	if job, err := s.ClaimEvaluation(t.Context(), true); err != nil || job != nil {
+	if job, err := s.ClaimEvaluation(true); err != nil || job != nil {
 		t.Fatalf("a reserved feedback slot claimed a final grade: %+v, %v", job, err)
 	}
 	first := claimJob(t, s)
@@ -123,7 +123,7 @@ func TestQueueRecoversFeedbackAndPartiallyGradedExam(t *testing.T) {
 		t.Fatal(err)
 	}
 	s = openEvaluationStore(t, path)
-	if job, err := s.ClaimEvaluation(t.Context(), false); job != nil || err != nil {
+	if job, err := s.ClaimEvaluation(false); job != nil || err != nil {
 		t.Fatalf("merely opening SQLite released a live claim: %+v, %v", job, err)
 	}
 	if n, err := s.RecoverInterruptedSessions(); err != nil || n != 0 {
@@ -153,7 +153,7 @@ func TestQueueRecoversFeedbackAndPartiallyGradedExam(t *testing.T) {
 	if err != nil || len(messages) != 2 || messages[0].Text() != "saved" || messages[1].Text() != "reply" {
 		t.Fatalf("recovered conversation: %+v, %v", messages, err)
 	}
-	if job, err := s.ClaimEvaluation(t.Context(), false); job != nil || err != nil {
+	if job, err := s.ClaimEvaluation(false); job != nil || err != nil {
 		t.Fatalf("duplicate job after completion: %+v, %v", job, err)
 	}
 }

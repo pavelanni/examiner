@@ -44,7 +44,7 @@ func (h *Handler) dispatch(ctx context.Context, limit int) {
 		for active < limit && ctx.Err() == nil {
 			// Reserve one slot for feedback if multiple calls can run. At a
 			// limit of one, waiting feedback is selected after the current call.
-			job, err := h.store.ClaimEvaluation(ctx, limit > 1 && grading >= limit-1)
+			job, err := h.store.ClaimEvaluation(limit > 1 && grading >= limit-1)
 			if err != nil && ctx.Err() == nil {
 				slog.Error("claim evaluation job", "error", err)
 			}
@@ -103,6 +103,9 @@ func (h *Handler) processEvaluation(ctx context.Context, job store.EvaluationJob
 // evaluateJob reads saved answers and calls the provider outside any transaction.
 // The provider owns transient retries and its timeout budget.
 func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*model.Message, *model.QuestionScore, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
 	thread, err := h.store.GetThread(job.ThreadID)
 	if err != nil {
 		return nil, nil, err

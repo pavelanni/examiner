@@ -112,6 +112,34 @@ func TestSlowFeedbackAcknowledgesWithinOneSecondAndSurvivesDisconnect(t *testing
 	}
 }
 
+func TestShutdownReturnsInFlightFeedbackToQueue(t *testing.T) {
+	entered := make(chan struct{})
+	env := newAnswerEnv(t, 0, contextEvaluator{evaluate: func(ctx context.Context) error {
+		close(entered)
+		<-ctx.Done()
+		return ctx.Err()
+	}})
+	stop := env.h.StartWorkers(t.Context(), 1)
+	t.Cleanup(stop)
+	if rec := env.post(t, "saved through restart"); rec.Code != http.StatusAccepted {
+		t.Fatalf("answer: %d", rec.Code)
+	}
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("feedback worker did not start")
+	}
+	stop()
+	if env.thread(t).Status != model.ThreadEvaluating || env.messageCount(t) != 1 {
+		t.Fatal("stopping the worker changed or lost the pending answer")
+	}
+	env.h.llm = &fakeLLM{}
+	runNextEvaluation(t, env.h)
+	if env.thread(t).Status != model.ThreadCompleted || env.messageCount(t) != 2 {
+		t.Fatal("a new worker could not finish the saved answer")
+	}
+}
+
 func (e *answerEnv) submit() *httptest.ResponseRecorder {
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, fmt.Sprintf("/exam/%d/submit", e.sessID), nil))
