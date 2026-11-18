@@ -17,6 +17,14 @@ templ Layout(title string) {
 			<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"/>
 			<script src="https://unpkg.com/htmx.org@2.0.4"></script>
 			<script>
+				// Replace an outdated answer form with the current saved turn.
+				document.addEventListener("htmx:beforeSwap", function (e) {
+					var xhr = e.detail.xhr;
+					if (xhr.status === 409 && xhr.getResponseHeader("X-Feedback-Conflict") === "1") {
+						e.detail.shouldSwap = true;
+						e.detail.isError = false;
+					}
+				});
 				// htmx does not swap 4xx responses. The server marks CSRF rejections
 				// with X-CSRF-Error; for those, resync the forms with the current
 				// cookie token (so pressing submit again works without losing the

@@ -202,11 +202,11 @@ JSON exports retain reset attempts with status `annulled` for history. The
 offline grader skips them when importing results, so they cannot be graded
 again as valid attempts.
 
-Run one exam server process per database. On startup, attempts whose final
-grading was interrupted return to an unfinished state. Students can continue
-the same saved variant and submit it again; questions, order, answers and
-saved scores are retained. Opening the database for export does not perform
-this recovery. Completed or reviewed attempts are unchanged.
+Run one exam server process per database. On startup the server resumes pending
+feedback and final grading from SQLite, including unfinished calls. An
+interrupted submission from a version predating the queue reopens so the
+student can resubmit the same saved variant. Only the exam server performs
+this recovery.
 
 #### Examples
 
@@ -222,9 +222,14 @@ this recovery. Completed or reviewed attempts are unchanged.
 
 LLM calls retry timeouts, network errors, HTTP 429 and 5xx, malformed JSON,
 and empty choices with exponential backoff and jitter. HTTP 400 and 401 are
-not retried. `Retry-After` is respected while the overall call budget allows;
-waiting and retries stop when the calling context is cancelled. Interactive
-feedback inherits the browser request's context.
+not retried. `Retry-After` is respected within the overall call budget.
+
+Submitting an answer saves it immediately. The question checks for feedback
+every two seconds. Students can answer another question, close the browser,
+or submit the exam while feedback is pending. If feedback fails, **Retry
+evaluation** evaluates the saved text. Final grading includes every saved
+answer. The results page updates automatically and offers resubmission if
+the provider cannot finish grading.
 
 The concurrency limit is shared by feedback and final grading. When the limit
 is greater than one, final grading uses at most `limit - 1` slots, reserving

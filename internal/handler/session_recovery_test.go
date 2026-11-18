@@ -76,6 +76,9 @@ func TestInterruptedGradingCanBeResubmitted(t *testing.T) {
 			if rec := submit(); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != fmt.Sprintf("/results/%d", id) {
 				t.Fatalf("resubmission failed: status %d, body %s", rec.Code, rec.Body.String())
 			}
+			for range threads {
+				runNextEvaluation(t, h)
+			}
 			if calls != len(threads) {
 				t.Fatalf("grading calls = %d, want %d", calls, len(threads))
 			}

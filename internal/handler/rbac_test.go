@@ -144,6 +144,7 @@ func TestRouteRoleMatrix(t *testing.T) {
 		want map[string]int // role -> status
 	}{
 		{"/", map[string]int{"anon": login, "studentA": 200, "studentB": 200, "teacher": 200, "admin": 200}},
+		{exam + "/answer/" + fmt.Sprint(env.threadA), map[string]int{"anon": login, "studentA": 200, "studentB": 403, "teacher": 200, "admin": 200}},
 		{exam, map[string]int{"anon": login, "studentA": 200, "studentB": 403, "teacher": 200, "admin": 200}},
 		// Results are the student's own page; staff use /review instead.
 		{results, map[string]int{"anon": login, "studentA": 200, "studentB": 403, "teacher": 403, "admin": 403}},
@@ -174,6 +175,10 @@ func TestStudentCannotWriteToAnotherStudentsSession(t *testing.T) {
 		fmt.Sprintf("/exam/%d/answer/%d", env.sessA, env.threadA), url.Values{"answer": {"hijack"}})
 	if answer.Code != http.StatusForbidden {
 		t.Errorf("answer: status %d, want 403", answer.Code)
+	}
+	poll := env.do("studentA", http.MethodGet, fmt.Sprintf("/exam/%d/answer/%d", env.sessA, env.threadOther), nil)
+	if poll.Code != http.StatusForbidden {
+		t.Errorf("polling a thread from a different session: %d", poll.Code)
 	}
 	submit := env.do("studentB", http.MethodPost, fmt.Sprintf("/exam/%d/submit", env.sessA), nil)
 	if submit.Code != http.StatusForbidden {

@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,12 +14,11 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-type requestMarker struct{}
-
 // contextEvaluator наблюдает контекст на границе обработчика и клиента LLM.
 type contextEvaluator struct {
-	evaluate func(context.Context) error
-	grade    func(context.Context) error
+	evaluate       func(context.Context) error
+	grade          func(context.Context) error
+	gradedMessages chan<- []model.Message
 }
 
 func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, _ []model.Message, _ int, _, _ int64) (*llm.GradeResult, string, error) {
@@ -30,114 +28,134 @@ func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, 
 	return &llm.GradeResult{Score: 5, MaxPoints: 10}, "", nil
 }
 
-func (e contextEvaluator) GradeThread(ctx context.Context, _ model.Question, _ []model.Message, _, _ int64) (*llm.GradeResult, error) {
+func (e contextEvaluator) GradeThread(ctx context.Context, _ model.Question, messages []model.Message, _, _ int64) (*llm.GradeResult, error) {
+	if e.gradedMessages != nil {
+		e.gradedMessages <- messages
+	}
 	if err := e.grade(ctx); err != nil {
 		return nil, err
 	}
 	return &llm.GradeResult{Score: 5, MaxPoints: 10}, nil
 }
 
-// TestAnswerCancelsLLMRequest проверяет отмену во время оценки и сохранность ответа.
-func TestAnswerCancelsLLMRequest(t *testing.T) {
-	entered := make(chan struct{})
-	testCtx, stop := context.WithTimeout(t.Context(), 2*time.Second)
-	defer stop()
-	var calls atomic.Int32
-	ev := contextEvaluator{evaluate: func(ctx context.Context) error {
-		if calls.Add(1) > 1 {
-			return nil
-		}
-		if ctx.Value(requestMarker{}) != "answer" {
-			t.Error("request values were not propagated")
-		}
+// Block the provider for up to a minute, with an explicit release so a passing
+// test can verify completion without waiting for the artificial delay.
+func slowFeedback(entered, release chan struct{}) func(context.Context) error {
+	return func(ctx context.Context) error {
 		close(entered)
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-testCtx.Done():
-			return testCtx.Err()
-		}
-	}}
-	env := newAnswerEnv(t, 3, ev)
-	ctx, cancel := context.WithCancel(context.WithValue(testCtx, requestMarker{}, "answer"))
-	defer cancel()
-	form := url.Values{"answer": {"saved answer"}}
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/exam/%d/answer/%d", env.sessID, env.threadID), strings.NewReader(form.Encode())).WithContext(ctx)
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	finished := make(chan struct{})
-	go func() { env.router.ServeHTTP(httptest.NewRecorder(), req); close(finished) }()
-	select {
-	case <-entered:
-	case <-testCtx.Done():
-		t.Fatal("evaluator was not called")
-	}
-	cancel()
-	select {
-	case <-finished:
-	case <-testCtx.Done():
-		t.Fatal("LLM ignored request cancellation")
-	}
-	if got := env.messageCount(t); got != 1 {
-		t.Fatalf("stored messages=%d, want only the saved student answer", got)
-	}
-	page := env.get(t, fmt.Sprintf("/exam/%d", env.sessID))
-	if !strings.Contains(page, "saved answer</textarea>") || !strings.Contains(page, "Retry evaluation") {
-		t.Fatal("saved answer cannot be resumed from the page")
-	}
-	if rec := env.post("different answer"); rec.Code != http.StatusConflict {
-		t.Fatalf("changed pending answer: status=%d", rec.Code)
-	}
-	if got := env.messageCount(t); got != 1 {
-		t.Fatalf("pending answer was duplicated: %d messages", got)
-	}
-	if rec := env.post("saved answer"); rec.Code != http.StatusOK {
-		t.Fatalf("resume: status=%d, body=%s", rec.Code, rec.Body.String())
-	}
-	if got := env.messageCount(t); got != 2 {
-		t.Fatalf("resumed answer: %d messages, want one student and one LLM message", got)
-	}
-	if calls.Load() != 2 {
-		t.Fatalf("evaluation calls=%d, want 2", calls.Load())
-	}
-	if !env.h.beginAnswer(env.threadID) {
-		t.Fatal("cancellation left the thread locked")
-	}
-	env.h.endAnswer(env.threadID)
-}
-
-// TestSubmitUsesIndependentLLMContext не отменяет финальную оценку при закрытии браузера.
-func TestSubmitUsesIndependentLLMContext(t *testing.T) {
-	calls := 0
-	env := newAnswerEnv(t, 3, contextEvaluator{grade: func(ctx context.Context) error {
-		calls++
-		if ctx.Err() != nil || ctx.Done() != nil {
-			t.Error("grading inherited browser cancellation")
-		}
-		if ctx.Value(requestMarker{}) != "submit" {
-			t.Error("grading lost request values")
+		case <-time.After(60 * time.Second):
+		case <-release:
 		}
 		return nil
-	}})
-	if _, err := env.store.AddMessage(model.Message{ThreadID: env.threadID, Role: model.RoleStudent, Content: "answer"}); err != nil {
-		t.Fatal(err)
 	}
-	ctx, cancel := context.WithCancel(context.WithValue(t.Context(), requestMarker{}, "submit"))
-	cancel()
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/exam/%d/submit", env.sessID), nil).WithContext(ctx)
+}
+
+func waitForState(t *testing.T, check func() bool) {
+	t.Helper()
+	deadline := time.NewTimer(5 * time.Second)
+	defer deadline.Stop()
+	for !check() {
+		select {
+		case <-deadline.C:
+			t.Fatal("worker did not reach expected state")
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+}
+
+func TestSlowFeedbackAcknowledgesWithinOneSecondAndSurvivesDisconnect(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	env := newAnswerEnv(t, 3, contextEvaluator{evaluate: slowFeedback(entered, release)})
+	t.Cleanup(env.h.StartWorkers(t.Context(), 1))
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	form := url.Values{"answer": {"saved answer"}, "answer_key": {"0"}}
+	req := httptest.NewRequest(http.MethodPost, env.answerPath(), strings.NewReader(form.Encode())).WithContext(ctx)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
-	env.router.ServeHTTP(rec, req)
-	if rec.Code != http.StatusSeeOther {
-		t.Fatalf("status=%d, body=%s", rec.Code, rec.Body.String())
+	finished := make(chan struct{})
+	go func() { env.router.ServeHTTP(rec, req); close(finished) }()
+	select {
+	case <-finished:
+	case <-time.After(time.Second):
+		t.Fatal("HTTP POST waited for the slow provider")
 	}
-	if calls != 1 {
-		t.Fatalf("grading calls=%d, want 1", calls)
+	cancel()
+	if rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "Answer saved.") || !strings.Contains(rec.Body.String(), "saved answer") {
+		t.Fatalf("acknowledgement: %d, %s", rec.Code, rec.Body.String())
 	}
-	sess, err := env.store.GetSession(env.sessID)
-	if err != nil {
-		t.Fatal(err)
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("saved answer did not reach the provider")
 	}
-	if sess.Status != model.StatusGraded {
-		t.Fatalf("status=%s, want graded", sess.Status)
+	if env.messageCount(t) != 1 || env.thread(t).Status != model.ThreadEvaluating {
+		t.Fatal("waiting answer was not saved")
+	}
+	poll := httptest.NewRequest(http.MethodGet, env.answerPath(), nil)
+	poll.Header.Set("HX-Request", "true")
+	rec = httptest.NewRecorder()
+	env.router.ServeHTTP(rec, poll)
+	if rec.Code != http.StatusNoContent || rec.Body.Len() != 0 {
+		t.Fatalf("pending poll: %d, %s", rec.Code, rec.Body.String())
+	}
+	close(release)
+	waitForState(t, func() bool { return env.thread(t).Status == model.ThreadCompleted })
+	rec = httptest.NewRecorder()
+	env.router.ServeHTTP(rec, poll)
+	if rec.Code != http.StatusOK || env.messageCount(t) != 2 || strings.Contains(rec.Body.String(), "every 2s") {
+		t.Fatalf("finished poll: %d, %s", rec.Code, rec.Body.String())
+	}
+}
+
+func (e *answerEnv) submit() *httptest.ResponseRecorder {
+	rec := httptest.NewRecorder()
+	e.router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, fmt.Sprintf("/exam/%d/submit", e.sessID), nil))
+	return rec
+}
+
+func TestSubmitGradesSavedAnswerWhileFeedbackIsRunning(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	graded := make(chan []model.Message, 1)
+	env := newAnswerEnv(t, 3, contextEvaluator{
+		evaluate:       slowFeedback(entered, release),
+		grade:          func(ctx context.Context) error { return ctx.Err() },
+		gradedMessages: graded,
+	})
+	stop := env.h.StartWorkers(t.Context(), 2)
+	t.Cleanup(stop)
+	if rec := env.post(t, "saved answer"); rec.Code != http.StatusAccepted {
+		t.Fatalf("answer: %d", rec.Code)
+	}
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("feedback has not started")
+	}
+	began := time.Now()
+	if rec := env.submit(); rec.Code != http.StatusSeeOther || time.Since(began) >= time.Second {
+		t.Fatalf("submit while feedback pending: %d after %s", rec.Code, time.Since(began))
+	}
+	select {
+	case messages := <-graded:
+		if len(messages) != 1 || messages[0].Content != "saved answer" || messages[0].Role != model.RoleStudent {
+			t.Fatalf("grading input: %+v", messages)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("final grading waited for in-flight feedback")
+	}
+	waitForState(t, func() bool {
+		sess, err := env.store.GetSession(env.sessID)
+		return err == nil && sess.Status == model.StatusGraded
+	})
+	close(release)
+	stop()
+	if env.messageCount(t) != 1 {
+		t.Fatal("late feedback changed the submitted conversation")
 	}
 }
 
@@ -154,14 +172,10 @@ func TestQueueTimeoutKeepsExamRetryable(t *testing.T) {
 	if _, err := env.store.AddMessage(model.Message{ThreadID: env.threadID, Role: model.RoleStudent, Content: "answer"}); err != nil {
 		t.Fatal(err)
 	}
-	submit := func() *httptest.ResponseRecorder {
-		rec := httptest.NewRecorder()
-		env.router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, fmt.Sprintf("/exam/%d/submit", env.sessID), nil))
-		return rec
-	}
-	if rec := submit(); rec.Code != http.StatusServiceUnavailable {
+	if rec := env.submit(); rec.Code != http.StatusSeeOther {
 		t.Fatalf("status=%d, body=%s", rec.Code, rec.Body.String())
 	}
+	runNextEvaluation(t, env.h)
 	sess, err := env.store.GetSession(env.sessID)
 	if err != nil {
 		t.Fatal(err)
@@ -183,9 +197,10 @@ func TestQueueTimeoutKeepsExamRetryable(t *testing.T) {
 	if grade != nil {
 		t.Fatalf("capacity timeout finalized the exam: %+v", grade)
 	}
-	if rec := submit(); rec.Code != http.StatusSeeOther {
+	if rec := env.submit(); rec.Code != http.StatusSeeOther {
 		t.Fatalf("resubmit: status=%d, body=%s", rec.Code, rec.Body.String())
 	}
+	runNextEvaluation(t, env.h)
 	sess, err = env.store.GetSession(env.sessID)
 	if err != nil {
 		t.Fatal(err)

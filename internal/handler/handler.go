@@ -9,13 +9,11 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
-	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
@@ -36,12 +34,9 @@ type Handler struct {
 	registration    registrationAdmission
 	teacherUploadMu sync.Mutex
 
-	// inFlight is the set of thread IDs with an answer being processed, so
-	// only one answer per thread runs at a time. Entries are removed when the
-	// request ends. In-process only: enough for a single replica; the
-	// SessionStore transition replaces it.
-	inFlightMu sync.Mutex
-	inFlight   map[int64]struct{}
+	// Initialized before serving. The durable jobs in SQLite are the source
+	// of truth; the notification just wakes an idle dispatcher.
+	workReady chan struct{}
 }
 
 // New creates a new Handler. The error is kept for callers; nothing in
@@ -127,6 +122,7 @@ func (h *Handler) Routes(r chi.Router) {
 		r.Get("/exam/{sessionID}", h.handleExamPage)
 		r.Post("/exam/start", h.handleStartExam)
 		r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
+		r.Get("/exam/{sessionID}/answer/{threadID}", h.handleFeedback)
 		r.Post("/exam/{sessionID}/submit", h.handleSubmit)
 		r.Get("/results/{sessionID}", h.handleStudentResults)
 
@@ -191,215 +187,7 @@ func (h *Handler) handleExamPage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// beginAnswer marks the thread as busy; it returns false if it already is.
-func (h *Handler) beginAnswer(threadID int64) bool {
-	h.inFlightMu.Lock()
-	defer h.inFlightMu.Unlock()
-	if _, busy := h.inFlight[threadID]; busy {
-		return false
-	}
-	if h.inFlight == nil {
-		h.inFlight = make(map[int64]struct{})
-	}
-	h.inFlight[threadID] = struct{}{}
-	return true
-}
-
-func (h *Handler) endAnswer(threadID int64) {
-	h.inFlightMu.Lock()
-	defer h.inFlightMu.Unlock()
-	delete(h.inFlight, threadID)
-}
-
-func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseIDParam(w, r, "sessionID")
-	if !ok {
-		return
-	}
-	threadID, ok := parseIDParam(w, r, "threadID")
-	if !ok {
-		return
-	}
-
-	answer := r.FormValue("answer")
-	if answer == "" {
-		http.Error(w, "answer cannot be empty", http.StatusBadRequest)
-		return
-	}
-
-	sess, bp, err := h.store.GetSessionWithBlueprint(sessionID)
-	if err != nil {
-		lookupError(w, err, "failed to get session with blueprint", "session_id", sessionID)
-		return
-	}
-
-	user := model.UserFromContext(r.Context())
-	if user.Role == model.UserRoleStudent && sess.StudentID != user.ID {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-
-	if sess.Status == model.StatusAnnulled {
-		sessionResetConflict(w, r, store.ErrSessionAnnulled)
-		return
-	}
-	if sess.Status != model.StatusInProgress {
-		http.Error(w, "exam already submitted", http.StatusBadRequest)
-		return
-	}
-
-	// Check time limit.
-	if calculateTimeRemaining(sess, bp) == 0 {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(http.StatusForbidden)
-		_, _ = fmt.Fprint(w, `<p class="time-exceeded-error">Time limit exceeded. Please submit your exam.</p>`)
-		return
-	}
-
-	// One answer per thread at a time: a double click or a second tab gets
-	// 409 instead of racing the first request past the follow-up limit.
-	if !h.beginAnswer(threadID) {
-		http.Error(w, "an answer to this question is already being evaluated", http.StatusConflict)
-		return
-	}
-	defer h.endAnswer(threadID)
-
-	thread, err := h.store.GetThread(threadID)
-	if err != nil {
-		lookupError(w, err, "failed to get thread", "thread_id", threadID)
-		return
-	}
-
-	if thread.SessionID != sessionID {
-		http.Error(w, "thread does not belong to session", http.StatusForbidden)
-		return
-	}
-
-	if thread.Status == model.ThreadCompleted {
-		http.Error(w, "this question is already completed", http.StatusConflict)
-		return
-	}
-
-	messages, err := h.store.GetMessages(threadID)
-	if err != nil {
-		slog.Error("failed to get messages", "thread_id", threadID, "error", err)
-		http.Error(w, "failed to load answer", http.StatusInternalServerError)
-		return
-	}
-	pending := len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent
-	if pending && messages[len(messages)-1].Content != answer {
-		http.Error(w, "a saved answer is awaiting evaluation; retry that answer", http.StatusConflict)
-		return
-	}
-	if !pending {
-		_, err = h.store.AddMessage(model.Message{ThreadID: threadID, Role: model.RoleStudent, Content: answer})
-		if err == nil {
-			messages, err = h.store.GetMessages(threadID)
-		}
-		if err != nil {
-			if sessionResetConflict(w, r, err) {
-				return
-			}
-			slog.Error("failed to save student message", "thread_id", threadID, "error", err)
-			http.Error(w, "failed to save answer", http.StatusInternalServerError)
-			return
-		}
-	}
-
-	question, err := h.store.GetQuestion(thread.QuestionID)
-	if err != nil {
-		slog.Error("failed to get question", "question_id", thread.QuestionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	result, _, err := h.llm.EvaluateAnswer(r.Context(), question, messages, bp.MaxFollowups, sessionID, threadID)
-	if !h.checkAttemptNotReset(w, r, sessionID) {
-		return
-	}
-	if err != nil {
-		slog.Error("LLM evaluation failed", "error", err)
-		http.Error(w, "LLM evaluation failed", http.StatusInternalServerError)
-		return
-	}
-
-	// The limit lives in the prompt only as a request; enforce it here.
-	if result.NeedFollowup && strings.TrimSpace(result.FollowupQ) == "" {
-		result.NeedFollowup = false
-	}
-	if result.NeedFollowup && thread.FollowupCount >= bp.MaxFollowups {
-		slog.Warn("LLM requested follow-up beyond limit",
-			"session_id", sessionID,
-			"thread_id", threadID,
-			"followup_count", thread.FollowupCount,
-			"max_followups", bp.MaxFollowups,
-		)
-		result.NeedFollowup = false
-		result.FollowupQ = ""
-	}
-
-	llmMsg := model.Message{
-		ThreadID: threadID,
-		Role:     model.RoleLLM,
-		Content:  result.Feedback,
-		Score:    &result.Score,
-	}
-	if result.NeedFollowup {
-		llmMsg.Followup = result.FollowupQ
-	}
-
-	_, err = h.store.AddMessage(llmMsg)
-	if err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Error("failed to add LLM message", "thread_id", threadID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	newStatus := model.ThreadAnswered
-	if !result.NeedFollowup {
-		newStatus = model.ThreadCompleted
-	}
-	if err := h.store.UpdateThreadStatus(threadID, newStatus); err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Warn("failed to update thread status", "thread_id", threadID, "status", newStatus, "error", err)
-	}
-
-	updatedMessages, err := h.store.GetMessages(threadID)
-	if err != nil {
-		slog.Warn("failed to get updated messages", "thread_id", threadID, "error", err)
-	}
-	updatedThread, err := h.store.GetThread(threadID)
-	if err != nil {
-		slog.Warn("failed to get updated thread", "thread_id", threadID, "error", err)
-	}
-
-	allThreads, err := h.store.GetThreadsForSession(sessionID)
-	if err != nil {
-		slog.Warn("failed to get threads for session", "session_id", sessionID, "error", err)
-	}
-	threadIndex := 0
-	for i, t := range allThreads {
-		if t.ID == threadID {
-			threadIndex = i
-			break
-		}
-	}
-
-	// Recalculate time status for accurate UI rendering after LLM evaluation.
-	timeExceeded := calculateTimeRemaining(sess, bp) == 0
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ThreadContent(updatedThread, question, updatedMessages, sessionID, threadIndex, sess, timeExceeded, h.config.ScoreVisibility.LiveScorePolicy(sess.Status)).Render(r.Context(), w); err != nil {
-		slog.Error("render error", "error", err)
-	}
-}
-
-func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
 	sessionID, ok := parseIDParam(w, r, "sessionID")
 	if !ok {
 		return
@@ -407,168 +195,22 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	sess, err := h.store.GetSession(sessionID)
 	if err != nil {
-		lookupError(w, err, "failed to get session", "session_id", sessionID)
+		lookupError(w, err, "load results session", "session_id", sessionID)
 		return
 	}
-
 	user := model.UserFromContext(r.Context())
-	if user.Role == model.UserRoleStudent && sess.StudentID != user.ID {
+	if sess.StudentID != user.ID {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
-
-	if sess.Status == model.StatusAnnulled {
-		sessionResetConflict(w, r, store.ErrSessionAnnulled)
+	w.Header().Set("Cache-Control", "no-store")
+	if r.Header.Get("HX-Request") == "true" && (sess.Status == model.StatusSubmitted || sess.Status == model.StatusGrading) {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if sess.Status != model.StatusInProgress {
-		http.Error(w, "exam already submitted", http.StatusConflict)
-		return
-	}
-
-	if err := h.store.UpdateSessionStatus(sessionID, model.StatusSubmitted); err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Error("failed to update session to submitted", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGrading); err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Error("failed to update session to grading", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	threads, err := h.store.GetThreadsForSession(sessionID)
-	if err != nil {
-		slog.Error("failed to get threads for grading", "session_id", sessionID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
-	}
-
-	// Финальная оценка не отменяется при закрытии браузера; каждый вызов
-	// ограничен бюджетом llm.Client. Постоянная очередь реализуется в #48.
-	gradingCtx := context.WithoutCancel(r.Context())
-	var totalScore float64
-	var totalMaxPoints int
-
-	for _, t := range threads {
-		if !h.checkAttemptNotReset(w, r, sessionID) {
-			return
-		}
-		question, err := h.store.GetQuestion(t.QuestionID)
-		if err != nil {
-			continue
-		}
-		messages, err := h.store.GetMessages(t.ID)
-		if err != nil || len(messages) == 0 {
-			if err := h.store.UpsertScore(model.QuestionScore{
-				ThreadID:    t.ID,
-				LLMScore:    0,
-				LLMFeedback: "No answer provided.",
-			}); err != nil {
-				if sessionResetConflict(w, r, err) {
-					return
-				}
-				slog.Warn("failed to upsert zero score", "thread_id", t.ID, "error", err)
-			}
-			totalMaxPoints += question.MaxPoints
-			continue
-		}
-
-		result, err := h.llm.GradeThread(gradingCtx, question, messages, sessionID, t.ID)
-		if err != nil {
-			slog.Error("grading failed", "thread_id", t.ID, "error", err)
-			if errors.Is(err, llm.ErrQueueTimeout) {
-				if restoreErr := h.store.UpdateSessionStatus(sessionID, model.StatusInProgress); restoreErr != nil {
-					if sessionResetConflict(w, r, restoreErr) {
-						return
-					}
-					slog.Error("failed to restore exam after capacity timeout", "session_id", sessionID, "error", restoreErr)
-					http.Error(w, "failed to restore exam", http.StatusInternalServerError)
-					return
-				}
-				http.Error(w, appI18n.T(r.Context(), "LLMQueueBusy"), http.StatusServiceUnavailable)
-				return
-			}
-			if err := h.store.UpsertScore(model.QuestionScore{
-				ThreadID:    t.ID,
-				LLMScore:    0,
-				LLMFeedback: "Automatic grading failed.",
-			}); err != nil {
-				if sessionResetConflict(w, r, err) {
-					return
-				}
-				slog.Warn("failed to upsert error score", "thread_id", t.ID, "error", err)
-			}
-			totalMaxPoints += question.MaxPoints
-			continue
-		}
-
-		if err := h.store.UpsertScore(model.QuestionScore{
-			ThreadID:    t.ID,
-			LLMScore:    result.Score,
-			LLMFeedback: result.Feedback,
-		}); err != nil {
-			if sessionResetConflict(w, r, err) {
-				return
-			}
-			slog.Warn("failed to upsert score", "thread_id", t.ID, "error", err)
-		}
-		if err := h.store.UpdateThreadStatus(t.ID, model.ThreadCompleted); err != nil {
-			if sessionResetConflict(w, r, err) {
-				return
-			}
-			slog.Warn("failed to update thread to completed", "thread_id", t.ID, "error", err)
-		}
-
-		totalScore += result.Score
-		totalMaxPoints += question.MaxPoints
-	}
-
-	overallGrade := 0.0
-	if totalMaxPoints > 0 {
-		overallGrade = (totalScore / float64(totalMaxPoints)) * 100
-	}
-
-	if err := h.store.UpsertGrade(model.Grade{
-		SessionID: sessionID,
-		LLMGrade:  overallGrade,
-	}); err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Warn("failed to upsert grade", "session_id", sessionID, "error", err)
-	}
-	if err := h.store.UpdateSessionStatus(sessionID, model.StatusGraded); err != nil {
-		if sessionResetConflict(w, r, err) {
-			return
-		}
-		slog.Warn("failed to update session to graded", "session_id", sessionID, "error", err)
-	}
-
-	http.Redirect(w, r, h.path(fmt.Sprintf("/results/%d", sessionID)), http.StatusSeeOther)
-}
-
-func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
-	sessionID, ok := parseIDParam(w, r, "sessionID")
-	if !ok {
-		return
-	}
-
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
 		lookupError(w, err, "failed to get session view", "session_id", sessionID)
-		return
-	}
-
-	user := model.UserFromContext(r.Context())
-	if view.Session.StudentID != user.ID {
-		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 

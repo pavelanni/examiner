@@ -106,9 +106,11 @@ const (
 type ThreadStatus string
 
 const (
-	ThreadOpen      ThreadStatus = "open"
-	ThreadAnswered  ThreadStatus = "answered"
-	ThreadCompleted ThreadStatus = "completed"
+	ThreadOpen           ThreadStatus = "open"
+	ThreadAnswered       ThreadStatus = "answered"
+	ThreadCompleted      ThreadStatus = "completed"
+	ThreadEvaluating     ThreadStatus = "evaluating"
+	ThreadFeedbackFailed ThreadStatus = "feedback_failed"
 )
 
 // Difficulty represents question difficulty level.

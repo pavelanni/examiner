@@ -393,7 +393,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = listener.Close() }()
 
-	// A previous process may have stopped during synchronous final grading.
+	// Reclaim interrupted jobs and reopen submissions from older versions.
 	// Recover only when starting the exam server, not when opening a Store
 	// from export, prep or another connection while grading is still running.
 	recovered, err := db.RecoverInterruptedSessions()
@@ -403,6 +403,9 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	if recovered > 0 {
 		slog.Info("restored interrupted exams for resubmission", "sessions", recovered)
 	}
+
+	stopWorkers := h.StartWorkers(cmd.Context(), v.GetInt("llm-max-concurrency"))
+	defer stopWorkers()
 
 	slog.Info("starting server",
 		"addr", addr,

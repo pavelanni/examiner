@@ -14,10 +14,18 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ td(ctx, "ResultsSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
-		if policy.Preliminary {
+		if view.Session.Status == model.StatusSubmitted || view.Session.Status == model.StatusGrading {
+			<p role="status" hx-get={ p(ctx, fmt.Sprintf("/results/%d", view.Session.ID)) } hx-trigger="every 2s" hx-select="main" hx-target="main" hx-swap="outerHTML">
+				{ t(ctx, "FinalGradePending") }
+			</p>
+		} else if view.Session.Status == model.StatusInProgress && view.Session.SubmittedAt != nil {
+			<p role="status">{ t(ctx, "FinalGradeRetry") }
+				<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/exam/%d", view.Session.ID))) }>{ t(ctx, "Continue") }</a>
+			</p>
+		} else if policy.Preliminary {
 			@resultsNotice(t(ctx, "ResultsDisclaimer"))
 		}
-		if policy.Hidden && view.Session.Status != model.StatusAnnulled {
+		if policy.Hidden {
 			@resultsNotice(t(ctx, "ResultsAwaitingReview"))
 		}
 		@attemptResetNotice(view)

@@ -198,5 +198,17 @@
   {"id": "StatementReviewed", "other": "Проверено"},
   {"id": "StatementFrom", "other": "Начало экзамена с"},
   {"id": "StatementTo", "other": "Начало экзамена по"},
-  {"id": "StatementTimezone", "other": "Часовой пояс"}
+  {"id": "StatementTimezone", "other": "Часовой пояс"},
+  {"id": "ThreadOpen", "other": "Ожидает ответа"},
+  {"id": "ThreadAnswered", "other": "Ответ получен"},
+  {"id": "ThreadCompleted", "other": "Завершён"},
+  {"id": "FeedbackPending", "other": "Ответ сохранён, ожидаем обратную связь…"},
+  {"id": "FeedbackFailed", "other": "Не удалось получить обратную связь. Ваш ответ сохранён. Можно повторить оценку или сдать экзамен."},
+  {"id": "FeedbackUnavailable", "other": "Обратная связь недоступна"},
+  {"id": "FeedbackStale", "other": "Вопрос изменился. Обновите страницу, чтобы увидеть сохранённые ответы."},
+  {"id": "FeedbackEmpty", "other": "Введите ответ."},
+  {"id": "FeedbackInvalidForm", "other": "Не удалось прочитать форму ответа. Обновите вопрос и попробуйте ещё раз."},
+  {"id": "FeedbackTimeExpired", "other": "Время истекло. Сдайте экзамен."},
+  {"id": "FinalGradePending", "other": "Ответы сохранены. Идёт итоговая оценка."},
+  {"id": "FinalGradeRetry", "other": "Итоговую оценку получить не удалось. Ответы сохранены. Откройте экзамен и отправьте его на проверку ещё раз."}
 ]

@@ -1,22 +1,29 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ ThreadContent(thread model.QuestionThread, question model.Question, messages []model.Message, sessionID int64, index int, session model.ExamSession, timeExceeded bool, liveScore model.LiveScorePolicy) {
+templ ThreadContent(thread model.QuestionThread, question model.Question, messages []model.Message, index int, session model.ExamSession, timeExceeded bool, liveScore model.LiveScorePolicy) {
 	<h3>
 		{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(index + 1)}) }
-		<span class={ "status-badge", "status-" + string(thread.Status) }>{ string(thread.Status) }</span>
 	</h3>
 	<p class="question-meta">
 		<strong>{ question.Topic }</strong>
 		({ string(question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(question.MaxPoints)}) })
 	</p>
 	<p class="question-text">{ question.Text }</p>
+	<div class="thread-feedback">
+		@ThreadFeedback(thread, question, messages, session, timeExceeded, liveScore)
+	</div>
+}
+
+templ ThreadFeedback(thread model.QuestionThread, question model.Question, messages []model.Message, session model.ExamSession, timeExceeded bool, liveScore model.LiveScorePolicy) {
+	<span class={ "status-badge", "status-" + string(thread.Status) }>{ threadStatusLabel(ctx, thread.Status) }</span>
 	if len(messages) > 0 {
 		<div class="messages">
 			for _, m := range messages {
@@ -31,7 +38,8 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 					if m.Role == model.RoleStudent {
 						<div>{ m.Text() }</div>
 					} else {
-						<div class="markdown">@evaluatorMessage(m)</div>
+						<div class="markdown">@evaluatorMessage(m)
+</div>
 					}
 					if liveScore.Show && m.Score != nil {
 						<div class="message-score">
@@ -45,53 +53,86 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 			}
 		</div>
 	}
-	if session.Status == model.StatusInProgress {
-		if thread.Status != model.ThreadCompleted {
-			if pendingAnswer(messages) != "" {
-				<p>{ t(ctx, "SavedAnswerPending") }</p>
-			}
+	if session.Status == model.StatusInProgress && thread.Status != model.ThreadCompleted {
+		if thread.Status == model.ThreadEvaluating {
+			@feedbackPending(session.ID, thread.ID)
+		} else {
+			{{ retry := len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent }}
+			{{ action := p(ctx, fmt.Sprintf("/exam/%d/answer/%d", session.ID, thread.ID)) }}
 			<form
-				hx-post={ p(ctx, fmt.Sprintf("/exam/%d/answer/%d", sessionID, thread.ID)) }
-				hx-target={ fmt.Sprintf("#thread-%d", thread.ID) }
+				method="POST"
+				action={ templ.SafeURL(action) }
+				hx-post={ action }
+				hx-target="closest .thread-feedback"
 				hx-swap="innerHTML"
-				hx-disabled-elt="find .answer-input, find .answer-submit"
+				hx-disabled-elt="find button"
 			>
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
-				<textarea
-					class="answer-input"
-					name="answer"
-					rows="4"
-					if len(messages) > 0 {
-						placeholder={ t(ctx, "TypeFollowup") }
-					} else {
-						placeholder={ t(ctx, "TypeAnswer") }
-					}
-					required
-					if timeExceeded {
-						disabled
-					}
-					if pendingAnswer(messages) != "" {
-						readonly
-					}
-				>{ pendingAnswer(messages) }</textarea>
-				<button
-					class="answer-submit"
-					type="submit"
-					if timeExceeded {
-						disabled
-					}
-				>
-					if pendingAnswer(messages) != "" {
-						{ t(ctx, "RetryEvaluation") }
-					} else if len(messages) > 0 {
-						{ t(ctx, "Reply") }
-					} else {
-						{ t(ctx, "Answer") }
-					}
-				</button>
-				<span class="htmx-indicator" aria-busy="true">{ t(ctx, "Evaluating") }</span>
+				<input type="hidden" name="answer_key" value={ answerKey(messages) }/>
+				if retry {
+					<p role="status">{ t(ctx, "FeedbackFailed") }</p>
+					<input type="hidden" name="retry" value="1"/>
+					<button type="submit">{ t(ctx, "RetryEvaluation") }</button>
+				} else {
+					<textarea
+						class="answer-input"
+						name="answer"
+						rows="4"
+						required
+						disabled?={ timeExceeded }
+						if len(messages) > 0 {
+							placeholder={ t(ctx, "TypeFollowup") }
+						} else {
+							placeholder={ t(ctx, "TypeAnswer") }
+						}
+					></textarea>
+					<button class="answer-submit" type="submit" disabled?={ timeExceeded }>
+						if len(messages) > 0 {
+							{ t(ctx, "Reply") }
+						} else {
+							{ t(ctx, "Answer") }
+						}
+					</button>
+				}
 			</form>
 		}
+	}
+}
+
+templ feedbackPending(sessionID, threadID int64) {
+	<p
+		role="status"
+		hx-get={ p(ctx, fmt.Sprintf("/exam/%d/answer/%d", sessionID, threadID)) }
+		hx-trigger="every 2s"
+		hx-target="closest .thread-feedback"
+		hx-swap="innerHTML"
+	>
+		{ t(ctx, "FeedbackPending") }
+	</p>
+}
+
+// The form describes the exact conversation turn shown to the student.
+func answerKey(messages []model.Message) string {
+	if len(messages) == 0 {
+		return "0"
+	}
+	return strconv.FormatInt(messages[len(messages)-1].ID, 10)
+}
+
+func threadStatusLabel(ctx context.Context, status model.ThreadStatus) string {
+	switch status {
+	case model.ThreadOpen:
+		return t(ctx, "ThreadOpen")
+	case model.ThreadAnswered:
+		return t(ctx, "ThreadAnswered")
+	case model.ThreadCompleted:
+		return t(ctx, "ThreadCompleted")
+	case model.ThreadEvaluating:
+		return t(ctx, "Evaluating")
+	case model.ThreadFeedbackFailed:
+		return t(ctx, "FeedbackUnavailable")
+	default:
+		return string(status)
 	}
 }
 
@@ -100,12 +141,4 @@ func messageClass(role model.Role) string {
 		return "message-student"
 	}
 	return "message-assistant"
-}
-
-// pendingAnswer возвращает сохранённый ответ без последующей обратной связи.
-func pendingAnswer(messages []model.Message) string {
-	if len(messages) > 0 && messages[len(messages)-1].Role == model.RoleStudent {
-		return messages[len(messages)-1].Content
-	}
-	return ""
 }

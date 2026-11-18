@@ -21,21 +21,6 @@ func sessionResetConflict(w http.ResponseWriter, r *http.Request, err error) boo
 	return true
 }
 
-// A read avoids starting more LLM work after reset. The store's transactional
-// write guards still close the race between this check and saving a result.
-func (h *Handler) checkAttemptNotReset(w http.ResponseWriter, r *http.Request, sessionID int64) bool {
-	sess, err := h.store.GetSession(sessionID)
-	if err != nil {
-		lookupError(w, err, "failed to check attempt status", "session_id", sessionID)
-		return false
-	}
-	if sess.Status == model.StatusAnnulled {
-		sessionResetConflict(w, r, store.ErrSessionAnnulled)
-		return false
-	}
-	return true
-}
-
 func (h *Handler) handleResetAttemptPage(w http.ResponseWriter, r *http.Request) {
 	h.resetAttempt(w, r, false)
 }

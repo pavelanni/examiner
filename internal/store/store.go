@@ -25,6 +25,10 @@ func New(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
+	if dbPath == ":memory:" {
+		// Each SQLite in-memory connection otherwise has its own database.
+		db.SetMaxOpenConns(1)
+	}
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("ping database: %w", err)
 	}
@@ -91,6 +95,20 @@ func (s *Store) migrate() error {
 		token_count INTEGER NOT NULL DEFAULT 0,
 		FOREIGN KEY (thread_id) REFERENCES question_threads(id)
 	);
+
+	CREATE TABLE IF NOT EXISTS evaluation_jobs (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		thread_id INTEGER NOT NULL REFERENCES question_threads(id),
+		kind TEXT NOT NULL CHECK(kind IN ('feedback', 'grade')),
+		claimed_at DATETIME,
+		score REAL,
+		feedback TEXT NOT NULL DEFAULT '',
+		UNIQUE(thread_id, kind)
+	);
+	CREATE INDEX IF NOT EXISTS idx_evaluation_ready ON evaluation_jobs(kind, id)
+		WHERE claimed_at IS NULL AND score IS NULL;
+	CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, id);
+	CREATE INDEX IF NOT EXISTS idx_threads_session ON question_threads(session_id);
 
 	CREATE TABLE IF NOT EXISTS question_scores (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -652,20 +670,8 @@ func (s *Store) UpdateThreadStatus(id int64, status model.ThreadStatus) error {
 func (s *Store) AddMessage(msg model.Message) (int64, error) {
 	var id int64
 	err := s.withMutableThread(msg.ThreadID, func(tx *sql.Tx) error {
-		res, err := tx.Exec(
-			`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count, score) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount, msg.Score,
-		)
-		if err != nil {
-			return err
-		}
-		id, err = res.LastInsertId()
-		if err != nil {
-			return err
-		}
-		if msg.Followup != "" {
-			_, err = tx.Exec(`UPDATE question_threads SET followup_count = followup_count + 1 WHERE id = ?`, msg.ThreadID)
-		}
+		var err error
+		id, err = insertMessage(tx, msg)
 		return err
 	})
 	if err != nil {
@@ -673,6 +679,22 @@ func (s *Store) AddMessage(msg model.Message) (int64, error) {
 	}
 	slog.Debug("added message", "id", id, "thread_id", msg.ThreadID, "role", msg.Role)
 	return id, nil
+}
+
+// insertMessage keeps a reply and its follow-up count in the caller's transaction.
+func insertMessage(tx *sql.Tx, msg model.Message) (int64, error) {
+	res, err := tx.Exec(
+		`INSERT INTO messages (thread_id, role, content, followup, created_at, token_count, score) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		msg.ThreadID, msg.Role, msg.Content, msg.Followup, time.Now(), msg.TokenCount, msg.Score)
+	if err != nil {
+		return 0, err
+	}
+	if msg.Followup != "" {
+		if _, err := tx.Exec(`UPDATE question_threads SET followup_count = followup_count + 1 WHERE id = ?`, msg.ThreadID); err != nil {
+			return 0, err
+		}
+	}
+	return res.LastInsertId()
 }
 
 // splitLegacyFollowups moves follow-up questions that were stored appended to

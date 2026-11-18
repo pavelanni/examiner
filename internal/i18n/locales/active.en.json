@@ -198,5 +198,17 @@
   {"id": "StatementReviewed", "other": "Reviewed"},
   {"id": "StatementFrom", "other": "Exam start date from"},
   {"id": "StatementTo", "other": "Exam start date through"},
-  {"id": "StatementTimezone", "other": "Time zone"}
+  {"id": "StatementTimezone", "other": "Time zone"},
+  {"id": "ThreadOpen", "other": "Open"},
+  {"id": "ThreadAnswered", "other": "Answered"},
+  {"id": "ThreadCompleted", "other": "Completed"},
+  {"id": "FeedbackPending", "other": "Answer saved. Waiting for feedback…"},
+  {"id": "FeedbackFailed", "other": "Feedback is unavailable. Your answer is saved. You can retry or submit your exam."},
+  {"id": "FeedbackUnavailable", "other": "Feedback unavailable"},
+  {"id": "FeedbackStale", "other": "This question has changed. Reload it to see your saved answers."},
+  {"id": "FeedbackEmpty", "other": "Enter an answer."},
+  {"id": "FeedbackInvalidForm", "other": "Could not read the answer form. Reload the question and try again."},
+  {"id": "FeedbackTimeExpired", "other": "Time has expired. Submit your exam."},
+  {"id": "FinalGradePending", "other": "Your answers are saved. Final grading is in progress."},
+  {"id": "FinalGradeRetry", "other": "Final grading could not finish. Your answers are saved. Open the exam to submit it again."}
 ]

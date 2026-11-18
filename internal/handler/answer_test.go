@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -20,12 +21,10 @@ import (
 )
 
 // fakeLLM is an Evaluator that always asks for another follow-up,
-// whatever the limit says. It counts calls and can block to hold a request in flight.
+// whatever the limit says. It counts evaluation calls.
 type fakeLLM struct {
-	mu      sync.Mutex
-	calls   int
-	entered chan struct{} // receives once per EvaluateAnswer call, if non-nil
-	release chan struct{} // EvaluateAnswer blocks until it is closed, if non-nil
+	mu    sync.Mutex
+	calls int
 
 	emptyFollowupQ bool  // ask for a follow-up but leave the question empty
 	err            error // returned by EvaluateAnswer, if non-nil
@@ -36,12 +35,6 @@ func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.
 	f.calls++
 	n := f.calls
 	f.mu.Unlock()
-	if f.entered != nil {
-		f.entered <- struct{}{}
-	}
-	if f.release != nil {
-		<-f.release
-	}
 	if f.err != nil {
 		return nil, "", f.err
 	}
@@ -117,6 +110,7 @@ func newAnswerEnv(t *testing.T, maxFollowups int, ev Evaluator) *answerEnv {
 		})
 	})
 	r.Post("/exam/{sessionID}/answer/{threadID}", h.handleAnswer)
+	r.Get("/exam/{sessionID}/answer/{threadID}", h.handleFeedback)
 	r.Get("/exam/{sessionID}", h.handleExamPage)
 	r.Post("/exam/{sessionID}/submit", h.handleSubmit)
 	r.Get("/results/{sessionID}", h.handleStudentResults)
@@ -124,14 +118,43 @@ func newAnswerEnv(t *testing.T, maxFollowups int, ev Evaluator) *answerEnv {
 	return &answerEnv{h: h, store: s, router: r, sessID: sessID, threadID: threads[0].ID}
 }
 
-func (e *answerEnv) post(answer string) *httptest.ResponseRecorder {
-	form := url.Values{"answer": {answer}}
-	req := httptest.NewRequest(http.MethodPost,
-		fmt.Sprintf("/exam/%d/answer/%d", e.sessID, e.threadID), strings.NewReader(form.Encode()))
+func (e *answerEnv) answerPath() string {
+	return fmt.Sprintf("/exam/%d/answer/%d", e.sessID, e.threadID)
+}
+
+func (e *answerEnv) turn(t *testing.T) string {
+	t.Helper()
+	messages, err := e.store.GetMessages(e.threadID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) == 0 {
+		return "0"
+	}
+	return strconv.FormatInt(messages[len(messages)-1].ID, 10)
+}
+
+func (e *answerEnv) post(t *testing.T, answer string) *httptest.ResponseRecorder {
+	t.Helper()
+	return e.postForm(url.Values{"answer": {answer}, "answer_key": {e.turn(t)}})
+}
+
+func (e *answerEnv) postForm(form url.Values) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(http.MethodPost, e.answerPath(), strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("HX-Request", "true")
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, req)
 	return rec
+}
+
+func runNextEvaluation(t *testing.T, h *Handler) {
+	t.Helper()
+	job, err := h.store.ClaimEvaluation(t.Context(), false)
+	if err != nil || job == nil {
+		t.Fatalf("expected a queued job, got %+v, %v", job, err)
+	}
+	h.processEvaluation(t.Context(), *job)
 }
 
 func (e *answerEnv) thread(t *testing.T) model.QuestionThread {
@@ -157,10 +180,11 @@ func TestAnswerEnforcesFollowupLimit(t *testing.T) {
 	env := newAnswerEnv(t, limit, &fakeLLM{})
 
 	for i := 1; i <= limit+1; i++ {
-		rec := env.post(fmt.Sprintf("answer %d", i))
-		if rec.Code != http.StatusOK {
+		rec := env.post(t, fmt.Sprintf("answer %d", i))
+		if rec.Code != http.StatusAccepted {
 			t.Fatalf("answer %d: status %d, body %q", i, rec.Code, rec.Body.String())
 		}
+		runNextEvaluation(t, env.h)
 		th := env.thread(t)
 		if th.FollowupCount > limit {
 			t.Fatalf("after answer %d: FollowupCount = %d, exceeds limit %d", i, th.FollowupCount, limit)
@@ -187,9 +211,10 @@ func TestAnswerEnforcesFollowupLimit(t *testing.T) {
 func TestAnswerWithZeroFollowupsCompletesImmediately(t *testing.T) {
 	env := newAnswerEnv(t, 0, &fakeLLM{})
 
-	if rec := env.post("answer"); rec.Code != http.StatusOK {
+	if rec := env.post(t, "answer"); rec.Code != http.StatusAccepted {
 		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
 	}
+	runNextEvaluation(t, env.h)
 	th := env.thread(t)
 	if th.Status != model.ThreadCompleted || th.FollowupCount != 0 {
 		t.Errorf("thread = %+v, want completed with 0 follow-ups", th)
@@ -199,9 +224,10 @@ func TestAnswerWithZeroFollowupsCompletesImmediately(t *testing.T) {
 func TestAnswerWithEmptyFollowupQuestionCompletesThread(t *testing.T) {
 	env := newAnswerEnv(t, 3, &fakeLLM{emptyFollowupQ: true})
 
-	if rec := env.post("answer"); rec.Code != http.StatusOK {
+	if rec := env.post(t, "answer"); rec.Code != http.StatusAccepted {
 		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
 	}
+	runNextEvaluation(t, env.h)
 	th := env.thread(t)
 	if th.Status != model.ThreadCompleted || th.FollowupCount != 0 {
 		t.Errorf("thread = %+v, want completed with 0 follow-ups (no question was asked)", th)
@@ -211,11 +237,12 @@ func TestAnswerWithEmptyFollowupQuestionCompletesThread(t *testing.T) {
 func TestAnswerToCompletedThreadIsRejected(t *testing.T) {
 	fake := &fakeLLM{}
 	env := newAnswerEnv(t, 0, fake)
-	env.post("first") // max-followups 0: the thread completes at once
+	env.post(t, "first")
+	runNextEvaluation(t, env.h)
 	before := env.messageCount(t)
 	calls := fake.callCount()
 
-	rec := env.post("sneaky extra answer")
+	rec := env.post(t, "sneaky extra answer")
 
 	if rec.Code != http.StatusConflict {
 		t.Errorf("status = %d, want 409", rec.Code)
@@ -228,49 +255,78 @@ func TestAnswerToCompletedThreadIsRejected(t *testing.T) {
 	}
 }
 
-func TestConcurrentAnswersToSameThreadAreRejected(t *testing.T) {
-	fake := &fakeLLM{entered: make(chan struct{}, 2), release: make(chan struct{})}
+func TestConcurrentAndStaleFormsCannotDuplicateAnswers(t *testing.T) {
+	fake := &fakeLLM{}
 	env := newAnswerEnv(t, 3, fake)
-
-	first := make(chan *httptest.ResponseRecorder, 1)
-	go func() { first <- env.post("first") }()
-	<-fake.entered // first request is now inside the LLM call
-
-	rec := env.post("double click")
-	if rec.Code != http.StatusConflict {
-		t.Errorf("second concurrent answer: status = %d, want 409", rec.Code)
+	form := url.Values{"answer": {"same answer"}, "answer_key": {"0"}}
+	ready := make(chan struct{})
+	done := make(chan int, 2)
+	for range 2 {
+		go func() {
+			<-ready
+			done <- env.postForm(form).Code
+		}()
 	}
-
-	close(fake.release)
-	if rec := <-first; rec.Code != http.StatusOK {
-		t.Errorf("first answer: status = %d, want 200", rec.Code)
+	close(ready)
+	codes := map[int]int{}
+	for range 2 {
+		codes[<-done]++
 	}
-	if fake.callCount() != 1 {
-		t.Errorf("LLM calls = %d, want 1", fake.callCount())
+	if codes[http.StatusAccepted] != 1 || codes[http.StatusConflict] != 1 || env.messageCount(t) != 1 {
+		t.Fatalf("concurrent POSTs: status counts %v, messages %d", codes, env.messageCount(t))
 	}
-	if got := env.messageCount(t); got != 2 {
-		t.Errorf("messages = %d, want 2 (one student, one LLM)", got)
+	runNextEvaluation(t, env.h)
+	if rec := env.postForm(form); rec.Code != http.StatusConflict || rec.Header().Get("X-Feedback-Conflict") == "" || !strings.Contains(rec.Body.String(), "follow-up 1?") {
+		t.Fatalf("stale tab did not get the current thread: %d, %s", rec.Code, rec.Body.String())
+	}
+	if env.messageCount(t) != 2 || fake.callCount() != 1 {
+		t.Fatal("a replay duplicated the answer or feedback")
+	}
+	// The same text is valid for a genuinely new follow-up turn.
+	if rec := env.post(t, "same answer"); rec.Code != http.StatusAccepted {
+		t.Fatalf("new turn: %d", rec.Code)
 	}
 }
 
-func TestLLMErrorDetailIsNotSentToClient(t *testing.T) {
-	const secret = "dial tcp 10.0.0.5:11434: connection refused"
-	env := newAnswerEnv(t, 3, &fakeLLM{err: errors.New(secret)})
-
-	rec := env.post("my answer")
-	if rec.Code != http.StatusInternalServerError {
-		t.Fatalf("status %d, want %d", rec.Code, http.StatusInternalServerError)
+func TestUnavailableFeedbackRetriesOnlyTheSavedAnswer(t *testing.T) {
+	const detail = "provider connection refused"
+	fake := &fakeLLM{err: errors.New(detail)}
+	env := newAnswerEnv(t, 3, fake)
+	if rec := env.post(t, "my answer"); rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), "Answer saved.") {
+		t.Fatalf("acknowledgement: %d, %s", rec.Code, rec.Body.String())
 	}
-	if body := rec.Body.String(); strings.Contains(body, secret) {
-		t.Errorf("response body leaks the error detail: %q", body)
+	runNextEvaluation(t, env.h)
+	page := env.get(t, env.answerPath())
+	if !strings.Contains(page, "my answer") || !strings.Contains(page, "Your answer is saved") || !strings.Contains(page, "Retry evaluation") || strings.Contains(page, detail) {
+		t.Fatalf("failed feedback: %s", page)
+	}
+	if env.thread(t).Status != model.ThreadFeedbackFailed || env.messageCount(t) != 1 {
+		t.Fatal("the failed evaluation lost or duplicated the saved answer")
+	}
+	if rec := env.post(t, "changed answer"); rec.Code != http.StatusConflict {
+		t.Fatalf("overwriting a saved answer: %d", rec.Code)
+	}
+	fake.err = nil
+	form := url.Values{"answer_key": {env.turn(t)}, "retry": {"1"}, "answer": {"untrusted replacement"}}
+	if rec := env.postForm(form); rec.Code != http.StatusAccepted {
+		t.Fatalf("retry: %d", rec.Code)
+	}
+	if rec := env.postForm(form); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate retry: %d", rec.Code)
+	}
+	runNextEvaluation(t, env.h)
+	messages, err := env.store.GetMessages(env.threadID)
+	if err != nil || len(messages) != 2 || messages[0].Content != "my answer" || messages[1].Role != model.RoleLLM || fake.callCount() != 2 {
+		t.Fatalf("retried conversation: %+v, %v", messages, err)
 	}
 }
 
 func TestEvaluatorMarkdownRenderedStudentTextNot(t *testing.T) {
 	env := newAnswerEnv(t, 3, &fakeLLM{})
-	if rec := env.post("I think **this** <script>alert(1)</script>"); rec.Code != http.StatusOK {
+	if rec := env.post(t, "I think **this** <script>alert(1)</script>"); rec.Code != http.StatusAccepted {
 		t.Fatalf("status %d", rec.Code)
 	}
+	runNextEvaluation(t, env.h)
 	page := env.get(t, fmt.Sprintf("/exam/%d", env.sessID))
 
 	// The fake LLM asks a follow-up, which is joined with model.FollowupMarker.

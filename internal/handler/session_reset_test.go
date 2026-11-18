@@ -238,7 +238,7 @@ func TestResetDuringLLMWork(t *testing.T) {
 			}
 			env.h.llm = contextEvaluator{evaluate: block, grade: block}
 			path := fmt.Sprintf("/exam/%d/answer/%d", active.ID, threads[0].ID)
-			form := url.Values{"answer": {"Saved answer"}}
+			form := url.Values{"answer": {"Saved answer"}, "answer_key": {"0"}}
 			if !strings.HasPrefix(mode, "answer") {
 				path = fmt.Sprintf("/exam/%d/submit", active.ID)
 				form = nil
@@ -248,8 +248,16 @@ func TestResetDuringLLMWork(t *testing.T) {
 					}
 				}
 			}
-			done := make(chan *httptest.ResponseRecorder, 1)
-			go func() { done <- env.do("studentA", http.MethodPost, path, form) }()
+			rec := env.do("studentA", http.MethodPost, path, form)
+			if rec.Code != http.StatusAccepted && rec.Code != http.StatusSeeOther {
+				t.Fatalf("queue work: %d, %s", rec.Code, rec.Body.String())
+			}
+			job, err := env.store.ClaimEvaluation(t.Context(), false)
+			if err != nil || job == nil {
+				t.Fatalf("claim work: %+v, %v", job, err)
+			}
+			done := make(chan struct{})
+			go func() { env.h.processEvaluation(t.Context(), *job); close(done) }()
 			select {
 			case <-entered:
 			case <-time.After(5 * time.Second):
@@ -269,12 +277,12 @@ func TestResetDuringLLMWork(t *testing.T) {
 			}
 			unblock()
 			select {
-			case rec := <-done:
-				if rec.Code != http.StatusConflict {
-					t.Fatalf("late LLM result: %d, %s", rec.Code, rec.Body.String())
-				}
+			case <-done:
 			case <-time.After(5 * time.Second):
 				t.Fatal("late request did not finish")
+			}
+			if next, err := env.store.ClaimEvaluation(t.Context(), false); err != nil || next != nil {
+				t.Fatalf("reset left pending work: %+v, %v", next, err)
 			}
 			after, err := env.store.GetSessionView(active.ID)
 			if err != nil {

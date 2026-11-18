@@ -52,6 +52,9 @@ func (s *Store) ResetSession(sessionID, actorID int64, reason string) error {
 		time.Now().UTC(), actorID, reason, sessionID); err != nil {
 		return err
 	}
+	if err := discardSessionJobs(tx, sessionID); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
