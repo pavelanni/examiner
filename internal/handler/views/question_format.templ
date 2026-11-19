@@ -1,0 +1,27 @@
+package views
+
+// questionFormatHelp describes the question file format, with an example
+// (example is the JSON shown) and a link to download it.
+templ questionFormatHelp(example string) {
+	<details class="question-format">
+		<summary>{ t(ctx, "QFormatTitle") }</summary>
+		<p>{ t(ctx, "QFormatShapes") }</p>
+		<table>
+			<thead>
+				<tr><th>{ t(ctx, "QFormatColField") }</th><th>{ t(ctx, "QFormatColMeaning") }</th></tr>
+			</thead>
+			<tbody>
+				<tr><td><code>text</code></td><td>{ t(ctx, "QFormatFieldText") }</td></tr>
+				<tr><td><code>topic</code></td><td>{ t(ctx, "QFormatFieldTopic") }</td></tr>
+				<tr><td><code>difficulty</code></td><td>{ t(ctx, "QFormatFieldDifficulty") }</td></tr>
+				<tr><td><code>max_points</code></td><td>{ t(ctx, "QFormatFieldPoints") }</td></tr>
+				<tr><td><code>rubric</code></td><td>{ t(ctx, "QFormatFieldRubric") }</td></tr>
+				<tr><td><code>model_answer</code></td><td>{ t(ctx, "QFormatFieldAnswer") }</td></tr>
+			</tbody>
+		</table>
+		<p>{ t(ctx, "QFormatAllRequired") }</p>
+		<p>{ t(ctx, "QFormatExample") }</p>
+		<pre><code>{ example }</code></pre>
+		<p><a href={ templ.SafeURL(p(ctx, "/teacher/questions-example.json")) } download>{ t(ctx, "QFormatDownload") }</a></p>
+	</details>
+}

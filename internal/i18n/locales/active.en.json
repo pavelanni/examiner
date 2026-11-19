@@ -282,5 +282,18 @@
   {"id": "ErrStatementStatus", "other": "invalid status"},
   {"id": "ErrStatementFrom", "other": "invalid start date"},
   {"id": "ErrStatementTo", "other": "invalid end date"},
-  {"id": "ErrStatementRange", "other": "start date is after end date"}
+  {"id": "ErrStatementRange", "other": "start date is after end date"},
+  {"id": "QFormatTitle", "other": "File format"},
+  {"id": "QFormatShapes", "other": "The file holds a JSON array of questions, or an object with a \"questions\" array. Each question has these fields:"},
+  {"id": "QFormatColField", "other": "Field"},
+  {"id": "QFormatColMeaning", "other": "Meaning"},
+  {"id": "QFormatFieldText", "other": "The question as the student sees it."},
+  {"id": "QFormatFieldTopic", "other": "The topic. An exam is built from the questions of one topic."},
+  {"id": "QFormatFieldDifficulty", "other": "Difficulty: easy, medium or hard."},
+  {"id": "QFormatFieldPoints", "other": "Maximum points: a whole number of at least 1."},
+  {"id": "QFormatFieldRubric", "other": "Grading criteria: what the answer must contain and the points for each item. The AI grades the answer by them; students do not see them."},
+  {"id": "QFormatFieldAnswer", "other": "The model answer. The AI compares the student's answer with it; students do not see it."},
+  {"id": "QFormatAllRequired", "other": "All fields are required and must not be empty."},
+  {"id": "QFormatExample", "other": "Example:"},
+  {"id": "QFormatDownload", "other": "Download an example"}
 ]

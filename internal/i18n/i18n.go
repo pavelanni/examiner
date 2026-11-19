@@ -55,6 +55,22 @@ func NewLocalizer(lang string) *i18n.Localizer {
 	return i18n.NewLocalizer(bundle, lang)
 }
 
+// langKey stores the UI language code in a context.
+type langKey struct{}
+
+// WithLang stores the UI language code (e.g. "ru") in the context.
+func WithLang(ctx context.Context, lang string) context.Context {
+	return context.WithValue(ctx, langKey{}, lang)
+}
+
+// Lang returns the UI language code stored by WithLang, or "en".
+func Lang(ctx context.Context) string {
+	if lang, ok := ctx.Value(langKey{}).(string); ok && lang != "" {
+		return lang
+	}
+	return "en"
+}
+
 // WithLocalizer stores a localizer in the context.
 func WithLocalizer(ctx context.Context, loc *i18n.Localizer) context.Context {
 	return context.WithValue(ctx, ctxKey{}, loc)

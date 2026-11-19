@@ -2,6 +2,8 @@ package i18n
 
 import (
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -77,5 +79,18 @@ func TestMissingKey(t *testing.T) {
 	got := T(ctx, "NonExistentKey")
 	if got != "NonExistentKey" {
 		t.Errorf("T(NonExistentKey) = %q, want 'NonExistentKey'", got)
+	}
+}
+
+func TestLangInContext(t *testing.T) {
+	if got := Lang(context.Background()); got != "en" {
+		t.Errorf("Lang(empty) = %q, want en", got)
+	}
+	var seen string
+	Middleware("ru")(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		seen = Lang(r.Context())
+	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+	if seen != "ru" {
+		t.Errorf("Lang after Middleware(ru) = %q", seen)
 	}
 }

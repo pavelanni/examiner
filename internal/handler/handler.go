@@ -150,6 +150,7 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Get("/teacher/create-test", h.handleTeacherCreateTest)
 			r.Post("/teacher/tests", h.handleTeacherUpload)
 			r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
+			r.Get("/teacher/questions-example.json", h.handleQuestionExample)
 		})
 
 		// Admin-only routes.

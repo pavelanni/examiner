@@ -6,7 +6,7 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string, duplicates []model.DuplicateQuestionGroup) {
+templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings []string, duplicates []model.DuplicateQuestionGroup, example string) {
 	@Layout(t(ctx, "AdminQuestions")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -26,6 +26,7 @@ templ AdminQuestionsPage(flashMsg string, flashErr bool, errs []string, warnings
 			<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 			<label for="questions_file">{ t(ctx, "QuestionsFile") }</label>
 			<input type="file" id="questions_file" name="questions_file" accept=".json" required/>
+			@questionFormatHelp(example)
 			<label for="on_duplicate">{ t(ctx, "QImportOnDuplicate") }</label>
 			<select id="on_duplicate" name="on_duplicate">
 				<option value="skip" selected>{ t(ctx, "QImportOnDupSkip") }</option>

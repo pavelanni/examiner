@@ -100,3 +100,12 @@ func TestDifficultyLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestAdminQuestionsPageHasFormatHelp(t *testing.T) {
+	html := renderRU(t, &model.User{Role: model.UserRoleAdmin}, AdminQuestionsPage("", false, nil, nil, nil, `[{"model_answer": "x"}]`))
+	for _, want := range []string{"Формат файла", "/teacher/questions-example.json", "Скачать пример", "model_answer", "max_points"} {
+		if !strings.Contains(html, want) {
+			t.Errorf("format help lacks %q", want)
+		}
+	}
+}

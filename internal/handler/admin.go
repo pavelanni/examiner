@@ -116,7 +116,7 @@ func (h *Handler) handleAdminQuestionsPage(w http.ResponseWriter, r *http.Reques
 func (h *Handler) renderAdminQuestions(w http.ResponseWriter, r *http.Request, status int, flash string, flashErr bool, errs, warnings []string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := views.AdminQuestionsPage(flash, flashErr, errs, warnings, h.loadExistingDuplicates()).Render(r.Context(), w); err != nil {
+	if err := views.AdminQuestionsPage(flash, flashErr, errs, warnings, h.loadExistingDuplicates(), string(questionExampleJSON(appI18n.Lang(r.Context())))).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }

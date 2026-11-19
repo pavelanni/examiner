@@ -282,5 +282,18 @@
   {"id": "ErrStatementStatus", "other": "Неизвестный статус."},
   {"id": "ErrStatementFrom", "other": "Некорректная начальная дата."},
   {"id": "ErrStatementTo", "other": "Некорректная конечная дата."},
-  {"id": "ErrStatementRange", "other": "Начальная дата позже конечной."}
+  {"id": "ErrStatementRange", "other": "Начальная дата позже конечной."},
+  {"id": "QFormatTitle", "other": "Формат файла"},
+  {"id": "QFormatShapes", "other": "Файл содержит JSON-массив вопросов или объект с массивом \"questions\". У каждого вопроса такие поля:"},
+  {"id": "QFormatColField", "other": "Поле"},
+  {"id": "QFormatColMeaning", "other": "Что означает"},
+  {"id": "QFormatFieldText", "other": "Вопрос так, как его увидит студент."},
+  {"id": "QFormatFieldTopic", "other": "Тема. Экзамен собирается из вопросов одной темы."},
+  {"id": "QFormatFieldDifficulty", "other": "Сложность: easy (лёгкий), medium (средний) или hard (сложный)."},
+  {"id": "QFormatFieldPoints", "other": "Максимум баллов: целое число не меньше 1."},
+  {"id": "QFormatFieldRubric", "other": "Критерии оценки: что должно быть в ответе и сколько баллов за каждый пункт. По ним ИИ оценивает ответ; студенты их не видят."},
+  {"id": "QFormatFieldAnswer", "other": "Эталонный ответ. ИИ сравнивает с ним ответ студента; студенты его не видят."},
+  {"id": "QFormatAllRequired", "other": "Все поля обязательны и не могут быть пустыми."},
+  {"id": "QFormatExample", "other": "Пример:"},
+  {"id": "QFormatDownload", "other": "Скачать пример"}
 ]
