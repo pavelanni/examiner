@@ -52,7 +52,7 @@ templ ReviewPage(view model.SessionView, progress map[int64]model.GradingProgres
 			</form>
 		}
 		@resetAttemptLink(view.Session)
-		{{ showGrades := !view.Session.Status.GradingPending() && view.Session.Status != model.StatusGradingFailed }}
+		{{ showGrades := !view.Session.Status.GradingIncomplete() }}
 		if view.Grade != nil && showGrades {
 			<div class="score-box">
 				<p>{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }</p>

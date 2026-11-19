@@ -323,6 +323,15 @@ func TestFailedThreadRetryPreservesStagedScoresAndFencesExpiredWorker(t *testing
 	if job, err := s.ClaimEvaluation(false); err != nil || job != nil {
 		t.Fatalf("retried a terminal error: %+v %v", job, err)
 	}
+	exported, err := s.ExportAllSessions()
+	if err != nil || len(exported) != 1 || exported[0].Status != model.StatusGradingFailed || exported[0].LLMGrade != nil {
+		t.Fatalf("unpublished export: %+v, %v", exported, err)
+	}
+	for _, q := range exported[0].Questions {
+		if q.LLMScore != nil {
+			t.Fatal("export turned an unpublished score into a numeric mark")
+		}
+	}
 	if err := s.RetryGrading(id); err != nil {
 		t.Fatal(err)
 	}

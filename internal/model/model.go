@@ -175,6 +175,12 @@ func (s SessionStatus) GradingPending() bool {
 	return s == StatusSubmitted || s == StatusGrading
 }
 
+// GradingIncomplete covers all submitted attempts that still need a final grade,
+// including those waiting for a teacher to retry.
+func (s SessionStatus) GradingIncomplete() bool {
+	return s.GradingPending() || s == StatusGradingFailed
+}
+
 // ExamSession represents a student's exam session.
 type ExamSession struct {
 	ID          int64         `json:"id"`

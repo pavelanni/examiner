@@ -21,7 +21,7 @@ type StudentResult struct {
 	StartedAt     time.Time        `json:"started_at"`
 	SubmittedAt   *time.Time       `json:"submitted_at,omitempty"`
 	Questions     []QuestionResult `json:"questions"`
-	LLMGrade      float64          `json:"llm_grade"`
+	LLMGrade      *float64         `json:"llm_grade,omitempty"`
 }
 
 // QuestionResult holds per-question data for export.
@@ -33,7 +33,7 @@ type QuestionResult struct {
 	Rubric       string            `json:"rubric"`
 	ModelAnswer  string            `json:"model_answer"`
 	Conversation []ConversationMsg `json:"conversation"`
-	LLMScore     float64           `json:"llm_score"`
+	LLMScore     *float64          `json:"llm_score,omitempty"`
 	LLMFeedback  string            `json:"llm_feedback"`
 }
 

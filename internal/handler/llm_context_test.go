@@ -55,7 +55,8 @@ func slowFeedback(entered, release chan struct{}) func(context.Context) error {
 
 func waitForState(t *testing.T, check func() bool) {
 	t.Helper()
-	deadline := time.NewTimer(5 * time.Second)
+	// Durable retries can span more than one dispatcher polling interval.
+	deadline := time.NewTimer(12 * time.Second)
 	defer deadline.Stop()
 	for !check() {
 		select {

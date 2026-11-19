@@ -56,6 +56,11 @@ func (s *Store) ImportExam(exp model.ExamExport) error {
 			slog.Info("skipping reset exam attempt", "external_id", sr.ExternalID, "session_number", sr.SessionNumber)
 			continue
 		}
+		// This importer commits a snapshot once per exam ID. Keep the ID
+		// available for the completed export if final grades are still missing.
+		if sr.Status.GradingIncomplete() {
+			return fmt.Errorf("session %d for %q is %s: finish grading in Teacher Review and export again", sr.SessionNumber, sr.ExternalID, sr.Status)
+		}
 		if sr.Status != model.StatusGraded {
 			slog.Warn("importing student with non-graded status",
 				"external_id", sr.ExternalID,
@@ -75,7 +80,7 @@ func (s *Store) ImportExam(exp model.ExamExport) error {
 
 		// Insert exam session.
 		esRes, err := tx.Exec(`INSERT INTO exam_sessions (exam_db_id, student_id, session_number, status, started_at, submitted_at, llm_grade)
-			VALUES (?, ?, ?, 'imported', ?, ?, ?)`,
+			VALUES (?, ?, ?, 'imported', ?, ?, COALESCE(?,0))`,
 			examDBID, studentID, sr.SessionNumber, sr.StartedAt, sr.SubmittedAt, sr.LLMGrade)
 		if err != nil {
 			return fmt.Errorf("insert exam_session: %w", err)
@@ -108,7 +113,7 @@ func (s *Store) ImportExam(exp model.ExamExport) error {
 			}
 
 			// Insert score (teacher fields left as NULL defaults).
-			if _, err := tx.Exec(`INSERT INTO scores (question_id, llm_score, llm_feedback) VALUES (?, ?, ?)`,
+			if _, err := tx.Exec(`INSERT INTO scores (question_id, llm_score, llm_feedback) VALUES (?, COALESCE(?,0), ?)`,
 				questionID, qr.LLMScore, qr.LLMFeedback); err != nil {
 				return fmt.Errorf("insert score: %w", err)
 			}

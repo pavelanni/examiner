@@ -498,7 +498,7 @@ func TestStartExamNeedsTopic(t *testing.T) {
 
 // TestStartExamResumesAfterConfigChange applies new topic restrictions only to new variants.
 func TestStartExamResumesAfterConfigChange(t *testing.T) {
-	for _, status := range []model.SessionStatus{model.StatusInProgress, model.StatusSubmitted, model.StatusGrading, model.StatusGraded, model.StatusReviewed} {
+	for _, status := range []model.SessionStatus{model.StatusInProgress, model.StatusSubmitted, model.StatusGrading, model.StatusGradingFailed, model.StatusGraded, model.StatusReviewed} {
 		t.Run(string(status), func(t *testing.T) {
 			s := newExamStore(t)
 			examStore(t, s, 2, 0, 0)

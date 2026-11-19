@@ -34,7 +34,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 		}
 		@attemptResetNotice(view)
 		<p>{ t(ctx, "StatusLabel") } <strong>{ sessionStatusLabel(ctx, view.Session.Status) }</strong></p>
-		{{ showGrades := !policy.Hidden && !view.Session.Status.GradingPending() && view.Session.Status != model.StatusGradingFailed }}
+		{{ showGrades := !policy.Hidden && !view.Session.Status.GradingIncomplete() }}
 		if view.Grade != nil && showGrades {
 			<div class="score-box">
 				if policy.LLMResults {

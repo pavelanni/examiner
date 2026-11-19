@@ -153,7 +153,7 @@ func (h *Handler) topicChoices(ctx context.Context, user *model.User, topics []s
 			switch {
 			case s.Status == model.StatusInProgress:
 				c.Available, c.Active = false, &s
-			case !retake:
+			case !retake || s.Status.GradingIncomplete():
 				c.Available, c.Note = false, appI18n.T(ctx, "ExamTaken")
 			}
 		}

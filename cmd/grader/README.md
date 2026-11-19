@@ -74,7 +74,9 @@ subcommand is given).
 
 Imports one or more exam result JSON files into the database. Each
 file must match the `ExamExport` format produced by the examiner's
-`export` command. Duplicate exam IDs are rejected.
+`export` command. Duplicate exam IDs are rejected. If a submitted attempt is still grading
+or needs a retry, the import reports the attempt and leaves the database
+unchanged. Finish grading in Teacher Review and import a fresh export.
 
 ## Input format
 

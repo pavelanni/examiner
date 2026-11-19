@@ -9,6 +9,7 @@ import (
 
 func sampleExport() model.ExamExport {
 	now := time.Now()
+	score, grade := 10.0, 100.0
 	return model.ExamExport{
 		ExamID:        "test-exam-1",
 		Subject:       "Physics",
@@ -34,11 +35,11 @@ func sampleExport() model.ExamExport {
 							{Role: "student", Content: "4", At: now},
 							{Role: "assistant", Content: "Correct!", At: now},
 						},
-						LLMScore:    10,
+						LLMScore:    &score,
 						LLMFeedback: "Perfect answer",
 					},
 				},
-				LLMGrade: 100,
+				LLMGrade: &grade,
 			},
 		},
 	}
@@ -89,7 +90,7 @@ func TestImportExamSkipsAnnulledAttempts(t *testing.T) {
 	exp := sampleExport()
 	cancelled := exp.Results[0]
 	cancelled.Status = model.StatusAnnulled
-	cancelled.LLMGrade = 0
+	cancelled.LLMGrade = nil
 	valid := exp.Results[0]
 	valid.SessionNumber = 2
 	exp.Results = []model.StudentResult{cancelled, valid}
@@ -101,7 +102,31 @@ func TestImportExamSkipsAnnulledAttempts(t *testing.T) {
 		t.Fatalf("cancelled attempt counted as a student: %+v, %v", exams, err)
 	}
 	items, err := s.ListStudentsForExam(exp.ExamID)
-	if err != nil || len(items) != 1 || items[0].LLMGrade != valid.LLMGrade {
+	if err != nil || len(items) != 1 || items[0].LLMGrade != *valid.LLMGrade {
 		t.Fatalf("cancelled attempt imported: %+v, %v", items, err)
+	}
+}
+
+func TestUnfinishedGradeDoesNotConsumeExamImport(t *testing.T) {
+	for _, status := range []model.SessionStatus{model.StatusSubmitted, model.StatusGrading, model.StatusGradingFailed} {
+		t.Run(string(status), func(t *testing.T) {
+			s := newTestStore(t)
+			defer func() { _ = s.Close() }()
+			exp := sampleExport()
+			pending := exp.Results[0]
+			pending.Status = status
+			pending.LLMGrade = nil
+			exp.Results = append(exp.Results, pending)
+			if err := s.ImportExam(exp); err == nil {
+				t.Fatal("imported unpublished scores")
+			}
+			exams, err := s.ListExams()
+			if err != nil || len(exams) != 0 {
+				t.Fatalf("partial import: %+v, %v", exams, err)
+			}
+			if err := s.ImportExam(sampleExport()); err != nil {
+				t.Fatalf("completed export cannot be imported: %v", err)
+			}
+		})
 	}
 }

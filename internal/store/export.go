@@ -36,6 +36,9 @@ func (s *Store) ExportAllSessions() ([]model.StudentResult, error) {
 			displayName = user.DisplayName
 		}
 
+		// A queued submission can contain legacy partial scores. Export the marks
+		// only after publication and use the status from the same session view.
+		unpublished := view.Session.Status.GradingIncomplete()
 		var questions []model.QuestionResult
 		for _, tv := range view.Threads {
 			var conv []model.ConversationMsg
@@ -56,25 +59,25 @@ func (s *Store) ExportAllSessions() ([]model.StudentResult, error) {
 				ModelAnswer:  tv.Question.ModelAnswer,
 				Conversation: conv,
 			}
-			if tv.Score != nil {
-				qr.LLMScore = tv.Score.LLMScore
+			if tv.Score != nil && !unpublished {
+				qr.LLMScore = &tv.Score.LLMScore
 				qr.LLMFeedback = tv.Score.LLMFeedback
 			}
 			questions = append(questions, qr)
 		}
 
-		var llmGrade float64
-		if view.Grade != nil {
-			llmGrade = view.Grade.LLMGrade
+		var llmGrade *float64
+		if view.Grade != nil && !unpublished {
+			llmGrade = &view.Grade.LLMGrade
 		}
 
 		results = append(results, model.StudentResult{
 			ExternalID:    externalID,
 			DisplayName:   displayName,
 			SessionNumber: studentSessionCount[sess.StudentID],
-			Status:        sess.Status,
-			StartedAt:     sess.StartedAt,
-			SubmittedAt:   sess.SubmittedAt,
+			Status:        view.Session.Status,
+			StartedAt:     view.Session.StartedAt,
+			SubmittedAt:   view.Session.SubmittedAt,
 			Questions:     questions,
 			LLMGrade:      llmGrade,
 		})

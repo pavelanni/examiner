@@ -161,7 +161,7 @@ func TestStatementExcludesReopenedAttempt(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, status := range []model.SessionStatus{
-		model.StatusSubmitted, model.StatusGrading, model.StatusGraded, model.StatusReviewed,
+		model.StatusSubmitted, model.StatusGrading, model.StatusGradingFailed, model.StatusGraded, model.StatusReviewed,
 	} {
 		if err := s.UpdateSessionStatus(id, status); err != nil {
 			t.Fatal(err)

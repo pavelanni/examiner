@@ -90,6 +90,7 @@ func (h *Handler) processEvaluation(ctx context.Context, job store.EvaluationJob
 				ok, err := h.store.RenewEvaluation(job)
 				if err != nil {
 					slog.Error("renew evaluation lease", "job_id", job.ID, "error", err)
+					continue // a transient database error does not prove another worker owns the job
 				}
 				if !ok {
 					cancel()

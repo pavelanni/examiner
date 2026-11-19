@@ -294,7 +294,7 @@ func TestExportRetainsAnnulledHistory(t *testing.T) {
 	if err != nil || len(results) != 2 {
 		t.Fatalf("export: %+v, %v", results, err)
 	}
-	if results[0].Status != model.StatusAnnulled || results[0].SessionNumber != 1 || len(results[0].Questions) != 1 || len(results[0].Questions[0].Conversation) != 2 || results[0].LLMGrade != 70 {
+	if results[0].Status != model.StatusAnnulled || results[0].SessionNumber != 1 || len(results[0].Questions) != 1 || len(results[0].Questions[0].Conversation) != 2 || results[0].LLMGrade == nil || *results[0].LLMGrade != 70 {
 		t.Fatalf("reset history missing from export: %+v", results[0])
 	}
 	if results[1].Status != fresh.Status || results[1].SessionNumber != 2 {

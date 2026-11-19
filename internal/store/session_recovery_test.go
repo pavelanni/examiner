@@ -172,6 +172,14 @@ func TestLegacyRecoveryReusesRealZeroAndReplacesSyntheticZero(t *testing.T) {
 	if g, err := s.GetGrade(id); err != nil || g == nil || g.LLMGrade != 40 {
 		t.Fatalf("legacy grade: %+v, %v", g, err)
 	}
+	exported, err := s.ExportAllSessions()
+	if err != nil || len(exported) != 1 || len(exported[0].Questions) != 2 {
+		t.Fatalf("legacy export: %+v, %v", exported, err)
+	}
+	zero := exported[0].Questions[0].LLMScore
+	if zero == nil || *zero != 0 || exported[0].LLMGrade == nil || *exported[0].LLMGrade != 40 {
+		t.Fatalf("lost genuine zero in export: %+v", exported[0])
+	}
 }
 
 func TestScheduledRetrySurvivesRestart(t *testing.T) {
