@@ -58,9 +58,8 @@ func (s *Store) FindExamSession(blueprintID, studentID int64, topic string, reta
 func findExamSession(q queryRower, blueprintID, studentID int64, topic string, retake bool) (*model.ExamSession, error) {
 	query := `SELECT ` + sessionColumns + ` FROM exam_sessions WHERE student_id = ? AND blueprint_id = ? AND topic = ? AND topic_known = 1 AND status != 'annulled'`
 	if retake {
-		// Grading can return an attempt to in_progress when the LLM queue
-		// is busy (#47). A new attempt must not occupy its unique slot.
-		query += ` AND status IN ('in_progress', 'submitted', 'grading')`
+		// Staff may retry a failed grade for the same submitted attempt.
+		query += ` AND status IN ('in_progress', 'submitted', 'grading', 'grading_failed')`
 	}
 	query += ` ORDER BY status = 'in_progress' DESC, id DESC LIMIT 1`
 	sess, err := scanSession(q.QueryRow(query, studentID, blueprintID, topic))

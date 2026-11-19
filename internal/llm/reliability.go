@@ -97,14 +97,45 @@ func acquire(ctx context.Context, slots chan struct{}) error {
 	}
 }
 
+// GradeAttempt counts claims within the current run. Deadline is zero until
+// the first transient failure schedules another attempt.
+type GradeAttempt struct {
+	Number   int
+	Deadline int64 // Unix milliseconds
+}
+
+type RetryGrade struct {
+	At, Deadline time.Time
+	Cause        error
+}
+
+func (e *RetryGrade) Error() string { return e.Cause.Error() }
+func (e *RetryGrade) Unwrap() error { return e.Cause }
+
+// FailureCode describes a failure without storing raw responses, URLs or credentials.
+func FailureCode(err error) string {
+	if status := statusCode(err); status != 0 {
+		return fmt.Sprintf("HTTP %d", status)
+	}
+	return outcome(err)
+}
+
 // complete повторяет только временные ошибки, освобождая слоты на время задержки.
 // Общий бюджет ограничивает также очередь и чрезмерно большой Retry-After.
-func (c *Client) complete(ctx context.Context, request openai.ChatCompletionRequest, op string, sessionID, threadID int64) (*GradeResult, string, error) {
+func (c *Client) complete(ctx context.Context, request openai.ChatCompletionRequest, op string, sessionID, threadID int64, job *GradeAttempt) (*GradeResult, string, error) {
 	budget := c.settings.timeout*time.Duration(c.settings.maxRetries+1) + maxBackoff*time.Duration(c.settings.maxRetries)
-	ctx, cancel := context.WithTimeout(ctx, budget)
+	deadline := time.Now().Add(budget)
+	first := 0
+	if job != nil {
+		first = max(0, job.Number-1)
+		if job.Deadline != 0 {
+			deadline = time.UnixMilli(job.Deadline)
+		}
+	}
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	var raw string
-	for attempt := 0; ; attempt++ {
+	for attempt := first; ; attempt++ {
 		started := time.Now()
 		attemptCtx, attemptCancel := context.WithTimeout(ctx, c.settings.timeout)
 		result, content, headers, err := c.attempt(attemptCtx, request, op, sessionID, threadID)
@@ -129,6 +160,13 @@ func (c *Client) complete(ctx context.Context, request openai.ChatCompletionRequ
 			delay = after
 		}
 		slog.Info("LLM retry scheduled", "op", op, "session_id", sessionID, "thread_id", threadID, "attempt", attempt+2, "delay", delay)
+		if job != nil {
+			at := time.Now().Add(delay)
+			if !at.Before(deadline) {
+				return nil, raw, fmt.Errorf("LLM %s retry: %w", op, context.DeadlineExceeded)
+			}
+			return nil, raw, &RetryGrade{At: at, Deadline: deadline, Cause: err}
+		}
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():

@@ -125,25 +125,9 @@ func (s *Store) migrate() error {
 		feedback TEXT NOT NULL DEFAULT '',
 		UNIQUE(thread_id, kind)
 	);
-	CREATE INDEX IF NOT EXISTS idx_evaluation_ready ON evaluation_jobs(kind, id)
-		WHERE claimed_at IS NULL AND score IS NULL;
 	CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, id);
 	CREATE INDEX IF NOT EXISTS idx_threads_session ON question_threads(session_id);
 	CREATE INDEX IF NOT EXISTS idx_threads_question ON question_threads(question_id);
-
-	-- Replace claimed jobs, including staged grades, when their grading inputs
-	-- change. The fresh job ID prevents an old worker from publishing its result.
-	-- Queued jobs will already read the new question when they are claimed.
-	CREATE TRIGGER IF NOT EXISTS requeue_edited_question
-	AFTER UPDATE OF text, rubric, model_answer, max_points ON questions
-	WHEN NEW.text != OLD.text OR NEW.rubric != OLD.rubric
-		OR NEW.model_answer != OLD.model_answer OR NEW.max_points != OLD.max_points
-	BEGIN
-		INSERT OR REPLACE INTO evaluation_jobs(thread_id, kind)
-		SELECT j.thread_id, j.kind FROM evaluation_jobs j
-		JOIN question_threads t ON t.id = j.thread_id
-		WHERE t.question_id = NEW.id AND j.claimed_at IS NOT NULL;
-	END;
 
 	CREATE TABLE IF NOT EXISTS question_scores (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -199,6 +183,10 @@ func (s *Store) migrate() error {
 	`
 	_, err := s.db.Exec(schema)
 	if err != nil {
+		return err
+	}
+
+	if err := s.migrateEvaluationJobs(); err != nil {
 		return err
 	}
 

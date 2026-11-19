@@ -14,9 +14,13 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 			{Label: td(ctx, "SessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)})},
 		})
 		<h1>{ td(ctx, "ResultsSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
-		if view.Session.Status == model.StatusSubmitted || view.Session.Status == model.StatusGrading {
+		if view.Session.Status.GradingPending() {
 			<p role="status" hx-get={ p(ctx, fmt.Sprintf("/results/%d", view.Session.ID)) } hx-trigger="every 2s" hx-select="main" hx-target="main" hx-swap="outerHTML">
 				{ t(ctx, "FinalGradePending") }
+			</p>
+		} else if view.Session.Status == model.StatusGradingFailed {
+			<p role="status" hx-get={ p(ctx, fmt.Sprintf("/results/%d?status=grading_failed", view.Session.ID)) } hx-trigger="every 10s" hx-select="main" hx-target="main" hx-swap="outerHTML">
+				{ t(ctx, "FinalGradeFailed") }
 			</p>
 		} else if view.Session.Status == model.StatusInProgress && view.Session.SubmittedAt != nil {
 			<p role="status">{ t(ctx, "FinalGradeRetry") }
@@ -25,12 +29,13 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 		} else if policy.Preliminary {
 			@resultsNotice(t(ctx, "ResultsDisclaimer"))
 		}
-		if policy.Hidden && view.Session.Status != model.StatusAnnulled {
+		if policy.Hidden && view.Session.Status != model.StatusAnnulled && view.Session.Status != model.StatusGradingFailed {
 			@resultsNotice(t(ctx, "ResultsAwaitingReview"))
 		}
 		@attemptResetNotice(view)
 		<p>{ t(ctx, "StatusLabel") } <strong>{ sessionStatusLabel(ctx, view.Session.Status) }</strong></p>
-		if view.Grade != nil && !policy.Hidden {
+		{{ showGrades := !policy.Hidden && !view.Session.Status.GradingPending() && view.Session.Status != model.StatusGradingFailed }}
+		if view.Grade != nil && showGrades {
 			<div class="score-box">
 				if policy.LLMResults {
 					<p>
@@ -74,7 +79,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 						}
 					</div>
 				}
-				if tv.Score != nil && !policy.Hidden {
+				if tv.Score != nil && showGrades {
 					<div class="score-box">
 						if policy.LLMResults {
 							<p>

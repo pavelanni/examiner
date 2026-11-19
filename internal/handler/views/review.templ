@@ -1,6 +1,7 @@
 package views
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 
@@ -31,7 +32,7 @@ func adjustedGrade(view model.SessionView) (float64, bool) {
 	return totalScore / float64(totalMax) * 100, hasOverrides
 }
 
-templ ReviewPage(view model.SessionView) {
+templ ReviewPage(view model.SessionView, progress map[int64]model.GradingProgress) {
 	@Layout(td(ctx, "ReviewTitle", map[string]any{"ID": fmt.Sprint(view.Session.ID)})) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
@@ -41,8 +42,18 @@ templ ReviewPage(view model.SessionView) {
 		<h1>{ td(ctx, "ReviewSessionN", map[string]any{"ID": fmt.Sprint(view.Session.ID)}) }</h1>
 		@attemptResetNotice(view)
 		<p>{ t(ctx, "StatusLabel") } <strong>{ sessionStatusLabel(ctx, view.Session.Status) }</strong></p>
+		if view.Session.Status.GradingPending() {
+			<p role="status" hx-get={ p(ctx, fmt.Sprintf("/review/%d", view.Session.ID)) } hx-trigger="every 2s" hx-select="main" hx-target="main" hx-swap="outerHTML">{ t(ctx, "StaffGradePending") }</p>
+		} else if view.Session.Status == model.StatusGradingFailed {
+			<form method="POST" action={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d/retry-grading", view.Session.ID))) }>
+				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
+				<p>{ t(ctx, "StaffGradeFailed") }</p>
+				<button type="submit">{ t(ctx, "RetryGrading") }</button>
+			</form>
+		}
 		@resetAttemptLink(view.Session)
-		if view.Grade != nil {
+		{{ showGrades := !view.Session.Status.GradingPending() && view.Session.Status != model.StatusGradingFailed }}
+		if view.Grade != nil && showGrades {
 			<div class="score-box">
 				<p>{ td(ctx, "LLMSuggestedGrade", map[string]any{"Grade": fmt.Sprintf("%.1f", view.Grade.LLMGrade)}) }</p>
 				if adjusted, ok := adjustedGrade(view); ok {
@@ -61,6 +72,15 @@ templ ReviewPage(view model.SessionView) {
 					({ string(tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
 				</p>
 				<p class="question-text">{ tv.Question.Text }</p>
+				if job, ok := progress[tv.Thread.ID]; ok {
+					<p>
+						{ gradingStateLabel(ctx, job.State) }
+						{ td(ctx, "GradingAttempts", map[string]any{"Count": fmt.Sprint(job.Attempts)}) }
+						if job.LastError != "" {
+							<span>{ td(ctx, "GradingLastError", map[string]any{"Reason": job.LastError}) }</span>
+						}
+					</p>
+				}
 				if len(tv.Messages) > 0 {
 					<div class="messages">
 						for _, m := range tv.Messages {
@@ -82,7 +102,7 @@ templ ReviewPage(view model.SessionView) {
 						}
 					</div>
 				}
-				if tv.Score != nil {
+				if tv.Score != nil && showGrades {
 					<div class="score-box">
 						<p><strong>{ t(ctx, "LLMScore") }</strong> { fmt.Sprintf("%.1f", tv.Score.LLMScore) } / { strconv.Itoa(tv.Question.MaxPoints) }</p>
 						<div><strong>{ t(ctx, "LLMFeedback") }</strong> <div class="markdown">@markdown(tv.Score.LLMFeedback)
@@ -148,5 +168,16 @@ templ ReviewPage(view model.SessionView) {
 				<button type="submit">{ t(ctx, "FinalizeGradeBtn") }</button>
 			</form>
 		}
+	}
+}
+
+func gradingStateLabel(ctx context.Context, state string) string {
+	switch state {
+	case "graded":
+		return t(ctx, "ThreadGradeDone")
+	case "failed":
+		return t(ctx, "ThreadGradeFailed")
+	default:
+		return t(ctx, "ThreadGradePending")
 	}
 }

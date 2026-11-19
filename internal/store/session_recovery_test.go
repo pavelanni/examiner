@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
@@ -83,9 +84,6 @@ func TestRecoverInterruptedSessions(t *testing.T) {
 		t.Fatalf("recovered = %d, %v; want 4", n, err)
 	}
 	for _, want := range before {
-		if want.Session.Status == model.StatusSubmitted || want.Session.Status == model.StatusGrading {
-			want.Session.Status = model.StatusInProgress
-		}
 		got, err := s.GetSessionView(want.Session.ID)
 		if err != nil || !reflect.DeepEqual(got, want) {
 			t.Fatalf("recovery changed data beyond status: got %+v, want %+v, error %v", got, want, err)
@@ -99,8 +97,8 @@ func TestRecoverInterruptedSessions(t *testing.T) {
 	}
 }
 
-// TestRecoveryRollsBackOnConflictingScope rejects inconsistent data without partial recovery.
-func TestRecoveryRollsBackOnConflictingScope(t *testing.T) {
+// An older submitted attempt can finish even when another attempt occupies its scope.
+func TestRecoveryQueuesLegacyAttemptsWithOverlappingScopes(t *testing.T) {
 	s := newTestStore(t)
 	bp, qs := sessionEnv(t, s)
 	first, _, err := s.StartSession(bp, 7, "t", qs, false)
@@ -122,13 +120,92 @@ func TestRecoveryRollsBackOnConflictingScope(t *testing.T) {
 	if err := s.UpdateSessionStatus(other.ID, model.StatusSubmitted); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.RecoverInterruptedSessions(); err == nil {
-		t.Fatal("conflicting recovery must report an error")
+	if n, err := s.RecoverInterruptedSessions(); err != nil || n != 2 {
+		t.Fatalf("queued %d attempts: %v", n, err)
+	}
+	for _, id := range []int64{first.ID, other.ID} {
+		progress, err := s.GradingProgress(id)
+		if err != nil || len(progress) != len(qs) {
+			t.Fatalf("legacy grading for %d: %+v, %v", id, progress, err)
+		}
 	}
 	for id, want := range map[int64]model.SessionStatus{first.ID: model.StatusGrading, other.ID: model.StatusSubmitted} {
 		got, err := s.GetSession(id)
 		if err != nil || got.Status != want {
-			t.Fatalf("partial recovery committed: %+v, %v; want %s", got, err, want)
+			t.Fatalf("changed original status: %+v, %v; want %s", got, err, want)
 		}
+	}
+}
+
+func TestLegacyRecoveryReusesRealZeroAndReplacesSyntheticZero(t *testing.T) {
+	s := newTestStore(t)
+	bp, qs := sessionEnv(t, s)
+	id, err := s.CreateSession(bp, 1, qs[:2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	threads, err := s.GetThreadsForSession(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateSessionStatus(id, model.StatusSubmitted); err != nil {
+		t.Fatal(err)
+	}
+	for i, feedback := range []string{"Incorrect answer", "Grading error: unavailable"} {
+		if err := s.UpsertScore(model.QuestionScore{ThreadID: threads[i].ID, LLMFeedback: feedback}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.RecoverInterruptedSessions(); err != nil {
+		t.Fatal(err)
+	}
+	job := claimJob(t, s)
+	if job.ThreadID != threads[1].ID {
+		t.Fatal("valid zero was regraded")
+	}
+	if sc, err := s.GetScore(job.ThreadID); err != nil || sc != nil {
+		t.Fatalf("legacy synthetic zero: %+v %v", sc, err)
+	}
+	if err := s.FinishGrading(job, model.QuestionScore{LLMScore: 8}); err != nil {
+		t.Fatal(err)
+	}
+	if g, err := s.GetGrade(id); err != nil || g == nil || g.LLMGrade != 40 {
+		t.Fatalf("legacy grade: %+v, %v", g, err)
+	}
+}
+
+func TestScheduledRetrySurvivesRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "exam.db")
+	s := openEvaluationStore(t, path)
+	bp, qs := sessionEnv(t, s)
+	id, err := s.CreateSession(bp, 1, qs[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.QueueSubmission(id); err != nil {
+		t.Fatal(err)
+	}
+	first := claimJob(t, s)
+	after := time.Now().Add(time.Hour).UnixMilli()
+	deadline := after + 1000
+	if err := s.FailGrading(first, "HTTP 429", after, deadline); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	s = openEvaluationStore(t, path)
+	if _, err := s.RecoverInterruptedSessions(); err != nil {
+		t.Fatal(err)
+	}
+	if job, err := s.ClaimEvaluation(false); err != nil || job != nil {
+		t.Fatalf("ignored retry delay: %+v, %v", job, err)
+	}
+	if _, err := s.db.Exec(`UPDATE evaluation_jobs SET ready_at=0 WHERE id=?`, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	retry := claimJob(t, s)
+	if retry.Attempt != 2 || retry.RetryDeadline != deadline || retry.ThreadID != first.ThreadID {
+		t.Fatalf("lost retry budget: %+v", retry)
 	}
 }

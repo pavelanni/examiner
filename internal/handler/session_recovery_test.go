@@ -14,8 +14,8 @@ import (
 	"github.com/pavelanni/examiner/internal/store"
 )
 
-// TestInterruptedGradingCanBeResubmitted completes the original variant after a restart.
-func TestInterruptedGradingCanBeResubmitted(t *testing.T) {
+// TestInterruptedGradingResumesWithoutResubmission completes the original variant after a restart.
+func TestInterruptedGradingResumesWithoutResubmission(t *testing.T) {
 	for _, status := range []model.SessionStatus{model.StatusSubmitted, model.StatusGrading} {
 		t.Run(string(status), func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "exam.db")
@@ -70,11 +70,11 @@ func TestInterruptedGradingCanBeResubmitted(t *testing.T) {
 			if n, err := reopened.RecoverInterruptedSessions(); err != nil || n != 1 {
 				t.Fatalf("recovery = %d, %v; want 1", n, err)
 			}
-			if resumed := startedSession(t, h, student(7), "t"); resumed != id {
-				t.Fatalf("recovery issued a different variant: %d, want %d", resumed, id)
+			if rec := startExam(t, h, student(7), "t"); rec.Header().Get("Location") != fmt.Sprintf("/results/%d", id) {
+				t.Fatalf("lost the original submission: %s", rec.Header().Get("Location"))
 			}
-			if rec := submit(); rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != fmt.Sprintf("/results/%d", id) {
-				t.Fatalf("resubmission failed: status %d, body %s", rec.Code, rec.Body.String())
+			if rec := submit(); rec.Code != http.StatusConflict {
+				t.Fatalf("duplicate submission accepted: %d", rec.Code)
 			}
 			for range threads {
 				runNextEvaluation(t, h)

@@ -94,12 +94,13 @@ type SessionStatus string
 const MaxResetReasonRunes = 1000
 
 const (
-	StatusInProgress SessionStatus = "in_progress"
-	StatusSubmitted  SessionStatus = "submitted"
-	StatusGrading    SessionStatus = "grading"
-	StatusGraded     SessionStatus = "graded"
-	StatusReviewed   SessionStatus = "reviewed"
-	StatusAnnulled   SessionStatus = "annulled"
+	StatusInProgress    SessionStatus = "in_progress"
+	StatusSubmitted     SessionStatus = "submitted"
+	StatusGrading       SessionStatus = "grading"
+	StatusGradingFailed SessionStatus = "grading_failed"
+	StatusGraded        SessionStatus = "graded"
+	StatusReviewed      SessionStatus = "reviewed"
+	StatusAnnulled      SessionStatus = "annulled"
 )
 
 // ThreadStatus represents the status of a question thread.
@@ -170,6 +171,10 @@ type ExamBlueprint struct {
 	MaxFollowups int    `json:"max_followups"`
 }
 
+func (s SessionStatus) GradingPending() bool {
+	return s == StatusSubmitted || s == StatusGrading
+}
+
 // ExamSession represents a student's exam session.
 type ExamSession struct {
 	ID          int64         `json:"id"`
@@ -183,6 +188,14 @@ type ExamSession struct {
 	ResetAt     *time.Time    `json:"reset_at,omitempty"`
 	ResetBy     *int64        `json:"reset_by,omitempty"`
 	ResetReason string        `json:"reset_reason,omitempty"`
+}
+
+// GradingProgress is the staff view of one thread's final evaluation.
+// LastError contains a diagnostic code, never provider text or a student's answer.
+type GradingProgress struct {
+	State     string
+	Attempts  int
+	LastError string
 }
 
 // QuestionThread represents a thread for a single question in an exam session.

@@ -35,7 +35,7 @@ func statementFilter(query url.Values) (model.StatementFilter, *time.Location, e
 	switch filter.Status {
 	case "", "all":
 		filter.Status = ""
-	case model.StatusSubmitted, model.StatusGrading, model.StatusGraded, model.StatusReviewed:
+	case model.StatusSubmitted, model.StatusGrading, model.StatusGradingFailed, model.StatusGraded, model.StatusReviewed:
 	default:
 		return filter, nil, fmt.Errorf("invalid status")
 	}

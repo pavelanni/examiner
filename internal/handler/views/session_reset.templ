@@ -9,7 +9,14 @@ import (
 )
 
 func sessionStatusLabel(ctx context.Context, status model.SessionStatus) string {
-	if status == model.StatusAnnulled {
+	switch status {
+	case model.StatusSubmitted:
+		return t(ctx, "StatementSubmitted")
+	case model.StatusGrading:
+		return t(ctx, "StatementGrading")
+	case model.StatusGradingFailed:
+		return t(ctx, "SessionGradingFailed")
+	case model.StatusAnnulled:
 		return t(ctx, "AttemptAnnulled")
 	}
 	return string(status)

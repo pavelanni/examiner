@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
 )
@@ -75,15 +76,47 @@ func (h *Handler) dispatch(ctx context.Context, limit int) {
 }
 
 func (h *Handler) processEvaluation(ctx context.Context, job store.EvaluationJob) {
-	reply, score, err := h.evaluateJob(ctx, job)
-	if err != nil && ctx.Err() == nil {
-		slog.Warn("evaluation failed", "job_id", job.ID, "thread_id", job.ThreadID, "error", err)
+	ctx, cancel := context.WithCancel(ctx)
+	renewed := make(chan struct{})
+	go func() {
+		defer close(renewed)
+		ticker := time.NewTicker(store.EvaluationLease / 3)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ok, err := h.store.RenewEvaluation(job)
+				if err != nil {
+					slog.Error("renew evaluation lease", "job_id", job.ID, "error", err)
+				}
+				if !ok {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+	defer func() { cancel(); <-renewed }()
+	reply, score, evalErr := h.evaluateJob(ctx, job)
+	if evalErr != nil && ctx.Err() == nil {
+		slog.Warn("evaluation failed", "job_id", job.ID, "thread_id", job.ThreadID, "reason", llm.FailureCode(evalErr))
 	}
 	for ctx.Err() == nil {
-		if job.Feedback {
+		var err error
+		switch {
+		case job.Feedback:
 			err = h.store.FinishFeedback(job, reply)
-		} else {
-			err = h.store.FinishGrading(job, score)
+		case score != nil:
+			err = h.store.FinishGrading(job, *score)
+		default:
+			var retryAt, deadline int64
+			var retry *llm.RetryGrade
+			if errors.As(evalErr, &retry) {
+				retryAt, deadline = retry.At.UnixMilli(), retry.Deadline.UnixMilli()
+			}
+			err = h.store.FailGrading(job, llm.FailureCode(evalErr), retryAt, deadline)
 		}
 		if err == nil {
 			return
@@ -95,7 +128,7 @@ func (h *Handler) processEvaluation(ctx context.Context, job store.EvaluationJob
 		case <-time.After(time.Second):
 		}
 	}
-	if err := h.store.ReleaseEvaluation(job.ID); err != nil {
+	if err := h.store.ReleaseEvaluation(job); err != nil {
 		slog.Error("release interrupted evaluation", "job_id", job.ID, "error", err)
 	}
 }
@@ -115,7 +148,7 @@ func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*mo
 		return nil, nil, err
 	}
 	if (job.Feedback && session.Status != model.StatusInProgress) || (!job.Feedback && session.Status != model.StatusGrading) {
-		return nil, nil, nil // superseded by submission or reset
+		return nil, nil, errors.New("evaluation superseded")
 	}
 	messages, err := h.store.GetMessages(thread.ID)
 	if err != nil {
@@ -142,7 +175,7 @@ func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*mo
 		}
 		return reply, nil, nil
 	}
-	result, err := h.llm.GradeThread(ctx, question, messages, job.SessionID, thread.ID)
+	result, err := h.llm.GradeThreadAttempt(ctx, question, messages, job.SessionID, thread.ID, llm.GradeAttempt{Number: job.Attempt, Deadline: job.RetryDeadline})
 	if err != nil {
 		return nil, nil, err
 	}

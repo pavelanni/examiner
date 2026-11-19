@@ -130,7 +130,7 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 		Messages:       chatMsgs,
 		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
 		Temperature:    0.3,
-	}, "evaluate", sessionID, threadID)
+	}, "evaluate", sessionID, threadID, nil)
 	if err != nil {
 		return nil, raw, err
 	}
@@ -142,6 +142,16 @@ func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, me
 
 // GradeThread produces a final score for an entire question thread.
 func (c *Client) GradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64) (*GradeResult, error) {
+	return c.gradeThread(ctx, question, messages, sessionID, threadID, nil)
+}
+
+// GradeThreadAttempt makes one call for the durable worker. On a transient
+// error RetryGrade carries the same backoff and deadline as the inline client.
+func (c *Client) GradeThreadAttempt(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64, attempt GradeAttempt) (*GradeResult, error) {
+	return c.gradeThread(ctx, question, messages, sessionID, threadID, &attempt)
+}
+
+func (c *Client) gradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64, attempt *GradeAttempt) (*GradeResult, error) {
 	systemPrompt, err := prompts.BuildGradePrompt(c.promptVariant, question, messages)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build grade prompt: %w", err)
@@ -158,7 +168,7 @@ func (c *Client) GradeThread(ctx context.Context, question model.Question, messa
 		Messages:       chatMsgs,
 		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
 		Temperature:    0.1,
-	}, "grade", sessionID, threadID)
+	}, "grade", sessionID, threadID, attempt)
 	if err != nil {
 		return nil, err
 	}

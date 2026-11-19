@@ -11,10 +11,12 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -393,7 +395,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 	}
 	defer func() { _ = listener.Close() }()
 
-	// Reclaim interrupted jobs and reopen submissions from older versions.
+	// Reclaim expired jobs and queue interrupted submissions from older versions.
 	// Recover only when starting the exam server, not when opening a Store
 	// from export, prep or another connection while grading is still running.
 	recovered, err := db.RecoverInterruptedSessions()
@@ -401,10 +403,12 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if recovered > 0 {
-		slog.Info("restored interrupted exams for resubmission", "sessions", recovered)
+		slog.Info("queued interrupted legacy submissions", "sessions", recovered)
 	}
 
-	stopWorkers := h.StartWorkers(cmd.Context(), v.GetInt("llm-max-concurrency"))
+	ctx, stopSignals := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	stopWorkers := h.StartWorkers(ctx, v.GetInt("llm-max-concurrency"))
 	defer stopWorkers()
 
 	slog.Info("starting server",
@@ -422,7 +426,26 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"base_path", basePath,
 	)
-	return http.Serve(listener, r)
+	server := &http.Server{Handler: r}
+	served := make(chan error, 1)
+	go func() { served <- server.Serve(listener) }()
+	select {
+	case err := <-served:
+		return err
+	case <-ctx.Done():
+		// The dispatcher stops claiming work on cancellation. Drain accepted
+		// requests before the workers and database are closed by the defers.
+		drainCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(drainCtx); err != nil {
+			_ = server.Close()
+			return err
+		}
+		if err := <-served; !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	}
 }
 
 // runExport writes an exam export whose metadata matches its saved attempts.

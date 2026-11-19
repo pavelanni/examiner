@@ -104,38 +104,44 @@ func (s *Store) QueueSubmission(sessionID int64) error {
 	return tx.Commit()
 }
 
-// EvaluationJob identifies one claim. Its ID is never reused if a student
-// submits, retries, or a teacher resets an attempt or edits the question's grading inputs.
+// Each claim increments the attempt number, which fences workers from expired leases.
 type EvaluationJob struct {
 	ID, SessionID, ThreadID int64
 	Feedback                bool
+	Attempt                 int
+	RetryDeadline           int64 // Unix milliseconds, zero before the first retry
 }
 
-// ClaimEvaluation gives waiting feedback priority over final grading. One
-// worker can be reserved for feedback when the configured pool has spare capacity.
+// Workers renew long-running calls. A crashed process stops renewing and a new
+// worker can claim the job, even if the service restarted before lease expiry.
+const EvaluationLease = 30 * time.Second
+
+const expiredClaim = `unixepoch(claimed_at) <= unixepoch('now') - ?`
+
+// ClaimEvaluation gives waiting feedback priority over final grading.
 func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
-	// Let the short claim transaction finish at shutdown. Cancelling BeginTx
-	// can discard the only connection to a private SQLite in-memory database.
 	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	var job EvaluationJob
-	query := `SELECT j.id,t.session_id,t.id,j.kind='feedback' FROM evaluation_jobs j
-		JOIN question_threads t ON t.id=j.thread_id WHERE j.claimed_at IS NULL AND j.score IS NULL`
+	query := `SELECT j.id,t.session_id,t.id,j.kind='feedback',j.attempts+1,j.retry_deadline FROM evaluation_jobs j
+		JOIN question_threads t ON t.id=j.thread_id JOIN exam_sessions s ON s.id=t.session_id
+		WHERE j.state='pending' AND j.ready_at<=? AND (j.claimed_at IS NULL OR ` + expiredClaim + `)
+		AND ((j.kind='grade' AND s.status IN ('submitted','grading')) OR (j.kind='feedback' AND s.status='in_progress'))`
 	if feedbackOnly {
 		query += ` AND j.kind='feedback'`
 	}
-	// The ready index orders 'feedback' before 'grade', FIFO within each kind.
-	err = tx.QueryRow(query+` ORDER BY j.kind,j.id LIMIT 1`).Scan(&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback)
+	err = tx.QueryRow(query+` ORDER BY j.kind,j.id LIMIT 1`, time.Now().UnixMilli(), int64(EvaluationLease/time.Second)).Scan(
+		&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback, &job.Attempt, &job.RetryDeadline)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE id=?`, job.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP,attempts=attempts+1 WHERE id=?`, job.ID); err != nil {
 		return nil, err
 	}
 	if !job.Feedback {
@@ -146,14 +152,23 @@ func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
 	return &job, tx.Commit()
 }
 
-// ReleaseEvaluation makes a cancelled or interrupted worker's job claimable again.
-func (s *Store) ReleaseEvaluation(id int64) error {
-	_, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=NULL WHERE id=? AND score IS NULL`, id)
+const activeClaim = `id=? AND attempts=? AND state='pending' AND claimed_at IS NOT NULL`
+
+func (s *Store) RenewEvaluation(job EvaluationJob) (bool, error) {
+	res, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE `+activeClaim, job.ID, job.Attempt)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n != 0, err
+}
+
+func (s *Store) ReleaseEvaluation(job EvaluationJob) error {
+	_, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=NULL WHERE `+activeClaim, job.ID, job.Attempt)
 	return err
 }
 
 // finishEvaluation checks the claim in the same write transaction as its output.
-// A missing job was superseded by a submission/reset while its worker was running.
 func (s *Store) finishEvaluation(job EvaluationJob, fn func(*sql.Tx) error) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -161,7 +176,7 @@ func (s *Store) finishEvaluation(job EvaluationJob, fn func(*sql.Tx) error) erro
 	}
 	defer func() { _ = tx.Rollback() }()
 	var exists bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM evaluation_jobs WHERE id=? AND claimed_at IS NOT NULL AND score IS NULL)`, job.ID).Scan(&exists); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM evaluation_jobs WHERE `+activeClaim+`)`, job.ID, job.Attempt).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {
@@ -195,28 +210,30 @@ func (s *Store) FinishFeedback(job EvaluationJob, reply *model.Message) error {
 	})
 }
 
-// FinishGrading stages a result until all threads have been graded. A provider
-// error reopens the saved attempt for resubmission without publishing partial scores.
-func (s *Store) FinishGrading(job EvaluationJob, score *model.QuestionScore) error {
+// FinishGrading stages a successful score. The same claim cannot publish twice.
+func (s *Store) FinishGrading(job EvaluationJob, score model.QuestionScore) error {
 	return s.finishEvaluation(job, func(tx *sql.Tx) error {
-		if score == nil {
-			if err := discardSessionJobs(tx, job.SessionID); err != nil {
-				return err
-			}
-			_, err := tx.Exec(`UPDATE exam_sessions SET status='in_progress' WHERE id=?`, job.SessionID)
+		if _, err := tx.Exec(`UPDATE evaluation_jobs SET state='graded',score=?,feedback=?,claimed_at=NULL,last_error='' WHERE id=?`,
+			score.LLMScore, score.LLMFeedback, job.ID); err != nil {
 			return err
 		}
-		if _, err := tx.Exec(`UPDATE evaluation_jobs SET score=?,feedback=? WHERE id=?`, score.LLMScore, score.LLMFeedback, job.ID); err != nil {
+		return settleGrading(tx, job.SessionID)
+	})
+}
+
+// FailGrading either schedules the provider's next allowed attempt or records a
+// terminal error. Retry timing and diagnostic state survive a process restart.
+func (s *Store) FailGrading(job EvaluationJob, reason string, retryAt, deadline int64) error {
+	return s.finishEvaluation(job, func(tx *sql.Tx) error {
+		if retryAt != 0 {
+			_, err := tx.Exec(`UPDATE evaluation_jobs SET last_error=?, claimed_at=NULL,ready_at=?,retry_deadline=? WHERE id=?`,
+				reason, retryAt, deadline, job.ID)
 			return err
 		}
-		var remaining bool
-		if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM evaluation_jobs WHERE kind='grade' AND score IS NULL AND thread_id IN (`+sessionThreads+`))`, job.SessionID).Scan(&remaining); err != nil {
+		if _, err := tx.Exec(`UPDATE evaluation_jobs SET state='failed',last_error=?,claimed_at=NULL WHERE id=?`, reason, job.ID); err != nil {
 			return err
 		}
-		if remaining {
-			return nil
-		}
-		return publishGrades(tx, job.SessionID)
+		return settleGrading(tx, job.SessionID)
 	})
 }
 
@@ -238,5 +255,5 @@ func publishGrades(tx *sql.Tx, sessionID int64) error {
 	if _, err := tx.Exec(`UPDATE exam_sessions SET status='graded' WHERE id=?`, sessionID); err != nil {
 		return err
 	}
-	return discardSessionJobs(tx, sessionID)
+	return nil
 }

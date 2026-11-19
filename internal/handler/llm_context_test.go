@@ -28,7 +28,7 @@ func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, 
 	return &llm.GradeResult{Score: 5, MaxPoints: 10}, "", nil
 }
 
-func (e contextEvaluator) GradeThread(ctx context.Context, _ model.Question, messages []model.Message, _, _ int64) (*llm.GradeResult, error) {
+func (e contextEvaluator) GradeThreadAttempt(ctx context.Context, _ model.Question, messages []model.Message, _, _ int64, _ llm.GradeAttempt) (*llm.GradeResult, error) {
 	if e.gradedMessages != nil {
 		e.gradedMessages <- messages
 	}
@@ -223,8 +223,8 @@ func TestQueueTimeoutKeepsExamRetryable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if sess.Status != model.StatusInProgress {
-		t.Fatalf("exam cannot be resubmitted: %s", sess.Status)
+	if sess.Status != model.StatusGradingFailed {
+		t.Fatalf("grading failure reopened the exam: %s", sess.Status)
 	}
 	score, err := env.store.GetScore(env.threadID)
 	if err != nil {
@@ -240,8 +240,11 @@ func TestQueueTimeoutKeepsExamRetryable(t *testing.T) {
 	if grade != nil {
 		t.Fatalf("capacity timeout finalized the exam: %+v", grade)
 	}
-	if rec := env.submit(); rec.Code != http.StatusSeeOther {
-		t.Fatalf("resubmit: status=%d, body=%s", rec.Code, rec.Body.String())
+	if rec := env.submit(); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate submit: status=%d", rec.Code)
+	}
+	if err := env.store.RetryGrading(env.sessID); err != nil {
+		t.Fatal(err)
 	}
 	runNextEvaluation(t, env.h)
 	sess, err = env.store.GetSession(env.sessID)

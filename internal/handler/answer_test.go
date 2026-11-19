@@ -51,7 +51,7 @@ func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.
 	return res, "", nil
 }
 
-func (f *fakeLLM) GradeThread(context.Context, model.Question, []model.Message, int64, int64) (*llm.GradeResult, error) {
+func (f *fakeLLM) GradeThreadAttempt(context.Context, model.Question, []model.Message, int64, int64, llm.GradeAttempt) (*llm.GradeResult, error) {
 	return &llm.GradeResult{}, nil
 }
 

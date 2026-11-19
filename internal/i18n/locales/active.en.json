@@ -210,5 +210,16 @@
   {"id": "FeedbackInvalidForm", "other": "Could not read the answer form. Reload the question and try again."},
   {"id": "FeedbackTimeExpired", "other": "Time has expired. Submit your exam."},
   {"id": "FinalGradePending", "other": "Your answers are saved. Final grading is in progress."},
-  {"id": "FinalGradeRetry", "other": "Final grading could not finish. Your answers are saved. Open the exam to submit it again."}
+  {"id": "FinalGradeRetry", "other": "Final grading could not finish. Your answers are saved. Open the exam to submit it again."},
+  {"id": "SessionGradingFailed", "other": "Grading failed"},
+  {"id": "FinalGradeFailed", "other": "Your answers are saved. Grading could not finish. A teacher can retry it. This page will update automatically."},
+  {"id": "StaffGradePending", "other": "Final grading is in progress. This page will update automatically."},
+  {"id": "StaffGradeFailed", "other": "Retry grading to finish the questions that still need a score. Completed scores are saved."},
+  {"id": "RetryGrading", "other": "Retry grading"},
+  {"id": "RetryGradingConflict", "other": "This attempt is not awaiting a grading retry."},
+  {"id": "ThreadGradePending", "other": "Awaiting a score."},
+  {"id": "ThreadGradeDone", "other": "Graded."},
+  {"id": "ThreadGradeFailed", "other": "Grading failed."},
+  {"id": "GradingAttempts", "other": "Attempts in this run: {{.Count}}."},
+  {"id": "GradingLastError", "other": "Last error: {{.Reason}}."}
 ]

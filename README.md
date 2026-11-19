@@ -203,10 +203,9 @@ offline grader skips them when importing results, so they cannot be graded
 again as valid attempts.
 
 Run one exam server process per database. On startup the server resumes pending
-feedback and final grading from SQLite, including unfinished calls. An
-interrupted submission from a version predating the queue reopens so the
-student can resubmit the same saved variant. Only the exam server performs
-this recovery.
+feedback and final grading from SQLite, including calls whose 30-second worker lease has expired. On shutdown the
+server releases active work. Interrupted submissions from older versions enter
+the same queue with their saved answers and previously earned scores.
 
 #### Examples
 
@@ -228,8 +227,11 @@ Submitting an answer saves it immediately. The question checks for feedback
 every two seconds. Students can answer another question, close the browser,
 or submit the exam while feedback is pending. If feedback fails, **Retry
 evaluation** evaluates the saved text. Final grading includes every saved
-answer. The results page updates automatically and offers resubmission if
-the provider cannot finish grading.
+answer. The results page updates automatically. After a persistent error the
+attempt stays submitted with status `grading_failed`. Teachers and admins can
+use **Retry grading** in Teacher Review. It retries failed questions and keeps
+scores already earned. Final scores are published together after all questions
+have been graded.
 
 The concurrency limit is shared by feedback and final grading. When the limit
 is greater than one, final grading uses at most `limit - 1` slots, reserving

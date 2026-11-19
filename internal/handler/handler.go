@@ -14,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
+	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/llm"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
@@ -23,7 +24,7 @@ import (
 // *llm.Client implements it; tests use a fake.
 type Evaluator interface {
 	EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*llm.GradeResult, string, error)
-	GradeThread(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64) (*llm.GradeResult, error)
+	GradeThreadAttempt(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64, attempt llm.GradeAttempt) (*llm.GradeResult, error)
 }
 
 // Handler holds shared dependencies for HTTP handlers.
@@ -132,6 +133,7 @@ func (h *Handler) Routes(r chi.Router) {
 			r.Get("/review", h.handleReviewList)
 			r.Get("/review/export", h.handleStatement)
 			r.Get("/review/{sessionID}", h.handleReviewPage)
+			r.Post("/review/{sessionID}/retry-grading", h.handleRetryGrading)
 			r.Get("/review/{sessionID}/reset", h.handleResetAttemptPage)
 			r.Post("/review/{sessionID}/reset", h.handleResetAttempt)
 			r.Post("/review/{sessionID}/score/{threadID}", h.handleUpdateScore)
@@ -204,7 +206,10 @@ func (h *Handler) handleStudentResults(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	if r.Header.Get("HX-Request") == "true" && (sess.Status == model.StatusSubmitted || sess.Status == model.StatusGrading) {
+	// Only skip the swap when the browser already displays this phase.
+	observedFailure := r.URL.Query().Get("status") == string(model.StatusGradingFailed)
+	if r.Header.Get("HX-Request") == "true" && ((!observedFailure && sess.Status.GradingPending()) ||
+		(observedFailure && sess.Status == model.StatusGradingFailed)) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -254,7 +259,7 @@ func (h *Handler) handleReviewList(w http.ResponseWriter, r *http.Request) {
 
 	var reviewable, other []model.ExamSession
 	for _, s := range sessions {
-		if s.Status == model.StatusGraded || s.Status == model.StatusReviewed {
+		if s.Status == model.StatusGraded || s.Status == model.StatusReviewed || s.Status == model.StatusGradingFailed {
 			reviewable = append(reviewable, s)
 		} else {
 			other = append(other, s)
@@ -279,10 +284,33 @@ func (h *Handler) handleReviewPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.ReviewPage(*view).Render(r.Context(), w); err != nil {
+	progress, err := h.store.GradingProgress(sessionID)
+	if err != nil {
+		lookupError(w, err, "load grading progress", "session_id", sessionID)
+		return
+	}
+	if err := views.ReviewPage(*view, progress).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
+}
+
+func (h *Handler) handleRetryGrading(w http.ResponseWriter, r *http.Request) {
+	id, ok := parseIDParam(w, r, "sessionID")
+	if !ok {
+		return
+	}
+	if err := h.store.RetryGrading(id); err != nil {
+		if errors.Is(err, store.ErrGradingNotFailed) {
+			http.Error(w, i18n.T(r.Context(), "RetryGradingConflict"), http.StatusConflict)
+			return
+		}
+		lookupError(w, err, "retry final grading", "session_id", id)
+		return
+	}
+	h.wakeEvaluation()
+	http.Redirect(w, r, h.path(fmt.Sprintf("/review/%d", id)), http.StatusSeeOther)
 }
 
 func (h *Handler) handleUpdateScore(w http.ResponseWriter, r *http.Request) {

@@ -32,6 +32,7 @@ templ ReviewListPage(sessions, other []model.ExamSession, topics []string, filte
 								{"", t(ctx, "StatementAllStatuses")},
 								{"submitted", t(ctx, "StatementSubmitted")},
 								{"grading", t(ctx, "StatementGrading")},
+								{"grading_failed", t(ctx, "SessionGradingFailed")},
 								{"graded", t(ctx, "StatementGraded")},
 								{"reviewed", t(ctx, "StatementReviewed")},
 							} {
