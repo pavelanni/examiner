@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -51,7 +52,10 @@ func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.
 	return res, "", nil
 }
 
-func (f *fakeLLM) GradeThreadAttempt(context.Context, model.Question, []model.Message, int64, int64, llm.GradeAttempt) (*llm.GradeResult, error) {
+func (f *fakeLLM) GradeThreadAttempt(ctx context.Context, _ model.Question, _ []model.Message, _, _ int64, a llm.GradeAttempt) (*llm.GradeResult, error) {
+	if err := a.Reserve(ctx, time.Now().Add(time.Minute)); err != nil {
+		return nil, err
+	}
 	return &llm.GradeResult{}, nil
 }
 

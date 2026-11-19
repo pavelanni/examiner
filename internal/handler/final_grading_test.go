@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -125,6 +126,75 @@ func TestFinalGradingRetriesAndStaffRecovery(t *testing.T) {
 			}
 			if grade, err := env.store.GetGrade(env.sessA); err != nil || grade == nil || grade.LLMGrade != 70 {
 				t.Fatalf("grade: %+v, %v", grade, err)
+			}
+		})
+	}
+}
+
+// Drop an in-flight worker's result between dispatch and the store commit.
+// A replacement must enforce the HTTP budget even if the first call succeeded.
+func TestDispatchBudgetAcrossWorkerRestart(t *testing.T) {
+	for _, sent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("first_worker_sent=%t", sent), func(t *testing.T) {
+			var calls atomic.Int32
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				n := calls.Add(1)
+				if !sent && n < 3 {
+					w.WriteHeader(503)
+					return
+				}
+				_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"{\"score\":7,\"max_points\":10}"}}]}`)
+			}))
+			t.Cleanup(provider.Close)
+			retries := 2
+			if sent {
+				retries = 0
+			}
+			client, err := llm.New(provider.URL, "test", "fake", "standard", llm.WithMaxRetries(retries))
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := newAnswerEnv(t, 0, client)
+			if _, err := env.store.AddMessage(model.Message{ThreadID: env.threadID, Role: model.RoleStudent, Content: "answer"}); err != nil {
+				t.Fatal(err)
+			}
+			if rec := env.submit(); rec.Code != 303 {
+				t.Fatal(rec.Code)
+			}
+			lost, err := env.store.ClaimEvaluation(false)
+			if err != nil || lost == nil {
+				t.Fatalf("first claim: %+v, %v", lost, err)
+			}
+			if sent {
+				_, score, err := env.h.evaluateJob(t.Context(), *lost)
+				if err != nil || score == nil || calls.Load() != 1 {
+					t.Fatalf("first dispatch: %+v, %v, calls %d", score, err, calls.Load())
+				}
+				// The response never reached FinishGrading.
+				if err := env.store.ReleaseEvaluation(*lost); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				ctx, stop := context.WithCancel(t.Context())
+				stop()
+				env.h.processEvaluation(ctx, *lost)
+				if calls.Load() != 0 {
+					t.Fatal("cancelled claim reached upstream")
+				}
+			}
+			t.Cleanup(env.h.StartWorkers(t.Context(), 1))
+			want := model.StatusGraded
+			if sent {
+				want = model.StatusGradingFailed
+			}
+			waitForState(t, func() bool { s, err := env.store.GetSession(env.sessID); return err == nil && s.Status == want })
+			progress, err := env.store.GradingProgress(env.sessID)
+			p := progress[env.threadID]
+			if err != nil || p.Attempts != retries+1 || int(calls.Load()) != retries+1 {
+				t.Fatalf("progress %+v, HTTP requests %d, %v", p, calls.Load(), err)
+			}
+			if sent && p.LastError != "attempts_exhausted" {
+				t.Fatalf("exhausted budget: %+v", p)
 			}
 		})
 	}

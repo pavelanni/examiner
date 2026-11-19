@@ -28,7 +28,10 @@ func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, 
 	return &llm.GradeResult{Score: 5, MaxPoints: 10}, "", nil
 }
 
-func (e contextEvaluator) GradeThreadAttempt(ctx context.Context, _ model.Question, messages []model.Message, _, _ int64, _ llm.GradeAttempt) (*llm.GradeResult, error) {
+func (e contextEvaluator) GradeThreadAttempt(ctx context.Context, _ model.Question, messages []model.Message, _, _ int64, a llm.GradeAttempt) (*llm.GradeResult, error) {
+	if err := a.Reserve(ctx, time.Now().Add(time.Minute)); err != nil {
+		return nil, err
+	}
 	if e.gradedMessages != nil {
 		e.gradedMessages <- messages
 	}

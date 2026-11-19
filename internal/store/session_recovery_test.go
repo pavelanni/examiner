@@ -196,6 +196,9 @@ func TestScheduledRetrySurvivesRestart(t *testing.T) {
 	first := claimJob(t, s)
 	after := time.Now().Add(time.Hour).UnixMilli()
 	deadline := after + 1000
+	if err := s.ReserveGradeAttempt(t.Context(), first, time.UnixMilli(deadline)); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.FailGrading(first, "HTTP 429", after, deadline); err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +216,7 @@ func TestScheduledRetrySurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	retry := claimJob(t, s)
-	if retry.Attempt != 2 || retry.RetryDeadline != deadline || retry.ThreadID != first.ThreadID {
+	if retry.Attempts != 1 || retry.Generation != 2 || retry.RetryDeadline != deadline || retry.ThreadID != first.ThreadID {
 		t.Fatalf("lost retry budget: %+v", retry)
 	}
 }

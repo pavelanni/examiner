@@ -101,6 +101,12 @@ func (h *Handler) processEvaluation(ctx context.Context, job store.EvaluationJob
 	}()
 	defer func() { cancel(); <-renewed }()
 	reply, score, evalErr := h.evaluateJob(ctx, job)
+	if errors.Is(evalErr, llm.ErrGradeNotReserved) {
+		// A lost lease or unavailable database prevented dispatch. Release our
+		// generation without turning an unsent request into a provider failure.
+		slog.Warn("grade dispatch not reserved", "job_id", job.ID, "error", evalErr)
+		cancel()
+	}
 	if evalErr != nil && ctx.Err() == nil {
 		slog.Warn("evaluation failed", "job_id", job.ID, "thread_id", job.ThreadID, "reason", llm.FailureCode(evalErr))
 	}
@@ -176,7 +182,12 @@ func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*mo
 		}
 		return reply, nil, nil
 	}
-	result, err := h.llm.GradeThreadAttempt(ctx, question, messages, job.SessionID, thread.ID, llm.GradeAttempt{Number: job.Attempt, Deadline: job.RetryDeadline})
+	result, err := h.llm.GradeThreadAttempt(ctx, question, messages, job.SessionID, thread.ID, llm.GradeAttempt{
+		Number: job.Attempts + 1, Deadline: job.RetryDeadline,
+		Reserve: func(ctx context.Context, deadline time.Time) error {
+			return h.store.ReserveGradeAttempt(ctx, job, deadline)
+		},
+	})
 	if err != nil {
 		return nil, nil, err
 	}

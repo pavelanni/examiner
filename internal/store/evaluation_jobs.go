@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -104,12 +105,12 @@ func (s *Store) QueueSubmission(sessionID int64) error {
 	return tx.Commit()
 }
 
-// Each claim increments the attempt number, which fences workers from expired leases.
+// Generation fences expired workers. Attempts counts provider dispatches in the current run.
 type EvaluationJob struct {
 	ID, SessionID, ThreadID int64
 	Feedback                bool
-	Attempt                 int
-	RetryDeadline           int64 // Unix milliseconds, zero before the first retry
+	Generation, Attempts    int
+	RetryDeadline           int64 // Unix milliseconds, zero before the first provider dispatch
 }
 
 // Workers renew long-running calls. A crashed process stops renewing and a new
@@ -126,7 +127,7 @@ func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
 	}
 	defer func() { _ = tx.Rollback() }()
 	var job EvaluationJob
-	query := `SELECT j.id,t.session_id,t.id,j.kind='feedback',j.attempts+1,j.retry_deadline FROM evaluation_jobs j
+	query := `SELECT j.id,t.session_id,t.id,j.kind='feedback',j.generation+1,j.attempts,j.retry_deadline FROM evaluation_jobs j
 		JOIN question_threads t ON t.id=j.thread_id JOIN exam_sessions s ON s.id=t.session_id
 		WHERE j.state='pending' AND j.ready_at<=? AND (j.claimed_at IS NULL OR ` + expiredClaim + `)
 		AND ((j.kind='grade' AND s.status IN ('submitted','grading')) OR (j.kind='feedback' AND s.status='in_progress'))`
@@ -134,14 +135,14 @@ func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
 		query += ` AND j.kind='feedback'`
 	}
 	err = tx.QueryRow(query+` ORDER BY j.kind,j.id LIMIT 1`, time.Now().UnixMilli(), int64(EvaluationLease/time.Second)).Scan(
-		&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback, &job.Attempt, &job.RetryDeadline)
+		&job.ID, &job.SessionID, &job.ThreadID, &job.Feedback, &job.Generation, &job.Attempts, &job.RetryDeadline)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
-	if _, err := tx.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP,attempts=attempts+1 WHERE id=?`, job.ID); err != nil {
+	if _, err := tx.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP,generation=generation+1 WHERE id=?`, job.ID); err != nil {
 		return nil, err
 	}
 	if !job.Feedback {
@@ -152,10 +153,29 @@ func (s *Store) ClaimEvaluation(feedbackOnly bool) (*EvaluationJob, error) {
 	return &job, tx.Commit()
 }
 
-const activeClaim = `id=? AND attempts=? AND state='pending' AND claimed_at IS NOT NULL`
+const activeClaim = `id=? AND generation=? AND state='pending' AND claimed_at IS NOT NULL`
+
+// ReserveGradeAttempt records dispatch immediately before the provider call,
+// after obtaining both LLM slots. A claim can spend its observed budget once.
+// A crash after reservation leaves an uncertain send charged on recovery.
+func (s *Store) ReserveGradeAttempt(ctx context.Context, job EvaluationJob, deadline time.Time) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	res, err := s.db.ExecContext(ctx, `UPDATE evaluation_jobs SET attempts=attempts+1,retry_deadline=?
+		WHERE `+activeClaim+` AND kind='grade' AND attempts=?`, deadline.UnixMilli(), job.ID, job.Generation, job.Attempts)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err == nil && n == 0 {
+		return errors.New("grading claim or dispatch was superseded")
+	}
+	return err
+}
 
 func (s *Store) RenewEvaluation(job EvaluationJob) (bool, error) {
-	res, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE `+activeClaim, job.ID, job.Attempt)
+	res, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=CURRENT_TIMESTAMP WHERE `+activeClaim, job.ID, job.Generation)
 	if err != nil {
 		return false, err
 	}
@@ -164,7 +184,7 @@ func (s *Store) RenewEvaluation(job EvaluationJob) (bool, error) {
 }
 
 func (s *Store) ReleaseEvaluation(job EvaluationJob) error {
-	_, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=NULL WHERE `+activeClaim, job.ID, job.Attempt)
+	_, err := s.db.Exec(`UPDATE evaluation_jobs SET claimed_at=NULL WHERE `+activeClaim, job.ID, job.Generation)
 	return err
 }
 
@@ -176,7 +196,7 @@ func (s *Store) finishEvaluation(job EvaluationJob, fn func(*sql.Tx) error) erro
 	}
 	defer func() { _ = tx.Rollback() }()
 	var exists bool
-	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM evaluation_jobs WHERE `+activeClaim+`)`, job.ID, job.Attempt).Scan(&exists); err != nil {
+	if err := tx.QueryRow(`SELECT EXISTS(SELECT 1 FROM evaluation_jobs WHERE `+activeClaim+`)`, job.ID, job.Generation).Scan(&exists); err != nil {
 		return err
 	}
 	if !exists {

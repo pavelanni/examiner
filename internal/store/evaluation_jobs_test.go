@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
@@ -138,14 +139,14 @@ func TestQueueRecoversFeedbackAndPartiallyGradedExam(t *testing.T) {
 	if n, err := s.RecoverInterruptedSessions(); err != nil || n != 0 {
 		t.Fatalf("reopened an exam with durable work: %d, %v", n, err)
 	}
-	feedback.Attempt++
+	feedback.Generation++
 	if job := claimJob(t, s); job != feedback {
 		t.Fatalf("first resumed job: %+v, want %+v", job, feedback)
 	}
 	if err := s.FinishFeedback(feedback, &model.Message{ThreadID: feedback.ThreadID, Role: model.RoleLLM, Content: "reply"}); err != nil {
 		t.Fatal(err)
 	}
-	last.Attempt++
+	last.Generation++
 	if job := claimJob(t, s); job != last {
 		t.Fatalf("reran a staged score or lost last claim: %+v, want %+v", job, last)
 	}
@@ -295,6 +296,9 @@ func TestFailedThreadRetryPreservesStagedScoresAndFencesExpiredWorker(t *testing
 		t.Fatal(err)
 	}
 	first, stale := claimJob(t, s), claimJob(t, s)
+	if err := s.ReserveGradeAttempt(t.Context(), first, time.Now().Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
 	if err := s.FinishGrading(first, model.QuestionScore{LLMScore: 8}); err != nil {
 		t.Fatal(err)
 	}
@@ -302,11 +306,14 @@ func TestFailedThreadRetryPreservesStagedScoresAndFencesExpiredWorker(t *testing
 		t.Fatal(err)
 	}
 	current := claimJob(t, s)
-	if current.ID != stale.ID || current.Attempt != stale.Attempt+1 {
+	if current.ID != stale.ID || current.Generation != stale.Generation+1 || current.Attempts != 0 {
 		t.Fatalf("claimed %+v, want newer claim for %+v", current, stale)
 	}
 	if err := s.ReleaseEvaluation(stale); err != nil {
 		t.Fatal(err)
+	}
+	if err := s.ReserveGradeAttempt(t.Context(), stale, time.Now().Add(time.Minute)); err == nil {
+		t.Fatal("superseded claim reserved a provider dispatch")
 	}
 	if live, err := s.RenewEvaluation(stale); err != nil || live {
 		t.Fatalf("stale renewal: %t %v", live, err)
@@ -336,7 +343,7 @@ func TestFailedThreadRetryPreservesStagedScoresAndFencesExpiredWorker(t *testing
 		t.Fatal(err)
 	}
 	retry := claimJob(t, s)
-	if retry.ThreadID != current.ThreadID || retry.ID == current.ID || retry.Attempt != 1 {
+	if retry.ThreadID != current.ThreadID || retry.ID == current.ID || retry.Attempts != 0 || retry.Generation != 1 {
 		t.Fatalf("wrong retry: %+v", retry)
 	}
 	if err := s.FinishGrading(retry, model.QuestionScore{LLMScore: 6}); err != nil {

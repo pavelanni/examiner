@@ -477,3 +477,29 @@ func TestClientBudgetStopsLongRetryAfter(t *testing.T) {
 		t.Fatalf("huge Retry-After was retried early: %d requests", calls.Load())
 	}
 }
+
+func TestDurableGradeDeadlineAndSlotTimeout(t *testing.T) {
+	var calls, reservations atomic.Int32
+	client := reliabilityClient(t, func(w http.ResponseWriter, r *http.Request) { calls.Add(1); _, _ = io.WriteString(w, validGrade) }, WithTimeout(50*time.Millisecond), WithMaxConcurrency(1))
+	attempt := GradeAttempt{Number: 1, Deadline: time.Now().Add(-time.Minute).UnixMilli(),
+		Reserve: func(context.Context, time.Time) error { reservations.Add(1); return nil }}
+	grade := func() error {
+		_, err := client.GradeThreadAttempt(t.Context(), model.Question{Text: "Q", MaxPoints: 10}, []model.Message{{Role: model.RoleStudent, Content: "A"}}, 1, 1, attempt)
+		return err
+	}
+	if err := grade(); !errors.Is(err, context.DeadlineExceeded) || errors.Is(err, ErrQueueTimeout) || FailureCode(err) != "timeout" {
+		t.Fatalf("expired durable deadline: %v (%s)", err, FailureCode(err))
+	}
+	attempt.Deadline = 0
+	client.gradingSlots <- struct{}{}
+	if err := grade(); !errors.Is(err, ErrQueueTimeout) || FailureCode(err) != "queue_timeout" {
+		t.Fatalf("waiting for capacity: %v", err)
+	}
+	if reservations.Load() != 0 || calls.Load() != 0 {
+		t.Fatalf("%d reservations, %d requests", reservations.Load(), calls.Load())
+	}
+	<-client.gradingSlots
+	if err := grade(); err != nil || reservations.Load() != 1 || calls.Load() != 1 {
+		t.Fatalf("first real dispatch: %v, %d reservations, %d requests", err, reservations.Load(), calls.Load())
+	}
+}

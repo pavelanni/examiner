@@ -18,6 +18,7 @@ func (s *Store) migrateEvaluationJobs() error {
 	for _, column := range []string{
 		`state TEXT NOT NULL DEFAULT 'pending' CHECK(state IN ('pending','graded','failed'))`,
 		`attempts INTEGER NOT NULL DEFAULT 0`,
+		`generation INTEGER NOT NULL DEFAULT 0`,
 		`last_error TEXT NOT NULL DEFAULT ''`,
 		`ready_at INTEGER NOT NULL DEFAULT 0`,
 		`retry_deadline INTEGER NOT NULL DEFAULT 0`,
