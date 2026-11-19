@@ -344,21 +344,30 @@ exam sessions may reference them; the server also logs them at startup
 
 ### Teacher question authoring
 
-Teachers and admins can create and edit question files directly from the
-web UI. Log in as a user with the `teacher` or `admin` role and open
-**Profile** (`/teacher/profile`) to see your existing question files.
+Teachers and admins create and edit **question sets** directly from the
+web UI. A set is a group of your questions, stored as one JSON file. Log
+in as a user with the `teacher` or `admin` role and open **Profile**
+(`/teacher/profile`): it lists your sets with **Edit** and **Download**,
+and after a save it shows how many questions were added, updated and
+skipped.
 
-From the profile page you can:
+**Create a set** opens the question builder (`/teacher/create-test`):
 
-- **Create a new question file** — opens the question builder
-  (`/teacher/create-test`).
-- **Edit an existing file** — opens the builder pre-loaded with that file's
-  questions.
+- **Set name** is what the set is called in your list; students do not
+  see it.
+- **Default topic** is filled into new questions; each question's topic
+  can still be changed. An exam is built from the questions of one topic.
+- **Create by hand** shows one block per question: text, topic,
+  difficulty, points, grading criteria and model answer, each with a
+  short hint. Missing fields are marked on the page.
+- **Upload a file** takes a JSON file instead. The tab describes the
+  format and offers an example to download
+  (`/teacher/questions-example.json`, in the UI language). Editing a set
+  works by hand only.
 
-The builder lets you add questions one at a time, remove questions, and
-optionally upload a JSON file to seed a new file. When you save, the file
-is written to `questions/teacher_<username>_<name>.json` and the questions
-are imported into the database.
+When you save, the set is written to `questions/teacher_<username>_<name>.json`
+and the questions are imported into the database. Saving an edited set
+under the same name keeps its file.
 
 Editing a file updates each question by its database ID, so rewording a
 question changes it in place and saving a file again without changes
@@ -435,10 +444,11 @@ topic is a separate question.
 
 | Route | Purpose |
 | ----- | ------- |
-| `/teacher/profile` | List and manage your question files |
-| `/teacher/create-test` | Build a new question file |
-| `/teacher/create-test?file=...` | Edit an existing question file |
-| `/teacher/tests/file/{name}` | Download a question JSON file |
+| `/teacher/profile` | List your question sets; summary of the last save |
+| `/teacher/create-test` | Build a new question set by hand or from a file |
+| `/teacher/create-test?file=...` | Edit an existing question set |
+| `/teacher/tests/file/{name}` | Download a question set as JSON |
+| `/teacher/questions-example.json` | Download an example question file |
 
 ## Security
 

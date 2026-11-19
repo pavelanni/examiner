@@ -21,7 +21,7 @@ templ questionFormatHelp(example string) {
 		</table>
 		<p>{ t(ctx, "QFormatAllRequired") }</p>
 		<p>{ t(ctx, "QFormatExample") }</p>
-		<pre><code>{ example }</code></pre>
+		<pre style="white-space: pre-wrap; overflow-wrap: anywhere;"><code>{ example }</code></pre>
 		<p><a href={ templ.SafeURL(p(ctx, "/teacher/questions-example.json")) } download>{ t(ctx, "QFormatDownload") }</a></p>
 	</details>
 }
