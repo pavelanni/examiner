@@ -21,6 +21,14 @@ type DupChoice struct {
     UpdateID  int64  // the question an update overwrites
 }
 
+// KeptDecision is a duplicate decision that was valid on the last save. The
+// duplicate form sends it again, so answering the remaining questions does
+// not drop it.
+type KeptDecision struct {
+    N     int    // question number
+    Value string // "skip" or "update:<ID>", as the form posted it
+}
+
 // TeacherBuilder is the state of the constructor page.
 type TeacherBuilder struct {
     Questions  []BuilderQuestion
@@ -30,6 +38,7 @@ type TeacherBuilder struct {
     Errs       []string
     Dups       []DupChoice
     DupToken   string // identifies the questions the choices were made for
+    Kept       []KeptDecision
 }
 
 // Вспомогательная функция, которая берет два значения от JSONString и безопасно возвращает одно
@@ -71,7 +80,7 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
             <input type="hidden" name="csrf_token" value={ csrf }/>
             <input type="hidden" name="editing_file" value={ b.Filename }/>
             if len(b.Dups) > 0 {
-                @duplicateChoices(b.Dups, b.DupToken)
+                @duplicateChoices(b.Dups, b.DupToken, b.Kept)
             }
             
             <div style="margin-bottom: 20px;">
@@ -270,11 +279,15 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
 }
 
 // duplicateChoices asks what to do with each duplicate question. The
-// choices apply only to the questions identified by token.
-templ duplicateChoices(dups []DupChoice, token string) {
+// choices apply only to the questions identified by token; kept decisions
+// are sent again as they are.
+templ duplicateChoices(dups []DupChoice, token string, kept []KeptDecision) {
     <article role="alert" style="border-left: 4px solid var(--pico-primary);">
         <p><strong>{ t(ctx, "QDupTitle") }</strong></p>
         <input type="hidden" name="dup_token" value={ token }/>
+        for _, k := range kept {
+            <input type="hidden" name={ fmt.Sprintf("dup_%d", k.N) } value={ k.Value }/>
+        }
         for _, d := range dups {
             <fieldset>
                 <legend>{ d.Msg }</legend>

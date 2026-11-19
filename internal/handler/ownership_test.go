@@ -161,8 +161,10 @@ func TestTeacherCannotOverwriteOthersQuestion(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, "matches question #1") || !strings.Contains(body, "by T") || strings.Contains(body, `value="update:`) {
 		t.Errorf("duplicate not explained, or B offered to update A's question")
 	}
-	// B cannot update it, even by asking: the decision stays pending.
-	rec = confirmDups(t, h, b, fields, rec, map[int]string{1: "update"})
+	// B cannot update it, even with a forged update:<ID> for A's question:
+	// the decision stays pending.
+	aID := questionByText(t, s, "Shared Q").ID
+	rec = confirmDups(t, h, b, fields, rec, map[int]string{1: fmt.Sprintf("update:%d", aID)})
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("B update: status %d, want 409", rec.Code)
 	}

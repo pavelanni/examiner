@@ -35,12 +35,16 @@ func idsOf(t *testing.T, s *store.Store, texts ...string) string {
 	return string(b)
 }
 
-var dupTokenRe = regexp.MustCompile(`name="dup_token" value="([0-9a-f]+)"`)
+var (
+	dupTokenRe  = regexp.MustCompile(`name="dup_token" value="([0-9a-f]+)"`)
+	dupHiddenRe = regexp.MustCompile(`<input type="hidden" name="(dup_\d+)" value="([^"]*)"`)
+)
 
 // confirmDups answers the duplicate form of rec, a 409 response to fields,
-// with choices by question number, and submits the form again. "update"
-// sends the update the form offers for that question (update:<ID>), or the
-// bare word when none is offered.
+// with choices by question number, and submits the form again as a browser
+// would: hidden dup_<N> fields of the form are sent too. "update" sends the
+// update the form offers for that question (update:<ID>), or the bare word
+// when none is offered.
 func confirmDups(t *testing.T, h *Handler, user *model.User, fields map[string]string, rec *httptest.ResponseRecorder, choices map[int]string) *httptest.ResponseRecorder {
 	t.Helper()
 	if rec.Code != http.StatusConflict {
@@ -52,6 +56,9 @@ func confirmDups(t *testing.T, h *Handler, user *model.User, fields map[string]s
 	}
 	f := maps.Clone(fields)
 	f["dup_token"] = m[1]
+	for _, hidden := range dupHiddenRe.FindAllStringSubmatch(rec.Body.String(), -1) {
+		f[hidden[1]] = hidden[2]
+	}
 	for n, c := range choices {
 		if c == "update" {
 			re := regexp.MustCompile(fmt.Sprintf(`name="dup_%d" value="(update:\d+)"`, n))
@@ -282,6 +289,48 @@ func TestTeacherUpdateBoundToOfferedQuestion(t *testing.T) {
 	}
 	if q, _ := s.GetQuestion(1); q.Rubric != "old" {
 		t.Errorf("#1 updated by a choice made for another question: %+v", q)
+	}
+}
+
+// A decision that was valid is kept when another one has to be asked
+// again: otherwise the two forms would alternate and the save could never
+// finish.
+func TestTeacherValidDecisionsKeptWhenAskedAgain(t *testing.T) {
+	h, s := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": twoQ("Shared A", "old", "Shared B", "old"), "custom_filename": "mid"})
+	a, b := questionByText(t, s, "Shared A").ID, questionByText(t, s, "Shared B").ID
+	fields := map[string]string{"questions_json": twoQ("shared a", "new", "shared b", "new"), "custom_filename": "final"}
+	rec := teacherSave(t, h, fields)
+	m := dupTokenRe.FindStringSubmatch(rec.Body.String())
+	if rec.Code != http.StatusConflict || m == nil {
+		t.Fatalf("status %d, want 409 with the duplicate form", rec.Code)
+	}
+
+	// The update for B names a question B no longer matches, as when the
+	// stored questions change before the teacher answers: only B is asked
+	// again.
+	f := maps.Clone(fields)
+	f["dup_token"], f["dup_1"], f["dup_2"] = m[1], fmt.Sprintf("update:%d", a), "update:999"
+	rec = teacherSaveAs(t, h, teacher1User, f)
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status %d, want 409 asking about question 2 again", rec.Code)
+	}
+	if body := rec.Body.String(); strings.Contains(body, `name="dup_1" value="skip"`) || !strings.Contains(body, `name="dup_2" value="skip"`) {
+		t.Errorf("the second form should ask about question 2 only")
+	}
+
+	// Answering question 2 finishes the save, with the answer for question 1 kept.
+	rec = confirmDups(t, h, teacher1User, fields, rec, map[int]string{2: "update"})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d, want the save to finish; body %s", rec.Code, rec.Body.String())
+	}
+	for _, id := range []int64{a, b} {
+		if q, err := s.GetQuestion(id); err != nil || q.Rubric != "new" {
+			t.Errorf("#%d = %+v, %v; want updated", id, q, err)
+		}
+	}
+	if n := questionCount(t, s); n != 2 {
+		t.Errorf("count = %d, want 2", n)
 	}
 }
 

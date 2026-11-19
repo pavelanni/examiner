@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -167,6 +168,31 @@ func duplicateDecisions(r *http.Request, drafts []questionimport.Draft) map[int]
 			}
 		}
 	}
+	return out
+}
+
+// keptDecisions returns the decisions of this save for the questions that
+// are not asked about again, so the next duplicate form sends them too.
+// Apply checks them again on that save: an update whose target no longer
+// matches is asked about again.
+func keptDecisions(decisions map[int]questionimport.Choice, pending []questionimport.Duplicate) []views.KeptDecision {
+	asked := make(map[int]bool, len(pending))
+	for _, d := range pending {
+		asked[d.Question] = true
+	}
+	out := make([]views.KeptDecision, 0, len(decisions))
+	for n, c := range decisions {
+		if asked[n] {
+			continue
+		}
+		switch c.Decision {
+		case questionimport.DecisionSkip:
+			out = append(out, views.KeptDecision{N: n, Value: "skip"})
+		case questionimport.DecisionUpdate:
+			out = append(out, views.KeptDecision{N: n, Value: fmt.Sprintf("update:%d", c.Target)})
+		}
+	}
+	slices.SortFunc(out, func(a, b views.KeptDecision) int { return a.N - b.N })
 	return out
 }
 
@@ -452,7 +478,11 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		render(http.StatusBadRequest, questionimport.Localize(r.Context(), conflict.Errs), nil, "")
 		return
 	case errors.As(err, &dups):
-		render(http.StatusConflict, nil, dupChoices(r.Context(), dups.Dups), dupToken)
+		h.renderTeacherCreateTest(w, r, http.StatusConflict, views.TeacherBuilder{
+			Questions: builderQuestions(drafts), Filename: editingFile, CustomName: customFilename,
+			Published: published, Dups: dupChoices(r.Context(), dups.Dups), DupToken: dupToken,
+			Kept: keptDecisions(decisions, dups.Dups),
+		})
 		return
 	case errors.Is(err, errAllSkipped):
 		render(http.StatusBadRequest, []string{appI18n.T(r.Context(), "QImportErrAllSkipped")}, nil, "")
