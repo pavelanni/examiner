@@ -31,21 +31,21 @@ func (h *Handler) loadAnswerThread(w http.ResponseWriter, r *http.Request) (*ans
 	}
 	session, bp, err := h.store.GetSessionWithBlueprint(sessionID)
 	if err != nil {
-		lookupError(w, err, "load answer session", "id", sessionID)
+		lookupError(w, r, err, "load answer session", "id", sessionID)
 		return nil, false
 	}
 	user := model.UserFromContext(r.Context())
 	if user.Role == model.UserRoleStudent && session.StudentID != user.ID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		httpError(w, r, http.StatusForbidden, "ErrForbidden")
 		return nil, false
 	}
 	thread, err := h.store.GetThread(threadID)
 	if err != nil {
-		lookupError(w, err, "load answer thread", "id", threadID)
+		lookupError(w, r, err, "load answer thread", "id", threadID)
 		return nil, false
 	}
 	if thread.SessionID != sessionID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		httpError(w, r, http.StatusForbidden, "ErrForbidden")
 		return nil, false
 	}
 	return &answerThread{ThreadView: model.ThreadView{Thread: thread}, session: session, blueprint: bp}, true
@@ -87,7 +87,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	// Capture the form's turn for the acknowledgement. QueueAnswer verifies it
 	// again under the write lock, even if another tab has already advanced it.
 	if err := h.loadConversation(a); err != nil {
-		lookupError(w, err, "load answer view")
+		lookupError(w, r, err, "load answer view")
 		return
 	}
 	err = h.store.QueueAnswer(a.session.ID, a.Thread.ID, turn, answer, retry)
@@ -96,7 +96,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		lookupError(w, err, "queue answer", "thread_id", a.Thread.ID)
+		lookupError(w, r, err, "queue answer", "thread_id", a.Thread.ID)
 		return
 	}
 	h.wakeEvaluation()
@@ -141,7 +141,7 @@ func (h *Handler) showFeedback(w http.ResponseWriter, r *http.Request, code int)
 		return
 	}
 	if err := h.loadConversation(a); err != nil {
-		lookupError(w, err, "load feedback view")
+		lookupError(w, r, err, "load feedback view")
 		return
 	}
 	h.renderAnswerThread(w, r, a, code)
@@ -173,12 +173,12 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	sess, err := h.store.GetSession(id)
 	if err != nil {
-		lookupError(w, err, "load submission", "id", id)
+		lookupError(w, r, err, "load submission", "id", id)
 		return
 	}
 	user := model.UserFromContext(r.Context())
 	if user.Role == model.UserRoleStudent && sess.StudentID != user.ID {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		httpError(w, r, http.StatusForbidden, "ErrForbidden")
 		return
 	}
 	if sess.Status == model.StatusAnnulled {
@@ -190,7 +190,7 @@ func (h *Handler) handleSubmit(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, i18n.T(r.Context(), "ExamSubmitted"), http.StatusConflict)
 			return
 		}
-		lookupError(w, err, "queue final grade", "id", id)
+		lookupError(w, r, err, "queue final grade", "id", id)
 		return
 	}
 	h.wakeEvaluation()

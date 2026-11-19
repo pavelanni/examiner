@@ -36,7 +36,7 @@ func (h *Handler) resetAttempt(w http.ResponseWriter, r *http.Request, submit bo
 	}
 	view, err := h.store.GetSessionView(sessionID)
 	if err != nil {
-		lookupError(w, err, "failed to load attempt for reset", "session_id", sessionID)
+		lookupError(w, r, err, "failed to load attempt for reset", "session_id", sessionID)
 		return
 	}
 	data := views.ResetAttemptData{View: *view}
@@ -65,10 +65,10 @@ func (h *Handler) resetAttempt(w http.ResponseWriter, r *http.Request, submit bo
 			case errors.Is(err, store.ErrResetReasonTooLong):
 				data.Error = appI18n.T(r.Context(), "AttemptResetReasonTooLong")
 			case errors.Is(err, store.ErrResetForbidden):
-				http.Error(w, "forbidden", http.StatusForbidden)
+				httpError(w, r, http.StatusForbidden, "ErrForbidden")
 				return
 			default:
-				lookupError(w, err, "failed to reset attempt", "session_id", sessionID)
+				lookupError(w, r, err, "failed to reset attempt", "session_id", sessionID)
 				return
 			}
 		}

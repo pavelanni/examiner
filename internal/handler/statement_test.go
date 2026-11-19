@@ -184,3 +184,24 @@ func TestStatementTopicDropdown(t *testing.T) {
 		t.Fatalf("filtered rows = %v, error = %v", rows, err)
 	}
 }
+
+// A bad filter is explained in the UI language: the browser shows the body
+// of the download request as a plain page.
+func TestStatementFilterErrorLocalized(t *testing.T) {
+	if err := i18n.Init("en"); err != nil {
+		t.Fatal(err)
+	}
+	for q, want := range map[string]string{
+		"timezone=Mars%2FNowhere":           "Неизвестный часовой пояс.\n",
+		"from=2026-11-18&to=2026-11-17":     "Начальная дата позже конечной.\n",
+		"format=pdf":                        "Неизвестный формат выгрузки.\n",
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/review/export?"+q, nil)
+		req = req.WithContext(i18n.WithLocalizer(req.Context(), i18n.NewLocalizer("ru")))
+		rec := httptest.NewRecorder()
+		(&Handler{}).handleStatement(rec, req)
+		if rec.Code != http.StatusBadRequest || rec.Body.String() != want {
+			t.Errorf("%s: %d %q, want 400 %q", q, rec.Code, rec.Body.String(), want)
+		}
+	}
+}

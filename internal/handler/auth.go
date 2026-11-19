@@ -59,7 +59,7 @@ func (h *Handler) csrfMiddleware(next http.Handler) http.Handler {
 				token, err := h.issueCSRFCookie(w)
 				if err != nil {
 					slog.Error("failed to generate CSRF token", "error", err)
-					http.Error(w, "internal error", http.StatusInternalServerError)
+					httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 					return
 				}
 				ctx := model.ContextWithCSRFToken(r.Context(), token)
@@ -158,7 +158,7 @@ func requireRole(allowed ...model.UserRole) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			user := model.UserFromContext(r.Context())
 			if user == nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 				return
 			}
 			for _, role := range allowed {
@@ -167,7 +167,7 @@ func requireRole(allowed ...model.UserRole) func(http.Handler) http.Handler {
 					return
 				}
 			}
-			http.Error(w, "forbidden", http.StatusForbidden)
+			httpError(w, r, http.StatusForbidden, "ErrForbidden")
 		})
 	}
 }
@@ -215,7 +215,7 @@ func (h *Handler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	token, err := h.store.CreateAuthSession(user.ID)
 	if err != nil {
 		slog.Error("failed to create auth session", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	}
 

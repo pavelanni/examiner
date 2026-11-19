@@ -43,15 +43,15 @@ func (h *Handler) ownsQuestionFile(user *model.User, name string) (bool, error) 
 
 // checkQuestionFileOwner writes 403 (or 500) and returns false unless user
 // owns the question file name.
-func (h *Handler) checkQuestionFileOwner(w http.ResponseWriter, user *model.User, name string) bool {
+func (h *Handler) checkQuestionFileOwner(w http.ResponseWriter, r *http.Request, user *model.User, name string) bool {
 	ok, err := h.ownsQuestionFile(user, name)
 	if err != nil {
 		slog.Error("failed to check question file owner", "file", name, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return false
 	}
 	if !ok {
-		http.Error(w, "forbidden", http.StatusForbidden)
+		httpError(w, r, http.StatusForbidden, "ErrForbidden")
 		return false
 	}
 	return true
@@ -219,14 +219,14 @@ func (h *Handler) renderTeacherCreateTest(w http.ResponseWriter, r *http.Request
 func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
 
 	files, err := h.listOwnedQuestionFiles(user)
 	if err != nil {
 		slog.Error("failed to check question file owner", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	}
 
@@ -239,7 +239,7 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
 
@@ -248,7 +248,7 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 
 	if filename != "" {
 		baseName := filepath.Base(filename)
-		if !h.checkQuestionFileOwner(w, user, baseName) {
+		if !h.checkQuestionFileOwner(w, r, user, baseName) {
 			return
 		}
 		filePath := filepath.Join("questions", baseName)
@@ -260,7 +260,7 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 			ids, err := h.questionIDs(user, drafts)
 			if err != nil {
 				slog.Error("failed to find stored questions", "file", filename, "error", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 				return
 			}
 			for i := range drafts {
@@ -282,7 +282,7 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 		var err error
 		if published, err = h.store.AllPublished(user.ID, keys); err != nil {
 			slog.Error("failed to read publication state", "file", filename, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 			return
 		}
 	}
@@ -295,7 +295,7 @@ func (h *Handler) handleTeacherCreateTest(w http.ResponseWriter, r *http.Request
 func (h *Handler) handleTeacherMe(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -311,13 +311,13 @@ func (h *Handler) handleTeacherMe(w http.ResponseWriter, r *http.Request) {
 // handleTeacherUpload processes question file uploads and test definitions submitted by teachers.
 func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "file too large", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrFileTooLarge")
 		return
 	}
 
 	user := model.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
 
@@ -328,7 +328,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = file.Close() }()
 		b, err := io.ReadAll(file)
 		if err != nil {
-			http.Error(w, "failed to read file", http.StatusInternalServerError)
+			httpError(w, r, http.StatusInternalServerError, "ErrFileRead")
 			return
 		}
 		data = b
@@ -336,7 +336,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	} else {
 		txt := r.FormValue("questions_json")
 		if txt == "" {
-			http.Error(w, "no input provided", http.StatusBadRequest)
+			httpError(w, r, http.StatusBadRequest, "ErrNoInput")
 			return
 		}
 		data = []byte(txt)
@@ -365,7 +365,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	// may name them to be updated by ID, and those dropped are deleted.
 	var oldIDs []int64
 	if editingFile != "" {
-		if !h.checkQuestionFileOwner(w, user, editingFile) {
+		if !h.checkQuestionFileOwner(w, r, user, editingFile) {
 			return
 		}
 		oldPath = filepath.Join("questions", editingFile)
@@ -374,7 +374,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 			ids, err := h.questionIDs(user, oldDrafts)
 			if err != nil {
 				slog.Error("failed to find stored questions", "file", oldPath, "error", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
+				httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 				return
 			}
 			for _, id := range ids {
@@ -414,7 +414,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	// and ivan_mid, ivan saving "mid_exam" would create ivan_mid's file.
 	if ok, err := h.ownsQuestionFile(user, safeName); err != nil {
 		slog.Error("failed to check question file owner", "file", safeName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	} else if !ok {
 		render(http.StatusBadRequest, []string{appI18n.T(r.Context(), "QImportErrFileNameTaken")}, nil, "")
@@ -521,19 +521,19 @@ func savedQuestionsFile(data []byte, drafts []questionimport.Draft, saved []int)
 func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) {
 	user := model.UserFromContext(r.Context())
 	if user == nil {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
 	name := chi.URLParam(r, "name")
 	if name == "" {
-		http.Error(w, "missing name", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrMissingName")
 		return
 	}
 	if filepath.Base(name) != name {
-		http.Error(w, "invalid filename", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrInvalidFilename")
 		return
 	}
-	if !h.checkQuestionFileOwner(w, user, name) {
+	if !h.checkQuestionFileOwner(w, r, user, name) {
 		return
 	}
 	path := filepath.Join("questions", name)

@@ -23,7 +23,7 @@ func (h *Handler) handleAdminUsersPage(w http.ResponseWriter, r *http.Request) {
 	users, err := h.store.ListUsers()
 	if err != nil {
 		slog.Error("failed to list users", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -41,14 +41,14 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 	role := r.FormValue("role")
 
 	if username == "" || password == "" {
-		http.Error(w, "username and password required", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrUsernamePasswordRequired")
 		return
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		slog.Error("failed to hash password", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	}
 
@@ -66,12 +66,12 @@ func (h *Handler) handleCreateUser(w http.ResponseWriter, r *http.Request) {
 		Active:       true,
 	})
 	if errors.Is(err, store.ErrUsernameTaken) {
-		http.Error(w, "username already exists", http.StatusConflict)
+		httpError(w, r, http.StatusConflict, "ErrUsernameExists")
 		return
 	}
 	if err != nil {
 		slog.Error("failed to create user", "error", err)
-		http.Error(w, "failed to create user", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrCreateUser")
 		return
 	}
 
@@ -92,7 +92,7 @@ func (h *Handler) handleToggleUserActive(w http.ResponseWriter, r *http.Request)
 	}
 
 	if err := h.store.ToggleUserActive(id); err != nil {
-		lookupError(w, err, "failed to toggle user active", "user_id", id)
+		lookupError(w, r, err, "failed to toggle user active", "user_id", id)
 		return
 	}
 
@@ -125,20 +125,20 @@ func (h *Handler) renderAdminQuestions(w http.ResponseWriter, r *http.Request, s
 // validated first; a file with any error writes nothing.
 func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		http.Error(w, "file too large", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrFileTooLarge")
 		return
 	}
 
 	file, header, err := r.FormFile("questions_file")
 	if err != nil {
-		http.Error(w, "no file uploaded", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrNoFile")
 		return
 	}
 	defer func() { _ = file.Close() }()
 
 	data, err := io.ReadAll(file)
 	if err != nil {
-		http.Error(w, "failed to read file", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrFileRead")
 		return
 	}
 
@@ -148,7 +148,7 @@ func (h *Handler) handleUploadQuestions(w http.ResponseWriter, r *http.Request) 
 	storedHash, err := h.store.GetImportedFileHash(header.Filename)
 	if err != nil {
 		slog.Error("failed to check import status", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrInternal")
 		return
 	}
 	// Questions already in their topic are skipped unless the admin asks

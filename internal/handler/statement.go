@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"fmt"
+	"errors"
 	"log/slog"
 	"mime"
 	"net/http"
@@ -15,6 +15,11 @@ import (
 	"github.com/pavelanni/examiner/internal/statement"
 )
 
+// statementFilterError is a message ID explaining an invalid filter.
+type statementFilterError string
+
+func (e statementFilterError) Error() string { return string(e) }
+
 // statementFilter validates the URL filters. Date boundaries use exam start time
 // to match Teacher Review (#52), while the exported date is submitted_at.
 func statementFilter(query url.Values) (model.StatementFilter, *time.Location, error) {
@@ -25,7 +30,7 @@ func statementFilter(query url.Values) (model.StatementFilter, *time.Location, e
 	}
 	location, err := time.LoadLocation(zone)
 	if err != nil {
-		return filter, nil, fmt.Errorf("invalid timezone")
+		return filter, nil, statementFilterError("ErrStatementTimezone")
 	}
 	if query.Get("topic") != "" {
 		value := query.Get("topic")
@@ -37,7 +42,7 @@ func statementFilter(query url.Values) (model.StatementFilter, *time.Location, e
 		filter.Status = ""
 	case model.StatusSubmitted, model.StatusGrading, model.StatusGradingFailed, model.StatusGraded, model.StatusReviewed:
 	default:
-		return filter, nil, fmt.Errorf("invalid status")
+		return filter, nil, statementFilterError("ErrStatementStatus")
 	}
 	from, to := query.Get("from"), query.Get("to")
 	if date := query.Get("date"); date != "" {
@@ -46,20 +51,20 @@ func statementFilter(query url.Values) (model.StatementFilter, *time.Location, e
 	if from != "" {
 		t, err := time.ParseInLocation("2006-01-02", from, location)
 		if err != nil {
-			return filter, nil, fmt.Errorf("invalid start date")
+			return filter, nil, statementFilterError("ErrStatementFrom")
 		}
 		filter.From = &t
 	}
 	if to != "" {
 		t, err := time.ParseInLocation("2006-01-02", to, location)
 		if err != nil {
-			return filter, nil, fmt.Errorf("invalid end date")
+			return filter, nil, statementFilterError("ErrStatementTo")
 		}
 		t = t.AddDate(0, 0, 1)
 		filter.Until = &t
 	}
 	if filter.From != nil && filter.Until != nil && !filter.From.Before(*filter.Until) {
-		return filter, nil, fmt.Errorf("start date is after end date")
+		return filter, nil, statementFilterError("ErrStatementRange")
 	}
 	return filter, location, nil
 }
@@ -90,18 +95,23 @@ func (h *Handler) handleStatement(w http.ResponseWriter, r *http.Request) {
 		format = "csv"
 	}
 	if format != "csv" && format != "xlsx" {
-		http.Error(w, "invalid export format", http.StatusBadRequest)
+		httpError(w, r, http.StatusBadRequest, "ErrInvalidExportFormat")
 		return
 	}
 	filter, location, err := statementFilter(r.URL.Query())
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+		var fe statementFilterError
+		if errors.As(err, &fe) {
+			httpError(w, r, http.StatusBadRequest, string(fe))
+		} else {
+			httpError(w, r, http.StatusBadRequest, "ErrBadRequest")
+		}
 		return
 	}
 	report, err := h.store.ExamStatement(filter)
 	if err != nil {
 		slog.Error("failed to query exam statement", "error", err)
-		http.Error(w, "failed to export statement", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrStatementExport")
 		return
 	}
 	generated := time.Now().In(location)
@@ -115,7 +125,7 @@ func (h *Handler) handleStatement(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		slog.Error("failed to render exam statement", "error", err)
-		http.Error(w, "failed to export statement", http.StatusInternalServerError)
+		httpError(w, r, http.StatusInternalServerError, "ErrStatementExport")
 		return
 	}
 	topic := "all"
