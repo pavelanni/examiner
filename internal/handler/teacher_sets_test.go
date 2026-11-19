@@ -4,10 +4,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/pavelanni/examiner/internal/handler/views"
 	"github.com/pavelanni/examiner/internal/model"
 )
@@ -114,5 +116,31 @@ func TestCommonTopic(t *testing.T) {
 		if got := commonTopic(c.in); got != c.want {
 			t.Errorf("commonTopic(%v) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// The profile links to every set; a name with a comma or a space reaches
+// the handler percent-encoded (chi reads the raw path) and must still be
+// found.
+func TestTeacherDownloadEncodedName(t *testing.T) {
+	h, _ := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "Механика, 1 курс"})
+	r := chi.NewRouter()
+	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
+	body := profilePage(t, h, "")
+	m := regexp.MustCompile(`href="(/teacher/tests/file/[^"]+)"`).FindStringSubmatch(body)
+	if m == nil {
+		t.Fatal("no download link on the profile")
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, m[1], nil), teacher1User))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Question 1") {
+		t.Errorf("GET %s: %d %q", m[1], rec.Code, rec.Body.String())
+	}
+	// An encoded path separator is still refused.
+	rec = httptest.NewRecorder()
+	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/tests/file/..%2Fteacher_teacher1_x.json", nil), teacher1User))
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("encoded ../: status %d, want 400", rec.Code)
 	}
 }

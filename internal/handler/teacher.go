@@ -590,7 +590,13 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
-	name := chi.URLParam(r, "name")
+	// chi reads the raw path when the request has escapes it would not
+	// produce itself (%2C for a comma), so the name may still be encoded.
+	name, err := url.PathUnescape(chi.URLParam(r, "name"))
+	if err != nil {
+		httpError(w, r, http.StatusBadRequest, "ErrInvalidFilename")
+		return
+	}
 	if name == "" {
 		httpError(w, r, http.StatusBadRequest, "ErrMissingName")
 		return
