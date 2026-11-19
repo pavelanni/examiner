@@ -233,8 +233,39 @@ func dupChoices(ctx context.Context, dups []questionimport.Duplicate) []views.Du
 	return out
 }
 
+// commonTopic returns the topic shared by every question that has one, or
+// "" when they differ: the constructor offers it as the default topic.
+func commonTopic(qs []views.BuilderQuestion) string {
+	topic := ""
+	for _, q := range qs {
+		switch {
+		case q.Topic == "":
+		case topic == "":
+			topic = q.Topic
+		case q.Topic != topic:
+			return ""
+		}
+	}
+	return topic
+}
+
 func (h *Handler) renderTeacherCreateTest(w http.ResponseWriter, r *http.Request, status int, b views.TeacherBuilder) {
 	user := model.UserFromContext(r.Context())
+	if b.SetName == "" {
+		switch {
+		case b.CustomName != "":
+			b.SetName = setName(filepath.Base(b.CustomName), user.Username)
+		case b.Filename != "":
+			b.SetName = setName(b.Filename, user.Username)
+		}
+	}
+	if b.DefaultTopic == "" {
+		b.DefaultTopic = strings.TrimSpace(r.FormValue("default_topic"))
+	}
+	if b.DefaultTopic == "" {
+		b.DefaultTopic = commonTopic(b.Questions)
+	}
+	b.Example = string(questionExampleJSON(appI18n.Lang(r.Context())))
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	component := views.TeacherCreateTestPage(user.DisplayName, model.CSRFTokenFromContext(r.Context()), b)

@@ -64,3 +64,11 @@ func difficultyListLabel(ctx context.Context, list string) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+// builderTitle is the constructor's title: the set being edited, or a new set.
+func builderTitle(ctx context.Context, b TeacherBuilder) string {
+	if b.Filename != "" {
+		return td(ctx, "QSetEditTitle", map[string]any{"Name": b.SetName})
+	}
+	return t(ctx, "QSetNewTitle")
+}

@@ -2,7 +2,6 @@ package views
 
 import (
     "fmt"
-    "path/filepath"
     "github.com/pavelanni/examiner/internal/model"
 )
 
@@ -31,17 +30,20 @@ type KeptDecision struct {
 
 // TeacherBuilder is the state of the constructor page.
 type TeacherBuilder struct {
-    Questions  []BuilderQuestion
-    Filename   string // file being edited, "" for a new test
-    CustomName string
-    Published  bool
-    Errs       []string
-    Dups       []DupChoice
-    DupToken   string // identifies the questions the choices were made for
-    Kept       []KeptDecision
+    Questions    []BuilderQuestion
+    Filename     string // file being edited, "" for a new set
+    CustomName   string // name as posted, kept after an error
+    SetName      string // name shown in the name field and the title
+    DefaultTopic string // filled into new question blocks
+    Example      string // example file shown in the format help
+    Published    bool
+    Errs         []string
+    Dups         []DupChoice
+    DupToken     string // identifies the questions the choices were made for
+    Kept         []KeptDecision
 }
 
-// Вспомогательная функция, которая берет два значения от JSONString и безопасно возвращает одно
+// safeJSONString encodes the questions for the page script; "[]" if that fails.
 func safeJSONString(questions []BuilderQuestion) string {
     str, err := templ.JSONString(questions)
     if err != nil {
@@ -51,152 +53,147 @@ func safeJSONString(questions []BuilderQuestion) string {
 }
 
 templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
-    @Layout(t(ctx, "TeacherProfile")) {
-        // Добавляем глобальные CSS Стили для автоматической нумерации блоков
+    @Layout(builderTitle(ctx, b)) {
         <style>
-            #questions-list {
-                counter-reset: question-counter; /* Инициализируем счетчик */
-            }
-            .question-block {
-                counter-increment: question-counter; /* Увеличиваем счетчик при появлении каждого блока */
-            }
-            .question-title::before {
-                content: " #" counter(question-counter); /* Динамически подставляем номер */
-            }
+            #questions-list { counter-reset: question-counter; }
+            .question-block { counter-increment: question-counter; margin: 1rem 0; }
+            .question-title::after { content: " " counter(question-counter); }
+            .question-head { display: flex; justify-content: space-between; align-items: center; }
+            .question-head button { width: auto; margin: 0; }
+            .mode-tabs { display: flex; gap: 0.5rem; margin: 1rem 0; }
+            .mode-tabs button { width: auto; margin: 0; }
+            .field-hint { display: block; margin: -0.5rem 0 1rem; }
         </style>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <h1>{ builderTitle(ctx, b) }</h1>
+            <a href={ templ.SafeURL(p(ctx, "/teacher/profile")) }>{ t(ctx, "QSetBackToList") }</a>
+        </div>
+        @importMessages(b.Errs, nil)
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
-			if b.Filename != "" {
-				// Отрезаем расширение файла (.json) в заголовке H1
-				<h1>{ t(ctx, "Edit Questions") } ({ b.Filename[:len(b.Filename)-len(filepath.Ext(b.Filename))] })</h1>
-			} else {
-				<h1>{ t(ctx, "Create Questions") }</h1>
-			}
-			<a href={ templ.SafeURL(p(ctx, "/teacher/profile")) } class="button secondary" style="padding: 8px 16px; text-decoration: none; border-radius: 4px;">← { t(ctx, "Home") }</a>
-		</div>
-		@importMessages(b.Errs, nil)
-        
-        <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()" data-msg-incomplete={ t(ctx, "QBuilderIncomplete") } data-msg-empty={ t(ctx, "QBuilderEmpty") }>
+        <form id="test-builder-form" method="POST" action={ templ.SafeURL(p(ctx, "/teacher/tests")) } enctype="multipart/form-data" onsubmit="return assembleAndSubmit()" data-mode="manual" data-msg-incomplete={ t(ctx, "QBuilderIncomplete") } data-msg-empty={ t(ctx, "QBuilderEmpty") }>
             <input type="hidden" name="csrf_token" value={ csrf }/>
             <input type="hidden" name="editing_file" value={ b.Filename }/>
             if len(b.Dups) > 0 {
                 @duplicateChoices(b.Dups, b.DupToken, b.Kept)
             }
-            
-            <div style="margin-bottom: 20px;">
-                <label>
-                    <strong>{ t(ctx, "Exam Topic") }:</strong>
-                    if b.Filename != "" && b.CustomName != "" {
-                        // Повторный показ после ошибки: оставляем введённое имя
-                        <input type="text" name="custom_filename" value={ b.CustomName } maxlength="100" placeholder="physics_exam" required />
-                    } else if b.Filename != "" {
-                        // Отрезаем расширение (.json), оставляя только чистое имя
-                        <input type="text" name="custom_filename" value={ b.Filename[:len(b.Filename)-len(filepath.Ext(b.Filename))] } maxlength="100" placeholder="physics_exam" required />
-                    } else {
-                        <input type="text" name="custom_filename" value={ b.CustomName } maxlength="100" placeholder="physics_exam" />
-                    }
-                </label>
-            </div>
-            
-            <input type="hidden" id="preloaded-data" value={ safeJSONString(b.Questions) }/>
-            
-            <section>
-                <h2>{ t(ctx, "Questions List") }</h2>
-                <div id="questions-list"></div>
-                <p><button type="button" id="add-question">{ t(ctx, "Add Question") }</button></p>
-            </section>
-            
+
+            <label for="custom_filename">{ t(ctx, "QSetName") }</label>
+            <input type="text" id="custom_filename" name="custom_filename" value={ b.SetName } maxlength="100" placeholder={ t(ctx, "QSetNamePlaceholder") } aria-describedby="custom_filename_hint" required/>
+            <small id="custom_filename_hint" class="field-hint">{ t(ctx, "QSetNameHint") }</small>
+
+            <label for="default_topic">{ t(ctx, "QSetDefaultTopic") }</label>
+            <input type="text" id="default_topic" name="default_topic" value={ b.DefaultTopic } placeholder={ t(ctx, "QSetDefaultTopicPlaceholder") } aria-describedby="default_topic_hint"/>
+            <small id="default_topic_hint" class="field-hint">{ t(ctx, "QSetDefaultTopicHint") }</small>
+
             if b.Filename == "" {
-                <div>
-                    <label>{ t(ctx, "OrUploadJson") }: <input type="file" id="questions-file" name="questions_file" accept="application/json"/></label>
+                <div class="mode-tabs" role="tablist">
+                    <button type="button" role="tab" id="tab-manual" data-mode="manual" aria-selected="true" aria-controls="manual-section">{ t(ctx, "QModeManual") }</button>
+                    <button type="button" role="tab" id="tab-file" data-mode="file" aria-selected="false" aria-controls="file-section" class="outline">{ t(ctx, "QModeFile") }</button>
                 </div>
             }
-            
-            <div style="margin: 12px 0;">
-                <label><input type="checkbox" name="publish" value="1" checked?={ b.Published }/> { t(ctx, "QPublishLabel") }</label>
-            </div>
 
-            <textarea id="assembled-json" name="questions_json" style="display:none;"></textarea>
+            <section id="manual-section">
+                <div id="questions-list"></div>
+                <button type="button" id="add-question" class="secondary">{ t(ctx, "QBlockAdd") }</button>
+            </section>
+
+            if b.Filename == "" {
+                <section id="file-section" hidden>
+                    <label for="questions-file">{ t(ctx, "QFileLabel") }</label>
+                    <input type="file" id="questions-file" name="questions_file" accept="application/json,.json" aria-describedby="questions_file_hint" disabled/>
+                    <small id="questions_file_hint" class="field-hint">{ t(ctx, "QFileHint") }</small>
+                    @questionFormatHelp(b.Example)
+                </section>
+            }
+
+            <label>
+                <input type="checkbox" name="publish" value="1" checked?={ b.Published }/>
+                { t(ctx, "QPublishLabel") }
+            </label>
+
+            <div id="builder-alert" role="alert" hidden style="color: var(--pico-del-color);"></div>
+            <textarea id="assembled-json" name="questions_json" hidden></textarea>
             <input type="hidden" id="assembled-ids" name="question_ids"/>
-            
-            <div>
-                <button type="submit" class="contrast">
-                    { t(ctx, "ApproveTest") }
-                </button>
-            </div>
+            <input type="hidden" id="preloaded-data" value={ safeJSONString(b.Questions) }/>
+
+            <button type="submit">{ t(ctx, "QSetSave") }</button>
         </form>
 
+        <template id="question-template">
+            @questionBlock()
+        </template>
+
         <script>
-        function makeQuestionHTML(idx, data = {}) {
-            const text = data.text || '';
-            const topic = data.topic || '';
-            const diff = data.difficulty || 'easy';
-            const points = data.max_points !== undefined ? data.max_points : 1;
-            const rubric = data.rubric || '';
-            const answer = data.model_answer || '';
-            // The stored question this block edits; 0 for a new one.
-            const qid = Number(data.id) || 0;
-
-            return `
-            <div class="question-block" data-idx="${idx}" data-qid="${qid}" style="border:1px solid #ddd;padding:16px;margin:12px 0;border-radius:4px;">
-                <div style="margin-bottom:12px; border-bottom: 1px dashed #eee; padding-bottom: 4px;">
-                    <h3 class="question-title" style="margin:0; font-size:1.15rem; color:#555;"> Question</h3>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <label><strong>Question text:</strong><br/><input type="text" name="q_text_${idx}" value="${escapeHtml(text)}" style="width:100%" placeholder="e.g., What is polymorphism?"/></label>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <label><strong>Topic (used for exam generation):</strong><br/><input type="text" name="q_topic_${idx}" value="${escapeHtml(topic)}" style="width:100%" placeholder="e.g., OOP, Databases, Go-basics"/></label>
-                </div>
-                <div style="display:flex; gap:16px; margin-bottom:8px;">
-                    <div style="flex:1;">
-                        <label>Difficulty:<br/>
-                            <select name="q_diff_${idx}" style="width:100%">
-                                <option value="easy" ${diff === 'easy' ? 'selected' : ''}>easy</option>
-                                <option value="medium" ${diff === 'medium' ? 'selected' : ''}>medium</option>
-                                <option value="hard" ${diff === 'hard' ? 'selected' : ''}>hard</option>
-                            </select>
-                        </label>
-                    </div>
-                    <div style="flex:1;">
-                        <label>Max points:<br/><input type="number" min="1" step="1" name="q_points_${idx}" value="${points}" style="width:100%"/></label>
-                    </div>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <label>Rubric (grading criteria for LLM):<br/><textarea name="q_rubric_${idx}" rows="2" style="width:100%" placeholder="e.g., 2 points for formula, 3 points for explanation...">${escapeHtml(rubric)}</textarea></label>
-                </div>
-                <div style="margin-bottom:8px;">
-                    <label>Model answer:<br/><textarea name="q_answer_${idx}" rows="2" style="width:100%" placeholder="Reference answer the grader compares against">${escapeHtml(answer)}</textarea></label>
-                </div>
-                <p style="margin:0; text-align:right;"><button type="button" class="secondary" onclick="removeQuestion(${idx})" style="padding:4px 8px; font-size:0.9rem;">Remove</button></p>
-            </div>`;
-        }
-
-        function escapeHtml(str) {
-            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-        }
-
+        const builderForm = document.getElementById('test-builder-form');
+        const questionTemplate = document.getElementById('question-template');
+        const defaultTopicInput = document.getElementById('default_topic');
         let qCounter = 0;
 
+        // addQuestion clones the question template; data prefills a stored
+        // question (data.id is its ID, 0 or absent for a new one).
         function addQuestion(data = {}) {
             const container = document.getElementById('questions-list');
-            if (!container) return null;
-            
             const idx = qCounter++;
             const wrapper = document.createElement('div');
-            wrapper.innerHTML = makeQuestionHTML(idx, data);
-            const block = wrapper.firstElementChild;
-            if (block) {
-                container.appendChild(block);
-            }
+            wrapper.innerHTML = questionTemplate.innerHTML.replaceAll('__IDX__', String(idx));
+            const block = wrapper.querySelector('.question-block');
+            block.dataset.qid = String(Number(data.id) || 0);
+            const set = (field, value) => {
+                const el = block.querySelector('[name="' + field + idx + '"]');
+                if (el && value !== undefined && value !== null && value !== '') el.value = value;
+            };
+            set('q_text_', data.text);
+            set('q_topic_', data.topic !== undefined ? data.topic : defaultTopicInput.value.trim());
+            set('q_diff_', data.difficulty);
+            set('q_points_', data.max_points);
+            set('q_rubric_', data.rubric);
+            set('q_answer_', data.model_answer);
+            block.querySelector('.remove-question').addEventListener('click', () => removeQuestion(idx));
+            block.querySelectorAll('input, textarea, select').forEach(el => el.addEventListener('input', () => el.removeAttribute('aria-invalid')));
+            container.appendChild(block);
             return idx;
         }
 
+        // removeQuestion removes a block; the list never stays empty.
         function removeQuestion(idx) {
             const el = document.querySelector('.question-block[data-idx="' + idx + '"]');
-            if (el && el.parentNode) {
-                el.parentNode.removeChild(el);
-            }
+            if (el) el.remove();
+            if (!document.querySelector('.question-block')) addQuestion();
+        }
+
+        // The default topic goes into every block whose topic is still empty.
+        function applyDefaultTopic() {
+            const topic = defaultTopicInput.value.trim();
+            if (!topic) return;
+            document.querySelectorAll('.question-block [name^="q_topic_"]').forEach(el => {
+                if (!el.value.trim()) el.value = topic;
+            });
+        }
+
+        // setMode switches between typing questions and uploading a file. In
+        // manual mode the file input is disabled, so a file chosen earlier is
+        // never posted.
+        function setMode(mode) {
+            const fileSection = document.getElementById('file-section');
+            if (!fileSection) return;
+            builderForm.dataset.mode = mode;
+            document.querySelectorAll('.mode-tabs button').forEach(tab => {
+                const active = tab.dataset.mode === mode;
+                tab.setAttribute('aria-selected', String(active));
+                tab.classList.toggle('outline', !active);
+            });
+            document.getElementById('manual-section').hidden = mode !== 'manual';
+            fileSection.hidden = mode !== 'file';
+            const fileInput = document.getElementById('questions-file');
+            fileInput.disabled = mode !== 'file';
+            fileInput.required = mode === 'file';
+            showAlert('');
+        }
+
+        function showAlert(text) {
+            const box = document.getElementById('builder-alert');
+            box.textContent = text;
+            box.hidden = !text;
         }
 
         function initQuestionBuilder() {
@@ -204,6 +201,8 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
             if (addButton) {
                 addButton.addEventListener('click', () => addQuestion());
             }
+            defaultTopicInput.addEventListener('change', applyDefaultTopic);
+            document.querySelectorAll('.mode-tabs button').forEach(tab => tab.addEventListener('click', () => setMode(tab.dataset.mode)));
 
             let questionsObj = [];
             const preloadedEl = document.getElementById('preloaded-data');
@@ -214,7 +213,6 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
                     console.error("Failed to parse preloaded questions:", e);
                 }
             }
-
             if (Array.isArray(questionsObj) && questionsObj.length > 0) {
                 questionsObj.forEach(q => addQuestion(q));
             } else {
@@ -228,54 +226,95 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
             initQuestionBuilder();
         }
 
+        // assembleAndSubmit posts the typed questions as questions_json and
+        // their stored IDs as question_ids. A block counts as started once its
+        // text, criteria or model answer is filled (topic and points have
+        // defaults); untouched blocks are ignored. The server validates again.
         function assembleAndSubmit() {
-            const fileInput = document.getElementById('questions-file');
-            const hasFile = fileInput && fileInput.files.length > 0;
-            const blocks = document.querySelectorAll('.question-block');
-            
+            showAlert('');
+            if (builderForm.dataset.mode === 'file') {
+                document.getElementById('assembled-json').value = '';
+                return true;
+            }
             const questions = [];
             const ids = [];
-            let hasIncompleteQuestion = false;
-
-            for (const b of blocks) {
+            let firstInvalid = null;
+            for (const b of document.querySelectorAll('.question-block')) {
                 const idx = b.getAttribute('data-idx');
-                const text = ((b.querySelector('[name="q_text_' + idx + '"]') || {}).value || '').trim();
-                const topic = ((b.querySelector('[name="q_topic_' + idx + '"]') || {}).value || '').trim();
-                const difficulty = (b.querySelector('[name="q_diff_' + idx + '"]') || {}).value || 'easy';
-                const pointsRaw = ((b.querySelector('[name="q_points_' + idx + '"]') || {}).value || '').trim();
-                const max_points = Number(pointsRaw);
-                const rubric = ((b.querySelector('[name="q_rubric_' + idx + '"]') || {}).value || '').trim();
-                const model_answer = ((b.querySelector('[name="q_answer_' + idx + '"]') || {}).value || '').trim();
-
-                // A block counts as started once text or topic is filled;
-                // untouched blocks are ignored. The server validates again.
-                if (text || topic) {
-                    if (!text || !topic || !rubric || !model_answer || pointsRaw === '' || !Number.isInteger(max_points) || max_points < 1) {
-                        hasIncompleteQuestion = true;
-                        break;
-                    }
-                    questions.push({ text, topic, difficulty, max_points, rubric, model_answer });
-                    ids.push(Number(b.getAttribute('data-qid')) || 0);
+                const field = name => b.querySelector('[name="' + name + idx + '"]');
+                const value = name => (field(name).value || '').trim();
+                const text = value('q_text_'), topic = value('q_topic_'), rubric = value('q_rubric_'), answer = value('q_answer_');
+                const pointsRaw = value('q_points_');
+                const points = Number(pointsRaw);
+                if (!text && !rubric && !answer) continue;
+                const missing = [];
+                if (!text) missing.push('q_text_');
+                if (!topic) missing.push('q_topic_');
+                if (!rubric) missing.push('q_rubric_');
+                if (!answer) missing.push('q_answer_');
+                if (pointsRaw === '' || !Number.isInteger(points) || points < 1) missing.push('q_points_');
+                for (const name of missing) {
+                    field(name).setAttribute('aria-invalid', 'true');
+                    if (!firstInvalid) firstInvalid = field(name);
+                }
+                if (missing.length === 0) {
+                    questions.push({ text, topic, difficulty: value('q_diff_') || 'easy', max_points: points, rubric, model_answer: answer });
+                    ids.push(Number(b.dataset.qid) || 0);
                 }
             }
-
-            const form = document.getElementById('test-builder-form');
-            if (!hasFile && questions.length === 0 && !hasIncompleteQuestion) {
-                alert(form.dataset.msgEmpty);
+            if (firstInvalid) {
+                showAlert(builderForm.dataset.msgIncomplete);
+                firstInvalid.focus();
                 return false;
             }
-
-            if (!hasFile && hasIncompleteQuestion) {
-                alert(form.dataset.msgIncomplete);
+            if (questions.length === 0) {
+                showAlert(builderForm.dataset.msgEmpty);
                 return false;
             }
-
             document.getElementById('assembled-json').value = JSON.stringify(questions);
             document.getElementById('assembled-ids').value = JSON.stringify(ids);
             return true;
         }
         </script>
     }
+}
+
+// questionBlock is one question of the constructor, cloned by the page
+// script: __IDX__ becomes the block number in every name and id.
+templ questionBlock() {
+    <article class="question-block" data-idx="__IDX__" data-qid="0">
+        <header class="question-head">
+            <strong class="question-title">{ t(ctx, "QBlockTitle") }</strong>
+            <button type="button" class="secondary outline remove-question">{ t(ctx, "QBlockRemove") }</button>
+        </header>
+        <label for="q_text___IDX__">{ t(ctx, "QBlockText") }</label>
+        <textarea id="q_text___IDX__" name="q_text___IDX__" rows="3" aria-describedby="q_text_hint___IDX__"></textarea>
+        <small id="q_text_hint___IDX__" class="field-hint">{ t(ctx, "QBlockTextHint") }</small>
+        <div class="grid">
+            <div>
+                <label for="q_topic___IDX__">{ t(ctx, "QBlockTopic") }</label>
+                <input type="text" id="q_topic___IDX__" name="q_topic___IDX__"/>
+            </div>
+            <div>
+                <label for="q_diff___IDX__">{ t(ctx, "QBlockDifficulty") }</label>
+                <select id="q_diff___IDX__" name="q_diff___IDX__">
+                    for _, d := range model.Difficulties {
+                        <option value={ string(d) }>{ difficultyLabel(ctx, d) }</option>
+                    }
+                </select>
+            </div>
+            <div>
+                <label for="q_points___IDX__">{ t(ctx, "QBlockPoints") }</label>
+                <input type="number" id="q_points___IDX__" name="q_points___IDX__" min="1" step="1" value="5"/>
+            </div>
+        </div>
+        <label for="q_rubric___IDX__">{ t(ctx, "QBlockRubric") }</label>
+        <textarea id="q_rubric___IDX__" name="q_rubric___IDX__" rows="3" placeholder={ t(ctx, "QBlockRubricPlaceholder") } aria-describedby="q_rubric_hint___IDX__"></textarea>
+        <small id="q_rubric_hint___IDX__" class="field-hint">{ t(ctx, "QBlockRubricHint") }</small>
+        <label for="q_answer___IDX__">{ t(ctx, "QBlockAnswer") }</label>
+        <textarea id="q_answer___IDX__" name="q_answer___IDX__" rows="3" aria-describedby="q_answer_hint___IDX__"></textarea>
+        <small id="q_answer_hint___IDX__" class="field-hint">{ t(ctx, "QBlockAnswerHint") }</small>
+    </article>
 }
 
 // duplicateChoices asks what to do with each duplicate question. The

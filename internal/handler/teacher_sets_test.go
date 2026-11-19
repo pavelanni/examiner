@@ -7,6 +7,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/pavelanni/examiner/internal/handler/views"
+	"github.com/pavelanni/examiner/internal/model"
 )
 
 func profilePage(t *testing.T, h *Handler, query string) string {
@@ -93,5 +96,23 @@ func TestTeacherProfileIgnoresBadSummary(t *testing.T) {
 	body = profilePage(t, h, "?saved=%3Cb%3Ehi%3C%2Fb%3E&inserted=1&updated=0&skipped=0")
 	if strings.Contains(body, "<b>hi</b>") || !strings.Contains(body, "&lt;b&gt;hi&lt;/b&gt;") {
 		t.Error("the set name in the summary is not escaped")
+	}
+}
+
+func TestCommonTopic(t *testing.T) {
+	q := func(topics ...string) []views.BuilderQuestion {
+		var out []views.BuilderQuestion
+		for _, tp := range topics {
+			out = append(out, views.BuilderQuestion{QuestionImport: model.QuestionImport{Topic: tp}})
+		}
+		return out
+	}
+	for _, c := range []struct {
+		in   []views.BuilderQuestion
+		want string
+	}{{q("a", "a"), "a"}, {q("a", "b"), ""}, {q("", "a"), "a"}, {nil, ""}} {
+		if got := commonTopic(c.in); got != c.want {
+			t.Errorf("commonTopic(%v) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
