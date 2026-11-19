@@ -377,23 +377,34 @@ func TestOpenReadOnlyOddPath(t *testing.T) {
 	if err := os.Mkdir(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	dbPath := filepath.Join(dir, "exam?.db")
-	if runtime.GOOS == "windows" {
-		dbPath = filepath.Join(dir, "exam.db") // ? is not allowed in Windows file names
-	}
+	// The server's store treats ? in its path as the start of URI
+	// parameters (sqlitedb.DSN), so its database has a plain name here.
+	dbPath := filepath.Join(dir, "exam.db")
 	s := seeded(t, dbPath)
 	info, err := backup.Create(context.Background(), s, backup.Options{Dir: dir, Name: "examiner"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st := count(t, dbPath); st.Users != 2 {
-		t.Errorf("stats through an odd path = %+v", st)
-	}
-	if err := backup.Check(context.Background(), dbPath); err != nil {
-		t.Error(err)
-	}
 	if _, err := os.Stat(info.Path); err != nil {
 		t.Error(err)
+	}
+	paths := []string{dbPath}
+	// The backup tools escape ? as well: restore a copy to such a name and
+	// read it. Windows does not allow ? in file names.
+	if runtime.GOOS != "windows" {
+		odd := filepath.Join(dir, "exam?.db")
+		if _, err := backup.Restore(context.Background(), info.Path, odd, time.Now()); err != nil {
+			t.Fatalf("restore to %q: %v", odd, err)
+		}
+		paths = append(paths, odd)
+	}
+	for _, p := range paths {
+		if st := count(t, p); st.Users != 2 {
+			t.Errorf("stats through %q = %+v", p, st)
+		}
+		if err := backup.Check(context.Background(), p); err != nil {
+			t.Errorf("check %q: %v", p, err)
+		}
 	}
 }
 
