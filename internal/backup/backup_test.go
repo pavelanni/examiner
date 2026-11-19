@@ -17,6 +17,7 @@ import (
 
 	"github.com/pavelanni/examiner/internal/backup"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/statement"
 	"github.com/pavelanni/examiner/internal/store"
 )
 
@@ -56,6 +57,7 @@ func seeded(t *testing.T, path string) *store.Store {
 		must(err)
 		must(s.UpsertScore(model.QuestionScore{ThreadID: th.ID, LLMScore: 3, LLMFeedback: "ok"}))
 	}
+	must(s.UpdateSessionStatus(sess, model.StatusSubmitted)) // sets submitted_at for the statement
 	must(s.UpsertGrade(model.Grade{SessionID: sess, LLMGrade: 60}))
 	must(s.FinalizeGrade(sess, 70, admin))
 	must(s.UpdateSessionStatus(sess, model.StatusReviewed))
@@ -92,6 +94,8 @@ func TestCreateAndRestore(t *testing.T) {
 	if want := "users                    2\nquestions                3\nsessions                 2\nsessions.in_progress     1\nsessions.reviewed        1\nmessages                 3\nscores                   3\ngrades                   1\ngrades.final             1\n"; before.String() != want {
 		t.Fatalf("stats =\n%s\nwant\n%s", before, want)
 	}
+
+	statementBefore := statementCSV(t, s)
 
 	backups := filepath.Join(dir, "backups")
 	info, err := backup.Create(context.Background(), s, backup.Options{Dir: backups, Name: "examiner-ru", Now: fixedNow("2026-11-03T10:20:30+03:00")})
@@ -133,7 +137,33 @@ func TestCreateAndRestore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("server cannot open the restored database: %v", err)
 	}
-	_ = restored.Close()
+	defer func() { _ = restored.Close() }()
+	// The ведомость (#53) exported from the restored database is the same.
+	if after := statementCSV(t, restored); after != statementBefore {
+		t.Errorf("restored statement =\n%s\nwant\n%s", after, statementBefore)
+	}
+}
+
+// statementCSV exports the statement of all submitted attempts as CSV and
+// checks that it has the reviewed session and also renders as XLSX.
+func statementCSV(t *testing.T, s *store.Store) string {
+	t.Helper()
+	report, err := s.ExamStatement(model.StatementFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Rows) != 1 || report.Rows[0].FinalGrade == nil || *report.Rows[0].FinalGrade != 70 {
+		t.Fatalf("statement rows = %+v; want the reviewed session with final grade 70", report.Rows)
+	}
+	generated := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
+	if _, err := statement.XLSX(report, generated, time.UTC); err != nil {
+		t.Fatalf("statement XLSX: %v", err)
+	}
+	csv, err := statement.CSV(report, generated, time.UTC)
+	if err != nil {
+		t.Fatalf("statement CSV: %v", err)
+	}
+	return string(csv)
 }
 
 func TestCreateWhileWriting(t *testing.T) {

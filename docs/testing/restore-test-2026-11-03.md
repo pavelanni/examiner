@@ -124,3 +124,26 @@ The automated tests (`go test ./internal/backup/ ./cmd/examiner/
 ./internal/handler/`) cover the same database steps on every build. They
 include a backup taken while 50 goroutines write messages, which passes
 `integrity_check`.
+
+## Addendum, 2026-11-19: after rebasing onto `main`
+
+The branch was rebased onto `main` at `e231363`, which brings the
+ведомость export (#53), question ownership and publishing (#44), the
+background evaluation jobs (#104) and the removal of the schema file read
+(#75).
+
+- **Ведомость (#53).** The round-trip test `TestCreateAndRestore` now
+  exports the statement (CSV and XLSX, `internal/statement`) from the
+  source database before the backup and from the restored database, and
+  requires the CSV to be identical, with the reviewed session and its
+  final grade. Item 5 of the list above is covered for the database; the
+  download from **Review → Export** on `examiner-01` is still to be
+  checked there.
+- **The image from `main` starts again.** #75 removed the read of
+  `schema/question_schema.json`, so the workaround of mounting `/schema`
+  is no longer needed.
+- `examiner stats` groups sessions by status, so the statuses added on
+  `main` (`grading`, `grading_failed`, `annulled`) are counted without
+  changes.
+- `go test ./...` passes and `golangci-lint` v2.14.0 reports 0 issues on
+  the rebased branch.
