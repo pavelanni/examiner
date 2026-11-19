@@ -99,7 +99,6 @@
   {"id": "ApproveTest", "other": "Утвердить и загрузить"},
   {"id": "AddQuestion", "other": "Добавить вопрос"},
   {"id": "YourQuestions", "other": "Ваши вопросы"},
-  {"id": "TeacherUploadIntro", "other": "Загрузите вопросы, созданный преподавателем, или соберите его вручную."},
   {"id": "UploadDuplicate", "other": "Этот файл уже был импортирован."},
   {"id": "ExistingDuplicatesTitle", "other": "Существующие дубликаты вопросов в базе данных ({{.Count}})"},
   {"id": "ExistingDuplicatesDesc", "other": "Следующие группы имеют одинаковую тему и нормализованный текст (сохранены для целостности истории сессий):"},
@@ -295,5 +294,12 @@
   {"id": "QFormatFieldAnswer", "other": "Эталонный ответ. ИИ сравнивает с ним ответ студента; студенты его не видят."},
   {"id": "QFormatAllRequired", "other": "Все поля обязательны и не могут быть пустыми."},
   {"id": "QFormatExample", "other": "Пример:"},
-  {"id": "QFormatDownload", "other": "Скачать пример"}
+  {"id": "QFormatDownload", "other": "Скачать пример"},
+  {"id": "QSetListTitle", "other": "Мои наборы вопросов"},
+  {"id": "QSetListIntro", "other": "Набор — это группа ваших вопросов. В экзамен попадают опубликованные вопросы выбранной студентом темы, из всех наборов."},
+  {"id": "QSetCreate", "other": "Создать набор"},
+  {"id": "QSetEdit", "other": "Редактировать"},
+  {"id": "QSetDownload", "other": "Скачать"},
+  {"id": "QSetEmpty", "other": "У вас пока нет наборов. Создайте первый вручную или загрузите файл."},
+  {"id": "QSetSaved", "other": "Набор «{{.Name}}» сохранён: добавлено {{.Inserted}}, обновлено {{.Updated}}, пропущено {{.Skipped}}."}
 ]

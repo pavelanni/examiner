@@ -99,7 +99,6 @@
   {"id": "ApproveTest", "other": "Approve and Upload"},
   {"id": "AddQuestion", "other": "Add question"},
   {"id": "YourTests", "other": "Your questions"},
-  {"id": "TeacherUploadIntro", "other": "Upload a teacher-created questions or build one manually."},
   {"id": "UploadDuplicate", "other": "This file has already been imported."},
   {"id": "ExistingDuplicatesTitle", "other": "Existing duplicate questions in database ({{.Count}})"},
   {"id": "ExistingDuplicatesDesc", "other": "The following groups share the same topic and normalized text (kept intact to preserve session history):"},
@@ -295,5 +294,12 @@
   {"id": "QFormatFieldAnswer", "other": "The model answer. The AI compares the student's answer with it; students do not see it."},
   {"id": "QFormatAllRequired", "other": "All fields are required and must not be empty."},
   {"id": "QFormatExample", "other": "Example:"},
-  {"id": "QFormatDownload", "other": "Download an example"}
+  {"id": "QFormatDownload", "other": "Download an example"},
+  {"id": "QSetListTitle", "other": "My question sets"},
+  {"id": "QSetListIntro", "other": "A set is a group of your questions. An exam takes the published questions of the topic the student chooses, from all sets."},
+  {"id": "QSetCreate", "other": "Create a set"},
+  {"id": "QSetEdit", "other": "Edit"},
+  {"id": "QSetDownload", "other": "Download"},
+  {"id": "QSetEmpty", "other": "You have no question sets yet. Create one by hand or upload a file."},
+  {"id": "QSetSaved", "other": "Set «{{.Name}}» saved: {{.Inserted}} added, {{.Updated}} updated, {{.Skipped}} skipped."}
 ]

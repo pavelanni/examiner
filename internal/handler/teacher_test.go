@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -274,9 +275,9 @@ func TestTeacherUploadRedirectRespectsBasePath(t *testing.T) {
 	}
 
 	// Verify redirect location includes the configured BasePath prefix.
-	expectedLocation := "/ru/teacher/profile"
-	if loc := rec.Header().Get("Location"); loc != expectedLocation {
-		t.Errorf("Location = %q, want %q", loc, expectedLocation)
+	expectedPath := "/ru/teacher/profile"
+	if loc, err := url.Parse(rec.Header().Get("Location")); err != nil || loc.Path != expectedPath {
+		t.Errorf("Location = %q, want path %q", rec.Header().Get("Location"), expectedPath)
 	}
 }
 

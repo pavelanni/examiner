@@ -2,40 +2,52 @@ package views
 
 import (
 	"fmt"
-	"net/url" // Added import to support URL query escaping
-	"path/filepath" // Добавляем импорт для работы с путями файлов
+	"net/url"
 )
 
-templ TeacherProfilePage(displayName string, files []string, flashMsg string) {
-	@Layout(t(ctx, "TeacherProfile")) {
-		<h1>{ displayName }</h1>
-		if flashMsg != "" {
-			<p style="color: var(--pico-del-color);">{ flashMsg }</p>
-		}
-		<p>{ t(ctx, "TeacherUploadIntro") }</p>
-		<p>
-			<a href={ templ.SafeURL(p(ctx, "/teacher/create-test")) } class="contrast">{ t(ctx, "Create Questions") }</a>
-		</p>
+// QuestionSet is one of the teacher's question files: File is the stored
+// file name, Name what the teacher called it.
+type QuestionSet struct {
+	File string
+	Name string
+}
 
-		if len(files) > 0 {
-			<h2>{ t(ctx, "Your Questions List") }</h2>
-			<ul style="list-style: none; padding: 0;">
-				for _, f := range files {
-					// Используем filepath.Ext, чтобы узнать расширение, и TrimSuffix, чтобы его удалить
-					<li style="display: flex; align-items: center; gap: 16px; margin-bottom: 12px;">
-						// Кнопка Edit слева с закодированным query-параметром файла
-						<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/teacher/create-test?file=%s", url.QueryEscape(f)))) } 
-						   class="button" 
-						   style="padding: 6px 14px; text-decoration: none; font-size: 0.9rem; border-radius: 4px;">
-							Edit
-						</a>
-						// Имя файла без расширения справа от кнопки
-						<span style="font-weight: 500; font-size: 1.05rem;">
-							{ f[:len(f)-len(filepath.Ext(f))] }
-						</span>
-					</li>
-				}
-			</ul>
+// SaveSummary is the result of the last save, shown once on the profile.
+type SaveSummary struct {
+	Name     string
+	Inserted int
+	Updated  int
+	Skipped  int
+}
+
+templ TeacherProfilePage(sets []QuestionSet, saved *SaveSummary) {
+	@Layout(t(ctx, "QSetListTitle")) {
+		<h1>{ t(ctx, "QSetListTitle") }</h1>
+		<p>{ t(ctx, "QSetListIntro") }</p>
+		if saved != nil {
+			<article role="status" style="border-left: 4px solid var(--pico-ins-color);">
+				{ td(ctx, "QSetSaved", map[string]any{"Name": saved.Name, "Inserted": saved.Inserted, "Updated": saved.Updated, "Skipped": saved.Skipped}) }
+			</article>
+		}
+		<p>
+			<a href={ templ.SafeURL(p(ctx, "/teacher/create-test")) } role="button">{ t(ctx, "QSetCreate") }</a>
+		</p>
+		if len(sets) == 0 {
+			<p>{ t(ctx, "QSetEmpty") }</p>
+		} else {
+			<table>
+				<tbody>
+					for _, s := range sets {
+						<tr>
+							<td>{ s.Name }</td>
+							<td style="text-align: right;">
+								<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/teacher/create-test?file=%s", url.QueryEscape(s.File)))) } role="button" class="secondary">{ t(ctx, "QSetEdit") }</a>
+								<a href={ templ.SafeURL(p(ctx, "/teacher/tests/file/"+url.PathEscape(s.File))) } role="button" class="outline">{ t(ctx, "QSetDownload") }</a>
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
 		}
 	}
 }

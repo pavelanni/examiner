@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -55,6 +56,32 @@ func (h *Handler) checkQuestionFileOwner(w http.ResponseWriter, r *http.Request,
 		return false
 	}
 	return true
+}
+
+// saveSummary reads the result of a save from the profile URL, or nil
+// when it is absent or malformed.
+func saveSummary(q url.Values) *views.SaveSummary {
+	name := q.Get("saved")
+	if name == "" {
+		return nil
+	}
+	sum := views.SaveSummary{Name: name}
+	for key, dst := range map[string]*int{"inserted": &sum.Inserted, "updated": &sum.Updated, "skipped": &sum.Skipped} {
+		n, err := strconv.Atoi(q.Get(key))
+		if err != nil || n < 0 {
+			return nil
+		}
+		*dst = n
+	}
+	return &sum
+}
+
+// setName is the name of a question set as the teacher sees it: the file
+// name without ".json" and without the teacher_<username>_ prefix the
+// server adds.
+func setName(file, username string) string {
+	name := strings.TrimSuffix(file, ".json")
+	return strings.TrimPrefix(name, "teacher_"+username+"_")
 }
 
 // listOwnedQuestionFiles returns the question files user owns.
@@ -230,8 +257,12 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sets := make([]views.QuestionSet, 0, len(files))
+	for _, f := range files {
+		sets = append(sets, views.QuestionSet{File: f, Name: setName(f, user.Username)})
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.TeacherProfilePage(user.DisplayName, files, "").Render(r.Context(), w); err != nil {
+	if err := views.TeacherProfilePage(sets, saveSummary(r.URL.Query())).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -396,9 +427,7 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 
 	var safeName string
 	if customFilename != "" {
-		base := filepath.Base(customFilename)
-		base = strings.TrimSuffix(base, ".json")
-		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, base)
+		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, setName(filepath.Base(customFilename), user.Username))
 	} else if editingFile != "" {
 		safeName = editingFile
 	} else {
@@ -498,7 +527,13 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("teacher uploaded questions", "user", user.Username, "file", outPath,
 		"inserted", res.Inserted, "updated", res.Updated, "skipped", res.Skipped)
-	http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)
+	summary := url.Values{
+		"saved":    {setName(safeName, user.Username)},
+		"inserted": {strconv.Itoa(res.Inserted)},
+		"updated":  {strconv.Itoa(res.Updated)},
+		"skipped":  {strconv.Itoa(res.Skipped)},
+	}
+	http.Redirect(w, r, h.path("/teacher/profile")+"?"+summary.Encode(), http.StatusSeeOther)
 }
 
 // savedQuestionsFile returns the file content to publish: data itself when

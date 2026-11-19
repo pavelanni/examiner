@@ -5,6 +5,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -103,7 +104,7 @@ func TestTeacherSaveRerendersInput(t *testing.T) {
 func TestTeacherSaveSuccess(t *testing.T) {
 	h, s := teacherEnv(t)
 	rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
-	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/teacher/profile" {
+	if loc, _ := url.Parse(rec.Header().Get("Location")); rec.Code != http.StatusSeeOther || loc == nil || loc.Path != "/teacher/profile" {
 		t.Fatalf("status = %d, location = %q", rec.Code, rec.Header().Get("Location"))
 	}
 	if files := questionFiles(t); !slices.Equal(files, []string{"teacher_teacher1_mid.json"}) {
