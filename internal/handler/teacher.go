@@ -457,11 +457,17 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var safeName string
-	if customFilename != "" {
-		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, setName(filepath.Base(customFilename), user.Username))
-	} else if editingFile != "" {
+	switch {
+	case editingFile != "" && customFilename == setName(editingFile, user.Username):
+		// The name field still shows the edited file's own name: keep the
+		// file, even one named by an older version (a doubled prefix,
+		// .json.json) that the name rules below would not reproduce.
 		safeName = editingFile
-	} else {
+	case customFilename != "":
+		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, setName(filepath.Base(customFilename), user.Username))
+	case editingFile != "":
+		safeName = editingFile
+	default:
 		safeName = fmt.Sprintf("teacher_%s_%d.json", user.Username, time.Now().Unix())
 	}
 	// Reject a name the file system would refuse before anything is
@@ -590,12 +596,16 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 		httpError(w, r, http.StatusUnauthorized, "ErrUnauthorized")
 		return
 	}
-	// chi reads the raw path when the request has escapes it would not
-	// produce itself (%2C for a comma), so the name may still be encoded.
-	name, err := url.PathUnescape(chi.URLParam(r, "name"))
-	if err != nil {
-		httpError(w, r, http.StatusBadRequest, "ErrInvalidFilename")
-		return
+	// chi matches on the raw path when the request has one (escapes Go
+	// would not produce itself, such as %2C for a comma); the name is then
+	// still encoded. Otherwise it is already decoded and may hold a literal %.
+	name := chi.URLParam(r, "name")
+	if r.URL.RawPath != "" {
+		var err error
+		if name, err = url.PathUnescape(name); err != nil {
+			httpError(w, r, http.StatusBadRequest, "ErrInvalidFilename")
+			return
+		}
 	}
 	if name == "" {
 		httpError(w, r, http.StatusBadRequest, "ErrMissingName")

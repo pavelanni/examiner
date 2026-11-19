@@ -1,9 +1,12 @@
 package handler
 
 import (
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -142,5 +145,50 @@ func TestTeacherDownloadEncodedName(t *testing.T) {
 	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/tests/file/..%2Fteacher_teacher1_x.json", nil), teacher1User))
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("encoded ../: status %d, want 400", rec.Code)
+	}
+}
+
+// A file the old double-prefix bug created, or one ending in .json.json,
+// keeps its name when the set is saved with the name field unchanged.
+func TestTeacherResaveKeepsLegacyFileName(t *testing.T) {
+	for _, file := range []string{"teacher_teacher1_teacher_teacher1_mid.json", "teacher_teacher1_x.json.json"} {
+		t.Run(file, func(t *testing.T) {
+			h, s := teacherEnv(t)
+			if err := os.WriteFile(filepath.Join("questions", file), []byte(importQuestions(1, nil)), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			body := createTestPage(t, h, file)
+			m := regexp.MustCompile(`name="custom_filename" value="([^"]*)"`).FindStringSubmatch(body)
+			if m == nil {
+				t.Fatal("no name field")
+			}
+			rec := teacherSave(t, h, map[string]string{
+				"questions_json": importQuestions(1, nil), "custom_filename": html.UnescapeString(m[1]),
+				"editing_file": file, "question_ids": idsOf(t, s, "Question 1"),
+			})
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
+			}
+			if files := questionFiles(t); !slices.Equal(files, []string{file}) {
+				t.Errorf("questions/ = %v; want %s kept", files, file)
+			}
+		})
+	}
+}
+
+// A literal % in a set name reaches chi already decoded (no RawPath).
+func TestTeacherDownloadPercentName(t *testing.T) {
+	h, _ := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "100%"})
+	r := chi.NewRouter()
+	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
+	m := regexp.MustCompile(`href="(/teacher/tests/file/[^"]+)"`).FindStringSubmatch(profilePage(t, h, ""))
+	if m == nil {
+		t.Fatal("no download link")
+	}
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, m[1], nil), teacher1User))
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Question 1") {
+		t.Errorf("GET %s: %d %q", m[1], rec.Code, rec.Body.String())
 	}
 }

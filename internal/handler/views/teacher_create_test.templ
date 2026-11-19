@@ -182,7 +182,11 @@ templ TeacherCreateTestPage(displayName string, csrf string, b TeacherBuilder) {
                 tab.setAttribute('aria-selected', String(active));
                 tab.classList.toggle('outline', !active);
             });
-            document.getElementById('manual-section').hidden = mode !== 'manual';
+            const manualSection = document.getElementById('manual-section');
+            manualSection.hidden = mode !== 'manual';
+            // Hidden fields still take part in the browser's form checks:
+            // disable them (values stay) so they cannot block a file upload.
+            manualSection.querySelectorAll('input, textarea, select, button').forEach(el => { el.disabled = mode !== 'manual'; });
             fileSection.hidden = mode !== 'file';
             const fileInput = document.getElementById('questions-file');
             fileInput.disabled = mode !== 'file';

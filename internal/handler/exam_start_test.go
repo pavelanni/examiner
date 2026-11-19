@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/selection"
 	"github.com/pavelanni/examiner/internal/store"
 )
 
@@ -529,5 +531,23 @@ func TestStartExamResumesAfterConfigChange(t *testing.T) {
 				t.Fatalf("out-of-scope attempt was created: %+v, %v", sessions, err)
 			}
 		})
+	}
+}
+
+// The shortage messages name the difficulty in the UI language.
+func TestShortageTextTranslatesDifficulty(t *testing.T) {
+	if err := i18n.Init("en"); err != nil {
+		t.Fatal(err)
+	}
+	short := []selection.Shortage{{Difficulty: model.DifficultyMedium, Need: 2, Have: 0}}
+	ru := i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("ru"))
+	for _, id := range []string{"ExamShortage", "ExamShortageShort"} {
+		if got := shortageText(ru, id, "Оптика", short); !strings.Contains(got, "«Средний»") || strings.Contains(got, "medium") {
+			t.Errorf("%s in Russian = %q", id, got)
+		}
+	}
+	en := i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("en"))
+	if got := shortageText(en, "ExamShortageShort", "t", short); got != "not enough medium questions: 2 needed, 0 available." {
+		t.Errorf("English = %q", got)
 	}
 }
