@@ -245,5 +245,14 @@
   {"id": "QDupUpdate", "other": "Update question #{{.ID}} with this version"},
   {"id": "QImportOnDuplicate", "other": "Questions that already exist in their topic"},
   {"id": "QImportOnDupSkip", "other": "Skip them"},
-  {"id": "QImportOnDupUpdate", "other": "Update them"}
+  {"id": "QImportOnDupUpdate", "other": "Update them"},
+  {"id": "StatusInProgress", "other": "In progress"},
+  {"id": "RoleStudent", "other": "Student"},
+  {"id": "RoleTeacher", "other": "Teacher"},
+  {"id": "RoleAdmin", "other": "Administrator"},
+  {"id": "DifficultyEasy", "other": "Easy"},
+  {"id": "DifficultyMedium", "other": "Medium"},
+  {"id": "DifficultyHard", "other": "Hard"},
+  {"id": "FollowupQuestion", "other": "Follow-up question:"},
+  {"id": "TimeUp", "other": "Time's up! Please submit your exam."}
 ]

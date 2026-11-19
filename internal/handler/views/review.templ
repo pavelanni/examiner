@@ -69,7 +69,7 @@ templ ReviewPage(view model.SessionView, progress map[int64]model.GradingProgres
 				<h3>{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(i + 1)}) }</h3>
 				<p>
 					<strong>{ tv.Question.Topic }</strong>
-					({ string(tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
+					({ difficultyLabel(ctx, tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
 				</p>
 				<p class="question-text">{ tv.Question.Text }</p>
 				if job, ok := progress[tv.Thread.ID]; ok {

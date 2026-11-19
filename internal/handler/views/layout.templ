@@ -122,7 +122,7 @@ templ userNav() {
 				}
 			</ul>
 			<ul>
-				<li>{ user.DisplayName } <small>({ string(user.Role) })</small></li>
+				<li>{ user.DisplayName } <small>({ roleLabel(ctx, user.Role) })</small></li>
 				<li>
 					<form method="POST" action={ templ.SafeURL(p(ctx, "/logout")) } style="margin:0;">
 						<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>

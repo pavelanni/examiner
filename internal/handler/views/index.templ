@@ -206,7 +206,7 @@ templ examSize(d IndexData) {
 			<p>
 				<small>
 					if d.Config.Difficulty != "" {
-						{ t(ctx, "FilterDifficulty") }: <strong>{ d.Config.Difficulty }</strong>
+						{ t(ctx, "FilterDifficulty") }: <strong>{ difficultyListLabel(ctx, d.Config.Difficulty) }</strong>
 						if d.Config.Topic != "" {
 							{ " · " }
 						}

@@ -5,7 +5,7 @@ import "github.com/pavelanni/examiner/internal/model"
 templ evaluatorMessage(m model.Message) {
 	@markdown(m.Content)
 	if m.Followup != "" {
-		<strong>Follow-up question:</strong>
+		<strong>{ t(ctx, "FollowupQuestion") }</strong>
 		@markdown(m.Followup)
 	}
 }

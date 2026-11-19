@@ -45,9 +45,9 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 					<div>
 						<label for="role">{ t(ctx, "Role") }</label>
 						<select id="role" name="role">
-							<option value="student">student</option>
-							<option value="teacher">teacher</option>
-							<option value="admin">admin</option>
+							<option value="student">{ roleLabel(ctx, model.UserRoleStudent) }</option>
+							<option value="teacher">{ roleLabel(ctx, model.UserRoleTeacher) }</option>
+							<option value="admin">{ roleLabel(ctx, model.UserRoleAdmin) }</option>
 						</select>
 					</div>
 				</div>
@@ -78,7 +78,7 @@ templ AdminUsersPage(users []model.User, flashMsg string) {
 								<td>{ u.ExternalID }</td>
 								<td>{ u.DisplayName }</td>
 								<td>{ u.GroupName }</td>
-								<td>{ string(u.Role) }</td>
+								<td>{ roleLabel(ctx, u.Role) }</td>
 								<td>
 									if u.Active {
 										{ t(ctx, "Yes") }

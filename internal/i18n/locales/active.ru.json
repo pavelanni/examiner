@@ -245,5 +245,14 @@
   {"id": "QDupUpdate", "other": "Обновить вопрос #{{.ID}} этой версией"},
   {"id": "QImportOnDuplicate", "other": "Вопросы, которые уже есть в своей теме"},
   {"id": "QImportOnDupSkip", "other": "Пропустить"},
-  {"id": "QImportOnDupUpdate", "other": "Обновить"}
+  {"id": "QImportOnDupUpdate", "other": "Обновить"},
+  {"id": "StatusInProgress", "other": "Идёт экзамен"},
+  {"id": "RoleStudent", "other": "Студент"},
+  {"id": "RoleTeacher", "other": "Преподаватель"},
+  {"id": "RoleAdmin", "other": "Администратор"},
+  {"id": "DifficultyEasy", "other": "Лёгкий"},
+  {"id": "DifficultyMedium", "other": "Средний"},
+  {"id": "DifficultyHard", "other": "Сложный"},
+  {"id": "FollowupQuestion", "other": "Уточняющий вопрос:"},
+  {"id": "TimeUp", "other": "Время вышло. Сдайте экзамен."}
 ]

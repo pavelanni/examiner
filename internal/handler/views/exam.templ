@@ -38,7 +38,7 @@ templ ExamPage(view model.ExamPageView) {
 					<span id="exam-timer" data-remaining={ strconv.Itoa(int(view.TimeRemaining.Seconds())) }>--:--</span>
 				}
 				<div id="time-exceeded-banner" class="time-exceeded-banner">
-					<strong>Time&#39;s up! Please submit your exam.</strong>
+					<strong>{ t(ctx, "TimeUp") }</strong>
 				</div>
 			</div>
 		}

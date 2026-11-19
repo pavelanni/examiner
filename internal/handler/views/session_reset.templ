@@ -1,26 +1,11 @@
 package views
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 
 	"github.com/pavelanni/examiner/internal/model"
 )
-
-func sessionStatusLabel(ctx context.Context, status model.SessionStatus) string {
-	switch status {
-	case model.StatusSubmitted:
-		return t(ctx, "StatementSubmitted")
-	case model.StatusGrading:
-		return t(ctx, "StatementGrading")
-	case model.StatusGradingFailed:
-		return t(ctx, "SessionGradingFailed")
-	case model.StatusAnnulled:
-		return t(ctx, "AttemptAnnulled")
-	}
-	return string(status)
-}
 
 // ResetAttemptData retains the optional reason when validation fails.
 type ResetAttemptData struct {

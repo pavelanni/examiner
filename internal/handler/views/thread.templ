@@ -14,7 +14,7 @@ templ ThreadContent(thread model.QuestionThread, question model.Question, messag
 	</h3>
 	<p class="question-meta">
 		<strong>{ question.Topic }</strong>
-		({ string(question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(question.MaxPoints)}) })
+		({ difficultyLabel(ctx, question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(question.MaxPoints)}) })
 	</p>
 	<p class="question-text">{ question.Text }</p>
 	<div class="thread-feedback">
