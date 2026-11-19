@@ -371,3 +371,15 @@ func TestEvaluatorMarkdownRenderedStudentTextNot(t *testing.T) {
 		t.Error("student answer HTML must be escaped")
 	}
 }
+
+func TestBlankAnswerReportsValidationErrorForCurrentForm(t *testing.T) {
+	env := newAnswerEnv(t, 1, &fakeLLM{})
+	rec := env.post(t, "   ")
+	if rec.Code != http.StatusBadRequest || rec.Header().Get("X-Feedback-Error") != "1" ||
+		strings.TrimSpace(rec.Body.String()) != "Enter an answer." {
+		t.Fatalf("answer validation response: %d, %s", rec.Code, rec.Body.String())
+	}
+	if env.messageCount(t) != 0 || env.thread(t).Status != model.ThreadOpen {
+		t.Fatal("invalid answer changed the conversation")
+	}
+}

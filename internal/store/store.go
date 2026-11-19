@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ func New(dbPath string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
-	if dbPath == ":memory:" {
+	if isPrivateMemory(dbPath) {
 		// Each SQLite in-memory connection otherwise has its own database.
 		db.SetMaxOpenConns(1)
 	}
@@ -38,6 +39,25 @@ func New(dbPath string) (*Store, error) {
 	}
 	sqlitedb.WarnForeignKeys(db)
 	return s, nil
+}
+
+// SQLite shares an in-memory database across connections only for a file URI
+// with cache=shared. The bare :memory: name is always private.
+func isPrivateMemory(path string) bool {
+	filename, _, _ := strings.Cut(path, "?")
+	if filename == ":memory:" {
+		return true
+	}
+	u, err := url.Parse(path)
+	if err != nil || u.Scheme != "file" {
+		return false
+	}
+	name, err := url.PathUnescape(u.Opaque)
+	if err != nil {
+		return false
+	}
+	options := u.Query()
+	return options.Get("cache") != "shared" && (name == ":memory:" || options.Get("mode") == "memory")
 }
 
 // Close closes the database connection.
@@ -109,6 +129,21 @@ func (s *Store) migrate() error {
 		WHERE claimed_at IS NULL AND score IS NULL;
 	CREATE INDEX IF NOT EXISTS idx_messages_thread ON messages(thread_id, id);
 	CREATE INDEX IF NOT EXISTS idx_threads_session ON question_threads(session_id);
+	CREATE INDEX IF NOT EXISTS idx_threads_question ON question_threads(question_id);
+
+	-- Replace claimed jobs, including staged grades, when their grading inputs
+	-- change. The fresh job ID prevents an old worker from publishing its result.
+	-- Queued jobs will already read the new question when they are claimed.
+	CREATE TRIGGER IF NOT EXISTS requeue_edited_question
+	AFTER UPDATE OF text, rubric, model_answer, max_points ON questions
+	WHEN NEW.text != OLD.text OR NEW.rubric != OLD.rubric
+		OR NEW.model_answer != OLD.model_answer OR NEW.max_points != OLD.max_points
+	BEGIN
+		INSERT OR REPLACE INTO evaluation_jobs(thread_id, kind)
+		SELECT j.thread_id, j.kind FROM evaluation_jobs j
+		JOIN question_threads t ON t.id = j.thread_id
+		WHERE t.question_id = NEW.id AND j.claimed_at IS NOT NULL;
+	END;
 
 	CREATE TABLE IF NOT EXISTS question_scores (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

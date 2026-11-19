@@ -105,7 +105,7 @@ func (s *Store) QueueSubmission(sessionID int64) error {
 }
 
 // EvaluationJob identifies one claim. Its ID is never reused if a student
-// submits, retries, or a teacher resets an attempt during an LLM call.
+// submits, retries, or a teacher resets an attempt or edits the question's grading inputs.
 type EvaluationJob struct {
 	ID, SessionID, ThreadID int64
 	Feedback                bool

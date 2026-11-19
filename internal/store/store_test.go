@@ -908,3 +908,38 @@ func TestGetSessionViewDistinguishesMissingQuestionFromMissingSession(t *testing
 		t.Fatalf("missing session should produce sql.ErrNoRows, got %v", err)
 	}
 }
+
+func TestStorePoolsOnlyShareableDatabases(t *testing.T) {
+	for _, tt := range []struct {
+		path    string
+		private bool
+	}{
+		{":memory:", true},
+		{":memory:?_pragma=foreign_keys(1)", true},
+		{"file::memory:", true},
+		{"file:%3Amemory%3A?cache=private", true},
+		{"file:private-exam?mode=memory", true},
+		{"file::memory:?cache=shared", false},
+		{"file:shared-exam?mode=memory&cache=shared", false},
+		{filepath.Join(t.TempDir(), "disk.db"), false},
+	} {
+		t.Run(tt.path, func(t *testing.T) {
+			s := openEvaluationStore(t, tt.path)
+			single := s.db.Stats().MaxOpenConnections == 1
+			if single != tt.private {
+				t.Fatalf("single connection = %v, want %v", single, tt.private)
+			}
+			if !single {
+				// Hold one connection while querying the schema from another.
+				conn, err := s.db.Conn(t.Context())
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = conn.Close() }()
+			}
+			if _, err := s.GetThreadsForSession(1); err != nil {
+				t.Fatalf("schema unavailable: %v", err)
+			}
+		})
+	}
+}

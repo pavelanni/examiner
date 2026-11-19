@@ -66,7 +66,7 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := r.ParseForm(); err != nil {
-		http.Error(w, i18n.T(r.Context(), "FeedbackInvalidForm"), http.StatusBadRequest)
+		answerFormError(w, r, "FeedbackInvalidForm", http.StatusBadRequest)
 		return
 	}
 	turn, err := strconv.ParseInt(r.PostForm.Get("answer_key"), 10, 64)
@@ -77,11 +77,11 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	retry := r.PostForm.Get("retry") == "1"
 	answer := r.PostForm.Get("answer")
 	if !retry && strings.TrimSpace(answer) == "" {
-		http.Error(w, i18n.T(r.Context(), "FeedbackEmpty"), http.StatusBadRequest)
+		answerFormError(w, r, "FeedbackEmpty", http.StatusBadRequest)
 		return
 	}
 	if !retry && calculateTimeRemaining(a.session, a.blueprint) == 0 {
-		http.Error(w, i18n.T(r.Context(), "FeedbackTimeExpired"), http.StatusForbidden)
+		answerFormError(w, r, "FeedbackTimeExpired", http.StatusForbidden)
 		return
 	}
 	// Capture the form's turn for the acknowledgement. QueueAnswer verifies it
@@ -109,6 +109,11 @@ func (h *Handler) handleAnswer(w http.ResponseWriter, r *http.Request) {
 	}
 	a.Thread.Status = model.ThreadEvaluating
 	h.renderAnswerThread(w, r, a, http.StatusAccepted)
+}
+
+func answerFormError(w http.ResponseWriter, r *http.Request, message string, status int) {
+	w.Header().Set("X-Feedback-Error", "1")
+	http.Error(w, i18n.T(r.Context(), message), status)
 }
 
 // A conflict updates only this question. Other unsent answers stay in the page.

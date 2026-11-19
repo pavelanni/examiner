@@ -31,6 +31,14 @@ templ Layout(title string) {
 				// typed answer) and show the message as a banner.
 				document.addEventListener("htmx:responseError", function (e) {
 					var xhr = e.detail.xhr;
+					if (xhr.getResponseHeader("X-Feedback-Error") === "1") {
+						var formError = e.detail.elt.querySelector('[role="alert"]');
+						if (formError) {
+							formError.hidden = false;
+							formError.textContent = xhr.responseText.trim();
+						}
+						return;
+					}
 					if (xhr.status !== 403 || !xhr.getResponseHeader("X-CSRF-Error")) { return; }
 					var m = document.cookie.match(/(?:^|; )csrf_token=([^;]*)/);
 					if (m) {

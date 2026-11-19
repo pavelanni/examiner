@@ -65,10 +65,11 @@ templ ThreadFeedback(thread model.QuestionThread, question model.Question, messa
 				hx-post={ action }
 				hx-target="closest .thread-feedback"
 				hx-swap="innerHTML"
-				hx-disabled-elt="find button"
+				hx-disabled-elt="find .answer-input, find button"
 			>
 				<input type="hidden" name="csrf_token" value={ csrf(ctx) }/>
 				<input type="hidden" name="answer_key" value={ answerKey(messages) }/>
+				<p class="form-error" role="alert" hidden></p>
 				if retry {
 					<p role="status">{ t(ctx, "FeedbackFailed") }</p>
 					<input type="hidden" name="retry" value="1"/>

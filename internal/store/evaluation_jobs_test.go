@@ -157,3 +157,118 @@ func TestQueueRecoversFeedbackAndPartiallyGradedExam(t *testing.T) {
 		t.Fatalf("duplicate job after completion: %+v, %v", job, err)
 	}
 }
+
+func TestEditedQuestionIsGradedAgainstCurrentCriteria(t *testing.T) {
+	for _, scenario := range []string{"provider is running", "staged score survives restart"} {
+		t.Run(scenario, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "exam.db")
+			s := openEvaluationStore(t, path)
+			bp, qs := sessionEnv(t, s)
+			questions := qs[:1]
+			if scenario == "staged score survives restart" {
+				questions = qs[:2]
+			}
+			id, err := s.CreateSession(bp, 1, questions)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.QueueSubmission(id); err != nil {
+				t.Fatal(err)
+			}
+			old := claimJob(t, s)
+			original := &model.QuestionScore{LLMScore: 8} // 8 out of 10
+			if len(questions) == 2 {
+				if err := s.FinishGrading(old, original); err != nil {
+					t.Fatal(err)
+				}
+			}
+			q, err := s.GetQuestion(qs[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			q.MaxPoints = 5
+			if err := s.InQuestionTx(t.Context(), func(tx *QuestionTx) error { return tx.Update(q) }); err != nil {
+				t.Fatal(err)
+			}
+			if len(questions) == 1 {
+				// The provider completed the old 10-point prompt after the edit.
+				if err := s.FinishGrading(old, original); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				if err := s.Close(); err != nil {
+					t.Fatal(err)
+				}
+				s = openEvaluationStore(t, path)
+				if _, err := s.RecoverInterruptedSessions(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if grade, err := s.GetGrade(id); err != nil || grade != nil {
+				t.Fatalf("published a grade before reevaluation: %+v, %v", grade, err)
+			}
+			for range questions {
+				job := claimJob(t, s)
+				score := 8.0
+				if job.ThreadID == old.ThreadID {
+					if job.ID == old.ID {
+						t.Fatal("old claim could still publish a result")
+					}
+					score = 4 // 4 out of 5 under the new criteria
+				}
+				if err := s.FinishGrading(job, &model.QuestionScore{LLMScore: score}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			view, err := s.GetSessionView(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if view.Grade == nil || view.Grade.LLMGrade != 80 || view.Threads[0].Score == nil ||
+				view.Threads[0].Score.LLMScore != 4 || view.Threads[0].Question.MaxPoints != 5 {
+				t.Fatalf("grade and question must use the same maximum: %+v", view)
+			}
+		})
+	}
+}
+
+func TestRubricEditRequeuesOnlyUnfinishedFeedback(t *testing.T) {
+	s := newTestStore(t)
+	bp, qs := sessionEnv(t, s)
+	id, err := s.CreateSession(bp, 1, qs[:1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	threads, err := s.GetThreadsForSession(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tid := threads[0].ID
+	if err := s.QueueAnswer(id, tid, 0, "saved answer", false); err != nil {
+		t.Fatal(err)
+	}
+	old := claimJob(t, s)
+	q, err := s.GetQuestion(qs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	q.Rubric = "Edited rubric"
+	if err := s.UpdateQuestion(q); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishFeedback(old, &model.Message{ThreadID: tid, Role: model.RoleLLM, Content: "old reply"}); err != nil {
+		t.Fatal(err)
+	}
+	current := claimJob(t, s)
+	// A save with the same grading inputs must leave the replacement claim intact.
+	if err := s.UpdateQuestion(q); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishFeedback(current, &model.Message{ThreadID: tid, Role: model.RoleLLM, Content: "new reply"}); err != nil {
+		t.Fatal(err)
+	}
+	msgs, err := s.GetMessages(tid)
+	if err != nil || len(msgs) != 2 || msgs[0].Content != "saved answer" || msgs[1].Content != "new reply" {
+		t.Fatalf("conversation after rubric edit: %+v, %v", msgs, err)
+	}
+}
