@@ -180,18 +180,11 @@ func (h *Handler) unavailableNote(ctx context.Context, questions []model.Questio
 }
 
 // shortageText renders shortages with message msgID, one per difficulty.
-// difficultyMsgID names the translation of each difficulty.
-var difficultyMsgID = map[model.Difficulty]string{
-	model.DifficultyEasy:   "DifficultyEasy",
-	model.DifficultyMedium: "DifficultyMedium",
-	model.DifficultyHard:   "DifficultyHard",
-}
-
 func shortageText(ctx context.Context, msgID, topic string, shortages []selection.Shortage) string {
 	parts := make([]string, 0, len(shortages))
 	for _, s := range shortages {
 		parts = append(parts, appI18n.Td(ctx, msgID, map[string]any{
-			"Topic": topic, "Difficulty": string(s.Difficulty), "DifficultyLabel": appI18n.T(ctx, difficultyMsgID[s.Difficulty]),
+			"Topic": topic, "Difficulty": string(s.Difficulty), "DifficultyLabel": views.DifficultyLabel(ctx, s.Difficulty),
 			"Need": s.Need, "Have": s.Have,
 		}))
 	}

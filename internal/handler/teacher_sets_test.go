@@ -2,6 +2,7 @@ package handler
 
 import (
 	"html"
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -17,14 +18,36 @@ import (
 	"github.com/pavelanni/examiner/internal/model"
 )
 
-func profilePage(t *testing.T, h *Handler, query string) string {
+func profileResponse(t *testing.T, h *Handler, summary *http.Cookie) *httptest.ResponseRecorder {
 	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, "/teacher/profile", nil)
+	if summary != nil {
+		req.AddCookie(summary)
+	}
 	rec := httptest.NewRecorder()
-	h.handleTeacherProfile(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/profile"+query, nil), teacher1User))
+	h.handleTeacherProfile(rec, withUser(req, teacher1User))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("profile: status %d", rec.Code)
 	}
-	return rec.Body.String()
+	return rec
+}
+
+// profilePage renders the profile, with the save summary cookie if given.
+func profilePage(t *testing.T, h *Handler, summary *http.Cookie) string {
+	t.Helper()
+	return profileResponse(t, h, summary).Body.String()
+}
+
+// summaryCookie is the save summary cookie the save response sets.
+func summaryCookie(t *testing.T, rec *httptest.ResponseRecorder) *http.Cookie {
+	t.Helper()
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == saveSummaryCookie {
+			return c
+		}
+	}
+	t.Fatal("no save summary cookie")
+	return nil
 }
 
 // Saving an edited set under the name the form shows must not rename the
@@ -53,23 +76,56 @@ func TestTeacherOwnPrefixNotDoubled(t *testing.T) {
 	}
 }
 
+// The summary of a save travels in a short-lived cookie, not in the URL, so
+// a reload or a shared link does not show it again.
 func TestTeacherSaveRedirectsWithSummary(t *testing.T) {
 	h, _ := teacherEnv(t)
 	rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
-	loc, err := url.Parse(rec.Header().Get("Location"))
-	if rec.Code != http.StatusSeeOther || err != nil {
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/teacher/profile" {
 		t.Fatalf("status %d, location %q", rec.Code, rec.Header().Get("Location"))
 	}
-	q := loc.Query()
-	if loc.Path != "/teacher/profile" || q.Get("saved") != "mid" || q.Get("inserted") != "2" || q.Get("updated") != "0" || q.Get("skipped") != "0" {
-		t.Errorf("location = %s", loc)
+	c := summaryCookie(t, rec)
+	if c.Path != "/teacher/profile" || !c.HttpOnly || c.MaxAge <= 0 {
+		t.Errorf("cookie = %+v", c)
+	}
+	q, err := url.ParseQuery(c.Value)
+	if err != nil || q.Get("saved") != "mid" || q.Get("inserted") != "2" || q.Get("updated") != "0" || q.Get("skipped") != "0" {
+		t.Errorf("cookie value = %q, %v", c.Value, err)
+	}
+}
+
+// The profile shows the summary once and clears the cookie.
+func TestTeacherProfileShowsSummaryOnce(t *testing.T) {
+	h, _ := teacherEnv(t)
+	c := summaryCookie(t, teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"}))
+	rec := profileResponse(t, h, c)
+	if !strings.Contains(rec.Body.String(), "Set «mid» saved: 2 added") {
+		t.Error("summary not shown")
+	}
+	cleared := summaryCookie(t, rec)
+	if cleared.MaxAge >= 0 || cleared.Path != "/teacher/profile" {
+		t.Errorf("cookie not cleared: %+v", cleared)
+	}
+	if strings.Contains(profilePage(t, h, nil), " saved: ") {
+		t.Error("summary shown without the cookie")
+	}
+}
+
+// A summary in the URL, as older versions sent it, is not shown: anyone
+// could craft such a link.
+func TestTeacherProfileIgnoresSummaryInURL(t *testing.T) {
+	h, _ := teacherEnv(t)
+	rec := httptest.NewRecorder()
+	h.handleTeacherProfile(rec, withUser(httptest.NewRequest(http.MethodGet, "/teacher/profile?saved=mid&inserted=2&updated=0&skipped=0", nil), teacher1User))
+	if strings.Contains(rec.Body.String(), " saved: ") {
+		t.Error("summary from the URL shown")
 	}
 }
 
 func TestTeacherProfileShowsSetsAndSummary(t *testing.T) {
 	h, _ := teacherEnv(t)
 	teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
-	body := profilePage(t, h, "?saved=mid&inserted=2&updated=0&skipped=0")
+	body := profilePage(t, h, &http.Cookie{Name: saveSummaryCookie, Value: "saved=mid&inserted=2&updated=0&skipped=0"})
 	for _, want := range []string{
 		"Set «mid» saved: 2 added",
 		">mid<",
@@ -87,18 +143,18 @@ func TestTeacherProfileShowsSetsAndSummary(t *testing.T) {
 
 func TestTeacherProfileEmpty(t *testing.T) {
 	h, _ := teacherEnv(t)
-	if body := profilePage(t, h, ""); !strings.Contains(body, "You have no question sets yet") {
+	if body := profilePage(t, h, nil); !strings.Contains(body, "You have no question sets yet") {
 		t.Error("empty state missing")
 	}
 }
 
 func TestTeacherProfileIgnoresBadSummary(t *testing.T) {
 	h, _ := teacherEnv(t)
-	body := profilePage(t, h, "?saved=%3Cscript%3E&inserted=x&updated=0&skipped=0")
+	body := profilePage(t, h, &http.Cookie{Name: saveSummaryCookie, Value: "saved=%3Cscript%3E&inserted=x&updated=0&skipped=0"})
 	if strings.Contains(body, " saved: ") || strings.Contains(body, "<script>x") || strings.Contains(body, "&lt;script&gt;") {
 		t.Error("a summary with bad counts is shown")
 	}
-	body = profilePage(t, h, "?saved=%3Cb%3Ehi%3C%2Fb%3E&inserted=1&updated=0&skipped=0")
+	body = profilePage(t, h, &http.Cookie{Name: saveSummaryCookie, Value: "saved=%3Cb%3Ehi%3C%2Fb%3E&inserted=1&updated=0&skipped=0"})
 	if strings.Contains(body, "<b>hi</b>") || !strings.Contains(body, "&lt;b&gt;hi&lt;/b&gt;") {
 		t.Error("the set name in the summary is not escaped")
 	}
@@ -130,7 +186,7 @@ func TestTeacherDownloadEncodedName(t *testing.T) {
 	teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "Механика, 1 курс"})
 	r := chi.NewRouter()
 	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
-	body := profilePage(t, h, "")
+	body := profilePage(t, h, nil)
 	m := regexp.MustCompile(`href="(/teacher/tests/file/[^"]+)"`).FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("no download link on the profile")
@@ -182,7 +238,7 @@ func TestTeacherDownloadPercentName(t *testing.T) {
 	teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "100%"})
 	r := chi.NewRouter()
 	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
-	m := regexp.MustCompile(`href="(/teacher/tests/file/[^"]+)"`).FindStringSubmatch(profilePage(t, h, ""))
+	m := regexp.MustCompile(`href="(/teacher/tests/file/[^"]+)"`).FindStringSubmatch(profilePage(t, h, nil))
 	if m == nil {
 		t.Fatal("no download link")
 	}
@@ -280,5 +336,23 @@ func TestTeacherSaveRejectsSlashInSetName(t *testing.T) {
 				t.Errorf("questions/ = %v, want empty", files)
 			}
 		})
+	}
+}
+
+// The download link saves the set as a file instead of showing the JSON.
+func TestTeacherDownloadIsAttachment(t *testing.T) {
+	h, _ := teacherEnv(t)
+	teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": "Механика"})
+	r := chi.NewRouter()
+	r.Get("/teacher/tests/file/{name}", h.handleTeacherDownload)
+	rec := httptest.NewRecorder()
+	target := "/teacher/tests/file/" + url.PathEscape("teacher_teacher1_Механика.json")
+	r.ServeHTTP(rec, withUser(httptest.NewRequest(http.MethodGet, target, nil), teacher1User))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status %d", rec.Code)
+	}
+	_, params, err := mime.ParseMediaType(rec.Header().Get("Content-Disposition"))
+	if cd := rec.Header().Get("Content-Disposition"); err != nil || !strings.HasPrefix(cd, "attachment") || params["filename"] != "Механика.json" {
+		t.Errorf("Content-Disposition = %q (%v), params %v", cd, err, params)
 	}
 }

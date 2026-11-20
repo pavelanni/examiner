@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime"
 	"net/http"
 	"net/url"
 	"os"
@@ -58,7 +59,11 @@ func (h *Handler) checkQuestionFileOwner(w http.ResponseWriter, r *http.Request,
 	return true
 }
 
-// saveSummary reads the result of a save from the profile URL, or nil
+// saveSummaryCookie carries the result of a save to the profile, which
+// shows it once and clears it.
+const saveSummaryCookie = "examiner_saved"
+
+// saveSummary reads the result of a save from the cookie value, or nil
 // when it is absent or malformed.
 func saveSummary(q url.Values) *views.SaveSummary {
 	name := q.Get("saved")
@@ -294,8 +299,19 @@ func (h *Handler) handleTeacherProfile(w http.ResponseWriter, r *http.Request) {
 	for _, f := range files {
 		sets = append(sets, views.QuestionSet{File: f, Name: setName(f, user.Username)})
 	}
+	// The summary of the last save is shown once: the cookie is cleared.
+	var saved *views.SaveSummary
+	if c, err := r.Cookie(saveSummaryCookie); err == nil {
+		if q, err := url.ParseQuery(c.Value); err == nil {
+			saved = saveSummary(q)
+		}
+		http.SetCookie(w, &http.Cookie{
+			Name: saveSummaryCookie, Path: h.path("/teacher/profile"), MaxAge: -1,
+			HttpOnly: true, Secure: h.config.SecureCookies, SameSite: http.SameSiteLaxMode,
+		})
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := views.TeacherProfilePage(sets, saveSummary(r.URL.Query())).Render(r.Context(), w); err != nil {
+	if err := views.TeacherProfilePage(sets, saved).Render(r.Context(), w); err != nil {
 		slog.Error("render error", "error", err)
 	}
 }
@@ -586,7 +602,13 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		"updated":  {strconv.Itoa(res.Updated)},
 		"skipped":  {strconv.Itoa(res.Skipped)},
 	}
-	http.Redirect(w, r, h.path("/teacher/profile")+"?"+summary.Encode(), http.StatusSeeOther)
+	// A cookie, not the URL: a reload or a shared link must not show the
+	// summary again.
+	http.SetCookie(w, &http.Cookie{
+		Name: saveSummaryCookie, Value: summary.Encode(), Path: h.path("/teacher/profile"), MaxAge: 60,
+		HttpOnly: true, Secure: h.config.SecureCookies, SameSite: http.SameSiteLaxMode,
+	})
+	http.Redirect(w, r, h.path("/teacher/profile"), http.StatusSeeOther)
 }
 
 // savedQuestionsFile returns the file content to publish: data itself when
@@ -635,6 +657,11 @@ func (h *Handler) handleTeacherDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	path := filepath.Join("questions", name)
+	// Save the set as a file named as the teacher sees it, not open the
+	// JSON in the browser.
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{
+		"filename": setName(name, user.Username) + ".json",
+	}))
 	http.ServeFile(w, r, path)
 }
 

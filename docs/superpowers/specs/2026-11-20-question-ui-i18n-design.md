@@ -196,10 +196,11 @@ Layout (Russian copy shown; English equivalents in the locale file):
 - Each set: name without the `teacher_<username>_` prefix and `.json` (today the prefix is shown; strip it with the
   existing owner rule, falling back to the full name). Actions: `QSetEdit` ("Редактировать") →
   `/teacher/create-test?file=…`, `QSetDownload` ("Скачать") → existing `/teacher/tests/file/{name}`.
-- **Success message.** After a save the handler redirects to `/teacher/profile?saved=<set
-  name>&inserted=N&updated=M&skipped=K` (currently a bare redirect). The page shows `QSetSaved` with those numbers in a
-  green `role="status"` box. Values are parsed as integers; invalid ones hide the message. The name is shown as text
-  (templ escapes it).
+- **Success message.** After a save the handler sets the short-lived cookie `examiner_saved` (path
+  `/teacher/profile`, HttpOnly, 60 s) holding `saved=<set name>&inserted=N&updated=M&skipped=K` and redirects to
+  `/teacher/profile`. The page shows `QSetSaved` with those numbers in a green `role="status"` box once and clears the
+  cookie, so a reload or a crafted link does not show it. Values are parsed as integers; invalid ones hide the
+  message. The name is shown as text (templ escapes it).
 - The `flashMsg` parameter and its red styling are removed: after #79 the handler no longer renders the profile with
   warnings.
 

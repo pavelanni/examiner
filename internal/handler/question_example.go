@@ -7,13 +7,16 @@ import (
 
 	"github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
+	"golang.org/x/text/language"
 )
 
 // questionExample returns a two-question file in the UI language, for the
 // format help and the example download. It must stay valid for
 // questionimport.Parse (see the test).
 func questionExample(lang string) []model.QuestionImport {
-	if lang == "ru" {
+	// Compare the base language: --lang may be "ru-RU", which the UI
+	// localizer matches to Russian too.
+	if base, _ := language.Make(lang).Base(); base.String() == "ru" {
 		return []model.QuestionImport{
 			{
 				Text:        "Сформулируйте второй закон Ньютона.",

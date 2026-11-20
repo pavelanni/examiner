@@ -95,8 +95,8 @@ func TestDifficultyLabel(t *testing.T) {
 	ctx := langCtx(t, "ru")
 	want := []string{"Лёгкий", "Средний", "Сложный"}
 	for i, d := range model.Difficulties {
-		if got := difficultyLabel(ctx, d); got != want[i] {
-			t.Errorf("difficultyLabel(%q) = %q, want %q", d, got, want[i])
+		if got := DifficultyLabel(ctx, d); got != want[i] {
+			t.Errorf("DifficultyLabel(%q) = %q, want %q", d, got, want[i])
 		}
 	}
 }

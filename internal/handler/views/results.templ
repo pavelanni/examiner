@@ -55,7 +55,7 @@ templ ResultsPage(view model.SessionView, policy model.ResultsPolicy) {
 				<h3>{ td(ctx, "QuestionN", map[string]any{"N": strconv.Itoa(i + 1)}) }</h3>
 				<p>
 					<strong>{ tv.Question.Topic }</strong>
-					({ difficultyLabel(ctx, tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
+					({ DifficultyLabel(ctx, tv.Question.Difficulty) }, { td(ctx, "Points", map[string]any{"Points": strconv.Itoa(tv.Question.MaxPoints)}) })
 				</p>
 				<p class="question-text">{ tv.Question.Text }</p>
 				if len(tv.Messages) > 0 {

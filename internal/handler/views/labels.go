@@ -42,8 +42,9 @@ func roleLabel(ctx context.Context, role model.UserRole) string {
 	return string(role)
 }
 
-// difficultyLabel translates a question difficulty.
-func difficultyLabel(ctx context.Context, d model.Difficulty) string {
+// DifficultyLabel translates a question difficulty. An unknown difficulty
+// is shown as it is.
+func DifficultyLabel(ctx context.Context, d model.Difficulty) string {
 	switch d {
 	case model.DifficultyEasy:
 		return t(ctx, "DifficultyEasy")
@@ -60,7 +61,7 @@ func difficultyLabel(ctx context.Context, d model.Difficulty) string {
 func difficultyListLabel(ctx context.Context, list string) string {
 	parts := strings.Split(list, ",")
 	for i, p := range parts {
-		parts[i] = difficultyLabel(ctx, model.Difficulty(strings.TrimSpace(p)))
+		parts[i] = DifficultyLabel(ctx, model.Difficulty(strings.TrimSpace(p)))
 	}
 	return strings.Join(parts, ", ")
 }

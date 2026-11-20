@@ -303,7 +303,7 @@ templ questionBlock() {
                 <label for="q_diff___IDX__">{ t(ctx, "QBlockDifficulty") }</label>
                 <select id="q_diff___IDX__" name="q_diff___IDX__">
                     for _, d := range model.Difficulties {
-                        <option value={ string(d) }>{ difficultyLabel(ctx, d) }</option>
+                        <option value={ string(d) }>{ DifficultyLabel(ctx, d) }</option>
                     }
                 </select>
             </div>

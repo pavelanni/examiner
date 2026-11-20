@@ -551,3 +551,15 @@ func TestShortageTextTranslatesDifficulty(t *testing.T) {
 		t.Errorf("English = %q", got)
 	}
 }
+
+// A difficulty without a translation is shown as it is, not as «».
+func TestShortageTextUnknownDifficulty(t *testing.T) {
+	if err := i18n.Init("en"); err != nil {
+		t.Fatal(err)
+	}
+	ru := i18n.WithLocalizer(context.Background(), i18n.NewLocalizer("ru"))
+	short := []selection.Shortage{{Difficulty: "expert", Need: 1, Have: 0}}
+	if got := shortageText(ru, "ExamShortageShort", "t", short); !strings.Contains(got, "«expert»") {
+		t.Errorf("Russian = %q", got)
+	}
+}

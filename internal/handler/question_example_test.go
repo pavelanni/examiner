@@ -22,6 +22,12 @@ func TestQuestionExampleValid(t *testing.T) {
 	if questionExample("ru")[0].Text == questionExample("en")[0].Text {
 		t.Error("the Russian example is not in Russian")
 	}
+	// --lang may carry a region, as the UI localizer accepts.
+	for _, lang := range []string{"ru-RU", "RU"} {
+		if questionExample(lang)[0].Text != questionExample("ru")[0].Text {
+			t.Errorf("%s: the example is not in Russian", lang)
+		}
+	}
 }
 
 func TestQuestionExampleRoute(t *testing.T) {
