@@ -192,3 +192,93 @@ func TestTeacherDownloadPercentName(t *testing.T) {
 		t.Errorf("GET %s: %d %q", m[1], rec.Code, rec.Body.String())
 	}
 }
+
+// A new set, or an edited set renamed, must not take the name of another
+// set: the other file would be replaced and its questions lost from view.
+func TestTeacherSaveRejectsTakenSetName(t *testing.T) {
+	for name, extra := range map[string]map[string]string{
+		"new set":     {},
+		"renamed set": {"editing_file": "teacher_teacher1_other.json"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, s := teacherEnv(t)
+			teacherSave(t, h, map[string]string{"questions_json": importQuestions(2, nil), "custom_filename": "mid"})
+			midPath := filepath.Join("questions", "teacher_teacher1_mid.json")
+			before, err := os.ReadFile(midPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fields := map[string]string{"questions_json": oneQ("Another", "r"), "custom_filename": "mid"}
+			if extra["editing_file"] != "" {
+				teacherSave(t, h, map[string]string{"questions_json": oneQ("Another", "r"), "custom_filename": "other"})
+				fields["question_ids"] = idsOf(t, s, "Another")
+			}
+			for k, v := range extra {
+				fields[k] = v
+			}
+			rec := teacherSave(t, h, fields)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "already exists") {
+				t.Errorf("body does not say the set name is taken")
+			}
+			if after, err := os.ReadFile(midPath); err != nil || string(after) != string(before) {
+				t.Errorf("existing set changed: %q, %v", after, err)
+			}
+		})
+	}
+}
+
+// After an error the name field shows the name as the teacher sent it, so
+// saving again keeps the file of a set with an old-style name.
+func TestTeacherErrorKeepsLegacySetName(t *testing.T) {
+	h, s := teacherEnv(t)
+	const file = "teacher_teacher1_teacher_teacher1_mid.json"
+	if err := os.WriteFile(filepath.Join("questions", file), []byte(importQuestions(1, nil)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	rec := teacherSave(t, h, map[string]string{
+		"questions_json":  importQuestions(1, map[int]string{1: `"rubric":"","max_points":5`}),
+		"editing_file":    file,
+		"custom_filename": "teacher_teacher1_mid",
+	})
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `name="custom_filename" value="teacher_teacher1_mid"`) {
+		t.Fatalf("name field changed on re-render")
+	}
+	rec = teacherSave(t, h, map[string]string{
+		"questions_json": importQuestions(1, nil), "editing_file": file,
+		"custom_filename": "teacher_teacher1_mid", "question_ids": idsOf(t, s, "Question 1"),
+	})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status %d; body %s", rec.Code, rec.Body.String())
+	}
+	if files := questionFiles(t); !slices.Equal(files, []string{file}) {
+		t.Errorf("questions/ = %v; want %s kept", files, file)
+	}
+}
+
+// A slash in a set name is refused, not silently cut to the part after it.
+func TestTeacherSaveRejectsSlashInSetName(t *testing.T) {
+	for _, custom := range []string{"Mechanics 1/2", `Mechanics 1\2`} {
+		t.Run(custom, func(t *testing.T) {
+			h, s := teacherEnv(t)
+			rec := teacherSave(t, h, map[string]string{"questions_json": importQuestions(1, nil), "custom_filename": custom})
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+			if !strings.Contains(rec.Body.String(), "file name") {
+				t.Errorf("body does not explain the name problem")
+			}
+			if n := questionCount(t, s); n != 0 {
+				t.Errorf("count = %d, want 0", n)
+			}
+			if files := questionFiles(t); len(files) != 0 {
+				t.Errorf("questions/ = %v, want empty", files)
+			}
+		})
+	}
+}

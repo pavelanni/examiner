@@ -254,7 +254,9 @@ func (h *Handler) renderTeacherCreateTest(w http.ResponseWriter, r *http.Request
 	if b.SetName == "" {
 		switch {
 		case b.CustomName != "":
-			b.SetName = setName(filepath.Base(b.CustomName), user.Username)
+			// The name as the teacher sent it: running setName on it again
+			// would strip a legacy name and so rename the set on save.
+			b.SetName = b.CustomName
 		case b.Filename != "":
 			b.SetName = setName(b.Filename, user.Username)
 		}
@@ -464,7 +466,9 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		// .json.json) that the name rules below would not reproduce.
 		safeName = editingFile
 	case customFilename != "":
-		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, setName(filepath.Base(customFilename), user.Username))
+		// No filepath.Base here: a slash must be refused below, not cut
+		// "Mechanics 1/2" down to "2".
+		safeName = fmt.Sprintf("teacher_%s_%s.json", user.Username, setName(customFilename, user.Username))
 	case editingFile != "":
 		safeName = editingFile
 	default:
@@ -487,6 +491,18 @@ func (h *Handler) handleTeacherUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	outPath := filepath.Join("questions", safeName)
+	// A new or renamed set must not replace another set of the teacher:
+	// that file would be lost and its questions left without a set.
+	if safeName != editingFile {
+		if _, err := os.Lstat(outPath); err == nil {
+			render(http.StatusBadRequest, []string{appI18n.T(r.Context(), "QImportErrSetExists")}, nil, "")
+			return
+		} else if !os.IsNotExist(err) {
+			slog.Error("failed to check question file", "file", outPath, "error", err)
+			httpError(w, r, http.StatusInternalServerError, "ErrInternal")
+			return
+		}
+	}
 
 	// Decisions about duplicates count only for the questions they were
 	// asked about; an edited test is checked again.
