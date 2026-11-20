@@ -118,7 +118,9 @@ func Load(fsys fs.FS) error {
 }
 
 // BuildEvalPrompt builds an evaluation prompt using the specified variant.
-func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []model.Message, maxFollowups int) (string, error) {
+// followupsAsked is the caller's authoritative count of follow-up questions
+// already asked in the thread.
+func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []model.Message, followupsAsked, maxFollowups int) (string, error) {
 	if evalTemplates == nil {
 		return "", errors.New("templates not initialized: call Load first")
 	}
@@ -130,7 +132,7 @@ func BuildEvalPrompt(variant PromptVariant, question model.Question, messages []
 		return "", errors.New("invalid prompt variant: " + string(variant))
 	}
 
-	canFollowup := CountFollowups(messages) < maxFollowups
+	canFollowup := followupsAsked < maxFollowups
 
 	data := EvalData{
 		QuestionText: question.Text,
@@ -257,16 +259,4 @@ func newPart(tag string, n int, text string, placeholder bool) dialoguePart {
 		p.truncated = true
 	}
 	return p
-}
-
-// CountFollowups returns the number of follow-up questions the examiner has
-// asked in the conversation. Feedback messages without a question don't count.
-func CountFollowups(messages []model.Message) int {
-	count := 0
-	for _, m := range messages {
-		if m.Role == model.RoleLLM && m.Followup != "" {
-			count++
-		}
-	}
-	return count
 }

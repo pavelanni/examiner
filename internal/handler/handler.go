@@ -23,7 +23,7 @@ import (
 // Evaluator is the part of the LLM client the exam handlers depend on.
 // *llm.Client implements it; tests use a fake.
 type Evaluator interface {
-	EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*llm.GradeResult, string, error)
+	EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, followupsAsked, maxFollowups int, sessionID, threadID int64) (*llm.GradeResult, string, error)
 	GradeThreadAttempt(ctx context.Context, question model.Question, messages []model.Message, sessionID, threadID int64, attempt llm.GradeAttempt) (*llm.GradeResult, error)
 }
 

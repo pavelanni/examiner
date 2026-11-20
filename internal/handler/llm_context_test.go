@@ -21,7 +21,7 @@ type contextEvaluator struct {
 	gradedMessages chan<- []model.Message
 }
 
-func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, _ []model.Message, _ int, _, _ int64) (*llm.GradeResult, string, error) {
+func (e contextEvaluator) EvaluateAnswer(ctx context.Context, _ model.Question, _ []model.Message, _, _ int, _, _ int64) (*llm.GradeResult, string, error) {
 	if err := e.evaluate(ctx); err != nil {
 		return nil, "", err
 	}

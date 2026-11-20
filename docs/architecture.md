@@ -175,13 +175,15 @@ based on whether follow-ups remain:
 - If at the limit: prompt explicitly instructs the LLM
   not to ask further questions
 
-The prompt is only a request. `handleAnswer` enforces the limit on the
-server: if the thread's `followup_count` has reached `max_followups`,
-the follow-up is dropped, a warning is logged and the thread is
+The prompt is only a request. `question_threads.followup_count` is the
+single owner of how many follow-ups have been asked: `evaluateJob` passes
+it into `EvaluateAnswer` (and `prompts.BuildEvalPrompt`) rather than
+recomputing it from messages, and uses the same limit check to enforce
+`max_followups` on the server—if the thread's `followup_count` has
+reached `max_followups`, any follow-up is dropped and the thread is
 completed. The limit is per question (thread), and `0` means no
 follow-ups at all. Answers to a completed thread get HTTP 409, and
-only one answer per thread is processed at a time (a concurrent one
-also gets 409).
+concurrent answers are serialized via `QueueAnswer`.
 
 ## Templating with Templ
 

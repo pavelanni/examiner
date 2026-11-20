@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -24,17 +25,19 @@ import (
 // fakeLLM is an Evaluator that always asks for another follow-up,
 // whatever the limit says. It counts evaluation calls.
 type fakeLLM struct {
-	mu    sync.Mutex
-	calls int
+	mu            sync.Mutex
+	calls         int
+	seenFollowups []int
 
 	emptyFollowupQ bool  // ask for a follow-up but leave the question empty
 	err            error // returned by EvaluateAnswer, if non-nil
 }
 
-func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.Message, _ int, _, _ int64) (*llm.GradeResult, string, error) {
+func (f *fakeLLM) EvaluateAnswer(_ context.Context, q model.Question, _ []model.Message, followupsAsked, _ int, _, _ int64) (*llm.GradeResult, string, error) {
 	f.mu.Lock()
 	f.calls++
 	n := f.calls
+	f.seenFollowups = append(f.seenFollowups, followupsAsked)
 	f.mu.Unlock()
 	if f.err != nil {
 		return nil, "", f.err
@@ -63,6 +66,12 @@ func (f *fakeLLM) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeLLM) followupsSeen() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.seenFollowups)
 }
 
 type answerEnv struct {
@@ -181,7 +190,8 @@ func (e *answerEnv) messageCount(t *testing.T) int {
 
 func TestAnswerEnforcesFollowupLimit(t *testing.T) {
 	const limit = 3
-	env := newAnswerEnv(t, limit, &fakeLLM{})
+	fake := &fakeLLM{}
+	env := newAnswerEnv(t, limit, fake)
 
 	for i := 1; i <= limit+1; i++ {
 		rec := env.post(t, fmt.Sprintf("answer %d", i))
@@ -198,6 +208,9 @@ func TestAnswerEnforcesFollowupLimit(t *testing.T) {
 		}
 	}
 
+	if got, want := fake.followupsSeen(), []int{0, 1, 2, 3}; !slices.Equal(got, want) {
+		t.Errorf("followupsSeen = %v, want %v", got, want)
+	}
 	th := env.thread(t)
 	if th.FollowupCount != limit {
 		t.Errorf("FollowupCount = %d, want exactly %d", th.FollowupCount, limit)
@@ -213,12 +226,16 @@ func TestAnswerEnforcesFollowupLimit(t *testing.T) {
 }
 
 func TestAnswerWithZeroFollowupsCompletesImmediately(t *testing.T) {
-	env := newAnswerEnv(t, 0, &fakeLLM{})
+	fake := &fakeLLM{}
+	env := newAnswerEnv(t, 0, fake)
 
 	if rec := env.post(t, "answer"); rec.Code != http.StatusAccepted {
 		t.Fatalf("status %d, body %q", rec.Code, rec.Body.String())
 	}
 	runNextEvaluation(t, env.h)
+	if got, want := fake.followupsSeen(), []int{0}; !slices.Equal(got, want) {
+		t.Errorf("followupsSeen = %v, want %v", got, want)
+	}
 	th := env.thread(t)
 	if th.Status != model.ThreadCompleted || th.FollowupCount != 0 {
 		t.Errorf("thread = %+v, want completed with 0 follow-ups", th)

@@ -113,8 +113,8 @@ func appendTrigger(msgs []openai.ChatCompletionMessage) []openai.ChatCompletionM
 // EvaluateAnswer sends the dialogue so far (all student answers and the
 // follow-up questions, built into the prompt) to the LLM for evaluation.
 // It returns the LLM's response which may include a follow-up question.
-func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, maxFollowups int, sessionID, threadID int64) (*GradeResult, string, error) {
-	systemPrompt, err := prompts.BuildEvalPrompt(c.promptVariant, question, messages, maxFollowups)
+func (c *Client) EvaluateAnswer(ctx context.Context, question model.Question, messages []model.Message, followupsAsked, maxFollowups int, sessionID, threadID int64) (*GradeResult, string, error) {
+	systemPrompt, err := prompts.BuildEvalPrompt(c.promptVariant, question, messages, followupsAsked, maxFollowups)
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to build eval prompt: %w", err)
 	}

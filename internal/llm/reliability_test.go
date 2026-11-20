@@ -39,7 +39,7 @@ func callGrade(ctx context.Context, client *Client, grading bool) error {
 	if grading {
 		result, err = client.GradeThread(ctx, q, messages, 1, 1)
 	} else {
-		result, _, err = client.EvaluateAnswer(ctx, q, messages, 3, 1, 1)
+		result, _, err = client.EvaluateAnswer(ctx, q, messages, 0, 3, 1, 1)
 	}
 	if err != nil {
 		return err

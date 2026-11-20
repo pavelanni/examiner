@@ -169,7 +169,8 @@ func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*mo
 		return nil, nil, err
 	}
 	if job.Feedback {
-		result, _, err := h.llm.EvaluateAnswer(ctx, question, messages, bp.MaxFollowups, job.SessionID, thread.ID)
+		canFollowup := thread.FollowupCount < bp.MaxFollowups
+		result, _, err := h.llm.EvaluateAnswer(ctx, question, messages, thread.FollowupCount, bp.MaxFollowups, job.SessionID, thread.ID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -177,7 +178,7 @@ func (h *Handler) evaluateJob(ctx context.Context, job store.EvaluationJob) (*mo
 			return nil, nil, errors.New("evaluator returned no feedback")
 		}
 		reply := &model.Message{ThreadID: thread.ID, Role: model.RoleLLM, Content: result.Feedback, Score: &result.Score}
-		if result.NeedFollowup && thread.FollowupCount < bp.MaxFollowups {
+		if result.NeedFollowup && canFollowup {
 			reply.Followup = strings.TrimSpace(result.FollowupQ)
 		}
 		return reply, nil, nil

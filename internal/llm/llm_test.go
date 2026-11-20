@@ -18,39 +18,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestCountFollowups(t *testing.T) {
-	tests := []struct {
-		name     string
-		messages []model.Message
-		want     int
-	}{
-		{"empty", nil, 0},
-		{"no LLM messages", []model.Message{
-			{Role: model.RoleStudent, Content: "answer"},
-			{Role: model.RoleStudent, Content: "more"},
-		}, 0},
-		{"all LLM with follow-ups", []model.Message{
-			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
-			{Role: model.RoleLLM, Content: "f2", Followup: "q2"},
-		}, 2},
-		{"feedback without follow-up is not counted", []model.Message{
-			{Role: model.RoleStudent, Content: "a1"},
-			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
-			{Role: model.RoleStudent, Content: "a2"},
-			{Role: model.RoleLLM, Content: "final feedback"},
-		}, 1},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := prompts.CountFollowups(tt.messages)
-			if got != tt.want {
-				t.Errorf("countFollowups() = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestBuildEvalSystemPrompt(t *testing.T) {
 	q := model.Question{
 		Text:        "What is a goroutine?",
@@ -62,7 +29,7 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 	t.Run("can followup", func(t *testing.T) {
 		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, []model.Message{
 			{Role: model.RoleStudent, Content: "answer"},
-		}, 3)
+		}, 0, 3)
 		if err != nil {
 			t.Fatalf("failed to build prompt: %v", err)
 		}
@@ -92,7 +59,58 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 			{Role: model.RoleStudent, Content: "a3"},
 			{Role: model.RoleLLM, Content: "f3", Followup: "q3"},
 		}
-		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, messages, 3)
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, messages, 3, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
+		}
+		if !strings.Contains(prompt, "Do NOT ask any more follow-ups") {
+			t.Error("prompt should prohibit follow-ups")
+		}
+		if strings.Contains(prompt, "MAY ask ONE follow-up") {
+			t.Error("prompt should not allow follow-ups")
+		}
+	})
+
+	t.Run("count at limit overrides empty message followups", func(t *testing.T) {
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, []model.Message{
+			{Role: model.RoleStudent, Content: "answer"},
+		}, 3, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
+		}
+		if !strings.Contains(prompt, "Do NOT ask any more follow-ups") {
+			t.Error("prompt should prohibit follow-ups")
+		}
+		if strings.Contains(prompt, "MAY ask ONE follow-up") {
+			t.Error("prompt should not allow follow-ups")
+		}
+	})
+
+	t.Run("count below limit overrides message followups", func(t *testing.T) {
+		messages := []model.Message{
+			{Role: model.RoleStudent, Content: "a1"},
+			{Role: model.RoleLLM, Content: "f1", Followup: "q1"},
+			{Role: model.RoleStudent, Content: "a2"},
+			{Role: model.RoleLLM, Content: "f2", Followup: "q2"},
+			{Role: model.RoleStudent, Content: "a3"},
+			{Role: model.RoleLLM, Content: "f3", Followup: "q3"},
+		}
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, messages, 2, 3)
+		if err != nil {
+			t.Fatalf("failed to build prompt: %v", err)
+		}
+		if !strings.Contains(prompt, "MAY ask ONE follow-up") {
+			t.Error("prompt should allow follow-ups")
+		}
+		if strings.Contains(prompt, "Do NOT ask any more follow-ups") {
+			t.Error("prompt should not prohibit follow-ups")
+		}
+	})
+
+	t.Run("zero max followups", func(t *testing.T) {
+		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q, []model.Message{
+			{Role: model.RoleStudent, Content: "answer"},
+		}, 0, 0)
 		if err != nil {
 			t.Fatalf("failed to build prompt: %v", err)
 		}
@@ -108,7 +126,7 @@ func TestBuildEvalSystemPrompt(t *testing.T) {
 		q2 := model.Question{Text: "Simple?", MaxPoints: 5}
 		prompt, err := prompts.BuildEvalPrompt(prompts.PromptStandard, q2, []model.Message{
 			{Role: model.RoleStudent, Content: "answer"},
-		}, 3)
+		}, 0, 3)
 		if err != nil {
 			t.Fatalf("failed to build prompt: %v", err)
 		}
