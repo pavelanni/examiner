@@ -114,7 +114,7 @@ func (s *Store) StartSession(blueprintID, studentID int64, topic string, questio
 func createSession(tx *sql.Tx, blueprintID, studentID int64, topic string, questionIDs []int64, topicKnown bool) (int64, error) {
 	res, err := tx.Exec(
 		`INSERT INTO exam_sessions (blueprint_id, student_id, topic, topic_known, status, started_at) VALUES (?, ?, ?, ?, 'in_progress', ?)`,
-		blueprintID, studentID, topic, topicKnown, time.Now(),
+		blueprintID, studentID, topic, topicKnown, time.Now().UTC(),
 	)
 	if err != nil {
 		return 0, err

@@ -72,7 +72,7 @@ func (s *Store) QueueSubmission(sessionID int64) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	res, err := tx.Exec(`UPDATE exam_sessions SET status='submitted',submitted_at=? WHERE id=? AND status='in_progress'`, time.Now(), sessionID)
+	res, err := tx.Exec(`UPDATE exam_sessions SET status='submitted',submitted_at=? WHERE id=? AND status='in_progress'`, time.Now().UTC(), sessionID)
 	if err != nil {
 		return err
 	}

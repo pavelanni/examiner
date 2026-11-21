@@ -18,6 +18,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	_ "time/tzdata" // the runtime image has no tzdata; needed for --timezone
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -92,6 +93,7 @@ func serveCmd() *cobra.Command {
 	f.Bool("allow-registration", false, "Allow students to create their own accounts")
 	f.String("score-visibility", string(model.ScoreFinal), "When students see AI scores (live, final, none)")
 	f.String("prompt-variant", string(prompts.PromptStandard), "Grading prompt variant (strict, standard, lenient)")
+	f.String("timezone", "Europe/Moscow", "IANA time zone for exam dates in the teacher review (e.g. Europe/Moscow, UTC)")
 	f.String("admin-password", "", "Initial admin password (or set EXAMINER_ADMIN_PASSWORD)")
 	f.String("log-level", "info", "Log level (debug, info, warn, error)")
 	f.String("log-format", "text", "Log format (text, json)")
@@ -245,6 +247,16 @@ func logTopicAvailability(db *store.Store, d model.Distribution) error {
 	return nil
 }
 
+// parseTimezone validates and loads the configured IANA time zone.
+func parseTimezone(v *viper.Viper) (*time.Location, error) {
+	tzName := strings.TrimSpace(v.GetString("timezone"))
+	location, err := time.LoadLocation(tzName)
+	if err != nil || tzName == "" {
+		return nil, fmt.Errorf("timezone %q: not a valid IANA time zone name", tzName)
+	}
+	return location, nil
+}
+
 // llmOptions отклоняет некорректные значения вместо неявного преобразования в ноль.
 func llmOptions(v *viper.Viper) ([]llm.Option, error) {
 	timeout, err := time.ParseDuration(strings.TrimSpace(v.GetString("llm-timeout")))
@@ -323,6 +335,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("score-visibility: %w", err)
 	}
 
+	location, err := parseTimezone(v)
+	if err != nil {
+		return err
+	}
 	// Create LLM client.
 	promptVariant := strings.ToLower(strings.TrimSpace(v.GetString("prompt-variant")))
 	if !prompts.IsValidVariant(promptVariant) {
@@ -363,10 +379,10 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		PromptVariant:     promptVariant,
 
 		ScoreVisibility: scoreVisibility,
-
 		BackupDir:  v.GetString("backup-dir"),
 		BackupName: "examiner-" + lang,
 		BackupKeep: v.GetInt("backup-keep"),
+		Location:   location,
 	}
 
 	h, err := handler.New(db, llmClient, examCfg)
@@ -431,6 +447,7 @@ func runServe(cmd *cobra.Command, _ []string) error {
 		"shuffle", examCfg.Shuffle,
 		"question_selection", fmt.Sprint(map[model.Difficulty]int(examCfg.Selection)),
 		"base_path", basePath,
+		"timezone", location.String(),
 	)
 	server := &http.Server{Handler: r}
 	served := make(chan error, 1)

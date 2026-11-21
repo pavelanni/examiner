@@ -281,6 +281,10 @@ type ExamConfig struct {
 	BackupDir  string // where admin-page backups go; empty disables them
 	BackupName string // backup file name prefix, e.g. "examiner-ru"
 	BackupKeep int    // newest backups to keep; 0 keeps all
+
+	// Location is the time zone for exam dates in the teacher review
+	// (day boundaries for date filters, displayed times). Nil means UTC.
+	Location *time.Location
 }
 
 // QuestionImport is used for loading questions from JSON.

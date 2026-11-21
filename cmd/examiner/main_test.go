@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/viper"
+
 	appI18n "github.com/pavelanni/examiner/internal/i18n"
 	"github.com/pavelanni/examiner/internal/model"
 	"github.com/pavelanni/examiner/internal/store"
@@ -149,5 +151,32 @@ func TestLoadQuestionsSkipsTeacherOwned(t *testing.T) {
 	}
 	if !foundNew {
 		t.Error(`question "New" was not imported`)
+	}
+}
+
+func TestParseTimezone(t *testing.T) {
+	tests := []struct {
+		name    string
+		tz      string
+		want    string
+		wantErr bool
+	}{
+		{name: "default Europe/Moscow", tz: "Europe/Moscow", want: "Europe/Moscow"},
+		{name: "valid UTC with spaces", tz: "  UTC  ", want: "UTC"},
+		{name: "empty", tz: "   ", wantErr: true},
+		{name: "invalid", tz: "Mars/Olympus", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v := viper.New()
+			v.Set("timezone", tt.tz)
+			loc, err := parseTimezone(v)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("parseTimezone(%q) err = %v, wantErr=%v", tt.tz, err, tt.wantErr)
+			}
+			if !tt.wantErr && loc.String() != tt.want {
+				t.Errorf("loc = %q, want %q", loc.String(), tt.want)
+			}
+		})
 	}
 }

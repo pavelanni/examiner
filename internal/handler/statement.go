@@ -23,14 +23,29 @@ func (e statementFilterError) Error() string { return string(e) }
 // statementFilter validates the URL filters. Date boundaries use exam start time
 // to match Teacher Review (#52), while the exported date is submitted_at.
 func statementFilter(query url.Values) (model.StatementFilter, *time.Location, error) {
+	return statementFilterWithDefault(query, nil)
+}
+
+func statementFilterWithDefault(query url.Values, defaultLoc *time.Location) (model.StatementFilter, *time.Location, error) {
 	var filter model.StatementFilter
-	zone := query.Get("timezone")
+	zone := strings.TrimSpace(query.Get("timezone"))
+	var location *time.Location
 	if zone == "" {
-		zone = "Europe/Moscow"
-	}
-	location, err := time.LoadLocation(zone)
-	if err != nil {
-		return filter, nil, statementFilterError("ErrStatementTimezone")
+		if defaultLoc != nil {
+			location = defaultLoc
+		} else {
+			var err error
+			location, err = time.LoadLocation("Europe/Moscow")
+			if err != nil {
+				location = time.UTC
+			}
+		}
+	} else {
+		var err error
+		location, err = time.LoadLocation(zone)
+		if err != nil {
+			return filter, nil, statementFilterError("ErrStatementTimezone")
+		}
 	}
 	if query.Get("topic") != "" {
 		value := query.Get("topic")
@@ -98,7 +113,7 @@ func (h *Handler) handleStatement(w http.ResponseWriter, r *http.Request) {
 		httpError(w, r, http.StatusBadRequest, "ErrInvalidExportFormat")
 		return
 	}
-	filter, location, err := statementFilter(r.URL.Query())
+	filter, location, err := statementFilterWithDefault(r.URL.Query(), h.reviewLocation())
 	if err != nil {
 		var fe statementFilterError
 		if errors.As(err, &fe) {

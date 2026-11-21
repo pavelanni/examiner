@@ -3,26 +3,219 @@ package views
 import (
 	"fmt"
 	"net/url"
+	"strconv"
+	"time"
 
 	"github.com/pavelanni/examiner/internal/model"
+	"github.com/pavelanni/examiner/internal/store"
 )
 
-templ ReviewListPage(sessions, other []model.ExamSession, topics []string, filters url.Values) {
+// ReviewListView holds the state and results for the teacher review list page.
+type ReviewListView struct {
+	Rows       []store.ReviewRow
+	Other      []model.ExamSession
+	Topics     []string
+	Filters    url.Values
+	Status     string
+	From       string
+	To         string
+	Page       int
+	TotalPages int
+	Total      int
+	PrevURL    string
+	NextURL    string
+	Location   *time.Location
+	ErrorKey   string
+}
+
+func formatReviewTime(ts time.Time, loc *time.Location) string {
+	if loc == nil {
+		loc = time.UTC
+	}
+	return ts.In(loc).Format("2006-01-02 15:04")
+}
+
+templ ReviewListPage(view ReviewListView) {
 	@Layout(t(ctx, "ReviewDashboard")) {
 		@Nav([]NavItem{
 			{Label: t(ctx, "Home"), URL: p(ctx, "/")},
 			{Label: t(ctx, "TeacherReview")},
 		})
 		<h1>{ t(ctx, "ReviewDashboard") }</h1>
+		<form method="GET" action={ templ.SafeURL(p(ctx, "/review")) }>
+			<div class="grid">
+				<div>
+					<label for="status">{ t(ctx, "FilterStatus") }</label>
+					<select id="status" name="status">
+						<option value="all" selected?={ view.Status == "" || view.Status == "all" }>{ t(ctx, "StatusAll") }</option>
+						<option value="graded" selected?={ view.Status == "graded" }>{ t(ctx, "StatementGraded") }</option>
+						<option value="reviewed" selected?={ view.Status == "reviewed" }>{ t(ctx, "StatementReviewed") }</option>
+						<option value="grading_failed" selected?={ view.Status == "grading_failed" }>{ t(ctx, "SessionGradingFailed") }</option>
+					</select>
+				</div>
+				<div>
+					<label for="from">{ t(ctx, "FilterDateFrom") }</label>
+					<input type="date" id="from" name="from" value={ view.From }/>
+				</div>
+				<div>
+					<label for="to">{ t(ctx, "FilterDateTo") }</label>
+					<input type="date" id="to" name="to" value={ view.To }/>
+				</div>
+			</div>
+			<div class="grid">
+				<button type="submit">{ t(ctx, "FilterApply") }</button>
+				<button type="submit" name="preset" value="today" class="secondary outline">{ t(ctx, "FilterToday") }</button>
+				<button type="submit" name="preset" value="all" class="secondary outline">{ t(ctx, "FilterAllDates") }</button>
+			</div>
+		</form>
+		if view.ErrorKey != "" {
+			<p role="alert" class="form-error">{ t(ctx, view.ErrorKey) }</p>
+		}
+		if len(view.Rows) > 0 {
+			<table>
+				<thead>
+					<tr>
+						<th>{ t(ctx, "ColID") }</th>
+						<th>{ t(ctx, "FilterTopic") }</th>
+						<th>{ t(ctx, "ColStarted") }</th>
+						<th>{ t(ctx, "ColSubmitted") }</th>
+						<th>{ t(ctx, "ColStatus") }</th>
+						<th>{ t(ctx, "ColLLMGrade") }</th>
+						<th>{ t(ctx, "ColFinalGrade") }</th>
+						<th>{ t(ctx, "ColAction") }</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range view.Rows {
+						<tr>
+							<td>{ fmt.Sprint(s.ID) }</td>
+							<td>
+								if s.TopicKnown {
+									{ topicLabel(ctx, s.Topic) }
+								} else {
+									—
+								}
+							</td>
+							<td>{ formatReviewTime(s.StartedAt, view.Location) }</td>
+							<td>
+								if s.SubmittedAt != nil {
+									{ formatReviewTime(*s.SubmittedAt, view.Location) }
+								} else {
+									-
+								}
+							</td>
+							<td>{ sessionStatusLabel(ctx, s.Status) }</td>
+							<td>
+								if s.LLMGrade != nil {
+									{ fmt.Sprintf("%.1f%%", *s.LLMGrade) }
+								} else {
+									-
+								}
+							</td>
+							<td>
+								if s.FinalGrade != nil {
+									{ fmt.Sprintf("%.1f%%", *s.FinalGrade) }
+								} else {
+									-
+								}
+							</td>
+							<td>
+								<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
+								if s.Status != model.StatusAnnulled {
+									<br/>
+									@resetAttemptLink(s.ExamSession)
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+			if view.TotalPages > 1 {
+				<nav aria-label={ t(ctx, "PaginationNavLabel") }>
+					<ul>
+						<li>
+							if view.PrevURL != "" {
+								<a href={ templ.SafeURL(p(ctx, view.PrevURL)) } role="button" class="secondary outline">{ t(ctx, "PaginationPrev") }</a>
+							}
+						</li>
+					</ul>
+					<ul>
+						<li>
+							<small>
+								{ td(ctx, "PaginationInfo", map[string]any{
+									"Page":       strconv.Itoa(view.Page),
+									"TotalPages": strconv.Itoa(view.TotalPages),
+									"Total":      strconv.Itoa(view.Total),
+								}) }
+							</small>
+						</li>
+					</ul>
+					<ul>
+						<li>
+							if view.NextURL != "" {
+								<a href={ templ.SafeURL(p(ctx, view.NextURL)) } role="button" class="secondary outline">{ t(ctx, "PaginationNext") }</a>
+							}
+						</li>
+					</ul>
+				</nav>
+			}
+		} else if view.ErrorKey == "" {
+			<p>{ t(ctx, "NoExamsToReview") }</p>
+		}
+		if len(view.Other) > 0 {
+			<h2>{ t(ctx, "OtherAttempts") }</h2>
+			<table>
+				<thead>
+					<tr>
+						<th>{ t(ctx, "ColID") }</th>
+						<th>{ t(ctx, "Student") }</th>
+						<th>{ t(ctx, "FilterTopic") }</th>
+						<th>{ t(ctx, "ColStatus") }</th>
+						<th>{ t(ctx, "ColSubmitted") }</th>
+						<th>{ t(ctx, "ColAction") }</th>
+					</tr>
+				</thead>
+				<tbody>
+					for _, s := range view.Other {
+						<tr>
+							<td>{ fmt.Sprint(s.ID) }</td>
+							<td>{ fmt.Sprint(s.StudentID) }</td>
+							<td>
+								if s.TopicKnown {
+									{ topicLabel(ctx, s.Topic) }
+								} else {
+									—
+								}
+							</td>
+							<td>{ sessionStatusLabel(ctx, s.Status) }</td>
+							<td>
+								if s.SubmittedAt != nil {
+									{ formatReviewTime(*s.SubmittedAt, view.Location) }
+								} else {
+									-
+								}
+							</td>
+							<td>
+								<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
+								if s.Status != model.StatusAnnulled {
+									<br/>
+									@resetAttemptLink(s)
+								}
+							</td>
+						</tr>
+					}
+				</tbody>
+			</table>
+		}
 		<section>
 			<h2>{ t(ctx, "ExportStatement") }</h2>
 			<form method="GET" action={ templ.SafeURL(p(ctx, "/review/export")) }>
 				<div class="grid">
 					<label>{ t(ctx, "FilterTopic") }
 						<select name="topic">
-							<option value="" selected?={ filters.Get("topic") == "" }>{ t(ctx, "StatementAllTopics") }</option>
-							for _, topic := range topics {
-								<option value={ topic } selected?={ filters.Get("topic") == topic }>{ topic }</option>
+							<option value="" selected?={ view.Filters.Get("topic") == "" }>{ t(ctx, "StatementAllTopics") }</option>
+							for _, topic := range view.Topics {
+								<option value={ topic } selected?={ view.Filters.Get("topic") == topic }>{ topic }</option>
 							}
 						</select>
 					</label>
@@ -36,75 +229,21 @@ templ ReviewListPage(sessions, other []model.ExamSession, topics []string, filte
 								{"graded", t(ctx, "StatementGraded")},
 								{"reviewed", t(ctx, "StatementReviewed")},
 							} {
-								<option value={ option.value } selected?={ filters.Get("status") == option.value }>{ option.label }</option>
+								<option value={ option.value } selected?={ view.Filters.Get("status") == option.value }>{ option.label }</option>
 							}
 						</select>
 					</label>
 				</div>
 				<div class="grid">
-					<label>{ t(ctx, "StatementFrom") }<input type="date" name="from" value={ statementDateFilter(filters, "from") }/></label>
-					<label>{ t(ctx, "StatementTo") }<input type="date" name="to" value={ statementDateFilter(filters, "to") }/></label>
-					<label>{ t(ctx, "StatementTimezone") }<input name="timezone" value={ statementTimezone(filters) }/></label>
+					<label>{ t(ctx, "StatementFrom") }<input type="date" name="from" value={ statementDateFilter(view.Filters, "from") }/></label>
+					<label>{ t(ctx, "StatementTo") }<input type="date" name="to" value={ statementDateFilter(view.Filters, "to") }/></label>
+					<label>{ t(ctx, "StatementTimezone") }<input name="timezone" value={ statementTimezone(view.Filters, view.Location) }/></label>
 				</div>
 				<button name="format" value="csv">{ t(ctx, "ExportStatement") } CSV</button>
 				<button name="format" value="xlsx">{ t(ctx, "ExportStatement") } XLSX</button>
 			</form>
 		</section>
-		if len(sessions) > 0 {
-			@reviewSessionsTable(sessions)
-		} else {
-			<p>{ t(ctx, "NoExamsToReview") }</p>
-		}
-		if len(other) > 0 {
-			<h2>{ t(ctx, "OtherAttempts") }</h2>
-			@reviewSessionsTable(other)
-		}
 	}
-}
-
-templ reviewSessionsTable(sessions []model.ExamSession) {
-	<table>
-		<thead>
-			<tr>
-				<th>{ t(ctx, "ColID") }</th>
-				<th>{ t(ctx, "Student") }</th>
-				<th>{ t(ctx, "FilterTopic") }</th>
-				<th>{ t(ctx, "ColStatus") }</th>
-				<th>{ t(ctx, "ColSubmitted") }</th>
-				<th>{ t(ctx, "ColAction") }</th>
-			</tr>
-		</thead>
-		<tbody>
-			for _, s := range sessions {
-				<tr>
-					<td>{ fmt.Sprint(s.ID) }</td>
-					<td>{ fmt.Sprint(s.StudentID) }</td>
-					<td>
-						if s.TopicKnown {
-							{ topicLabel(ctx, s.Topic) }
-						} else {
-							—
-						}
-					</td>
-					<td>{ sessionStatusLabel(ctx, s.Status) }</td>
-					<td>
-						if s.SubmittedAt != nil {
-							{ s.SubmittedAt.Format("2006-01-02 15:04") }
-						} else {
-							-
-						}
-					</td>
-					<td>
-						<a href={ templ.SafeURL(p(ctx, fmt.Sprintf("/review/%d", s.ID))) }>{ t(ctx, "Review") }</a>
-						if s.Status != model.StatusAnnulled {
-							<br/>
-							@resetAttemptLink(s)
-						}
-					</td>
-				</tr>
-			}
-		</tbody>
-	</table>
 }
 
 // statementDateFilter carries a single review date into both export bounds.
@@ -116,9 +255,12 @@ func statementDateFilter(filters url.Values, field string) string {
 }
 
 // statementTimezone provides a consistent default for report dates.
-func statementTimezone(filters url.Values) string {
+func statementTimezone(filters url.Values, loc *time.Location) string {
 	if zone := filters.Get("timezone"); zone != "" {
 		return zone
+	}
+	if loc != nil {
+		return loc.String()
 	}
 	return "Europe/Moscow"
 }
